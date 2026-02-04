@@ -214,41 +214,72 @@ for _, g in valid.iterrows():
     ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
     st.pyplot(fig)
 
-    # ---------- DISTRIBUTION ----------
-    for label, col in [("LAB", "Hardness_LAB"), ("LINE", "Hardness_LINE")]:
-        data = sub[col].dropna()
-        if len(data) < 10:
-            continue
+    # ---------- DISTRIBUTION (3-SIGMA NORMAL CURVE) ----------
+for label, col in [("LAB", "Hardness_LAB"), ("LINE", "Hardness_LINE")]:
+    data = sub[col].dropna()
+    if len(data) < 10:
+        continue
 
-        mean = data.mean()
-        std = data.std(ddof=1)
+    mean = data.mean()
+    std = data.std(ddof=1)
 
-        fig, ax = plt.subplots(figsize=(7, 4))
-        ax.hist(data, bins=10, density=True, alpha=0.35, edgecolor="black")
+    # --- 3 sigma range
+    x_min = mean - 3 * std
+    x_max = mean + 3 * std
 
-        xs = np.linspace(data.min(), data.max(), 200)
-        ax.plot(xs, normal_pdf(xs, mean, std), linewidth=2)
+    fig, ax = plt.subplots(figsize=(7, 4))
 
-        ax.axvline(lo, linestyle="--", label="LSL")
-        ax.axvline(hi, linestyle="--", label="USL")
-        ax.axvline(mean, linestyle=":", label=f"Mean {mean:.2f}")
+    # --- Histogram (split OK / NG)
+    bins = np.linspace(x_min, x_max, 20)
+    ok_data = data[(data >= lo) & (data <= hi)]
+    ng_data = data[(data < lo) | (data > hi)]
 
-        ax.set_title(f"{label} Distribution")
-        ax.grid(alpha=0.3)
+    ax.hist(ok_data, bins=bins, density=True,
+            alpha=0.4, label="In Spec")
+    ax.hist(ng_data, bins=bins, density=True,
+            alpha=0.8, label="Out of Spec")
 
-        note = (
-            f"N = {len(data)}\n"
-            f"Mean = {mean:.2f}\n"
-            f"Std = {std:.2f}"
-        )
+    # --- Normal curve (3 sigma)
+    xs = np.linspace(x_min, x_max, 400)
+    ys = (1 / (std * math.sqrt(2 * math.pi))) * np.exp(
+        -0.5 * ((xs - mean) / std) ** 2
+    )
+    ax.plot(xs, ys, linewidth=2.5, label="Normal Curve (±3σ)")
 
-        ax.text(
-            1.02, 0.5,
-            note,
-            transform=ax.transAxes,
-            va="center",
-            bbox=dict(boxstyle="round", alpha=0.15)
-        )
+    # --- Spec & mean lines (color-coded)
+    ax.axvline(lo, linestyle="--", linewidth=2, label=f"LSL = {lo}")
+    ax.axvline(hi, linestyle="--", linewidth=2, label=f"USL = {hi}")
+    ax.axvline(mean, linestyle=":", linewidth=2.5, label=f"Mean = {mean:.2f}")
 
-        ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.85), frameon=False)
-        st.pyplot(fig)
+    # --- Style
+    ax.set_title(f"{label} Hardness Distribution (3σ)", weight="bold")
+    ax.set_xlabel("Hardness (HRB)")
+    ax.set_ylabel("Density")
+    ax.grid(alpha=0.25)
+
+    # --- Stats note (outside chart)
+    note = (
+        f"N = {len(data)}\n"
+        f"Mean = {mean:.2f}\n"
+        f"Std = {std:.2f}\n"
+        f"3σ Range:\n[{x_min:.2f}, {x_max:.2f}]"
+    )
+
+    ax.text(
+        1.02, 0.5,
+        note,
+        transform=ax.transAxes,
+        va="center",
+        fontsize=10,
+        bbox=dict(boxstyle="round,pad=0.4", alpha=0.15)
+    )
+
+    # --- Legend outside (Power BI style)
+    ax.legend(
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.85),
+        frameon=False
+    )
+
+    plt.tight_layout()
+    st.pyplot(fig)
