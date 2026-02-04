@@ -495,93 +495,92 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL":
-        st.write("DEBUG: entered Predict view")
-        st.write("DEBUG sub shape:", sub.shape)
-        st.write("DEBUG columns:", list(sub.columns))
-
-
-        st.subheader("🧮 Mechanical Property Prediction based on Hardness")
+        st.markdown("### 🧮 Mechanical Property Prediction based on Hardness")
+        
+        # ---- Lọc dữ liệu hợp lệ
+        sub_fit = sub.dropna(subset=["Hardness_LAB", "TS", "YS", "EL"]).copy()
+        N_coils = len(sub_fit)
+        if N_coils < 5:
+            st.warning(f"⚠️ Not enough data to predict TS/YS/EL for this group (N={N_coils})")
+            continue
     
-        if sub.empty:
-            st.warning("No data available for this group.")
-        else:
-            Std_Min = spec_info.get("Std_Min")
-            Std_Max = spec_info.get("Std_Max")
+        # ---- Hardness limits trực tiếp từ sub
+        lsl = sub_fit["Std_Min"].iloc[0]
+        usl = sub_fit["Std_Max"].iloc[0]
     
-            if Std_Min is None or Std_Max is None:
-                st.warning("Hardness control limits not defined.")
-            else:
-                for prop in ["TS", "YS", "EL"]:
+        # ---- Predict TS/YS/EL bằng tuyến tính
+        predictions = {}
+        for prop in ["TS", "YS", "EL"]:
+            X = sub_fit["Hardness_LAB"].values
+            y = sub_fit[prop].values
+            a, b = np.polyfit(X, y, 1)  # linear fit
+            y_min = a * lsl + b
+            y_max = a * usl + b
+            y_mean = a * (lsl + usl)/2 + b
+            predictions[prop] = (y_min, y_mean, y_max)
     
-                    st.markdown(f"### 🔹 {prop} Prediction")
+        # ---- Biểu đồ Prediction vs Observed
+        fig, ax = plt.subplots(figsize=(12,5))
+        for prop, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
+            y_min, y_mean, y_max = predictions[prop]
+            obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
     
-                    df = sub[["Hardness_LAB", prop]].dropna().copy()
-                    N = len(df)
+            # Fill predicted range
+            ax.fill_between([lsl, usl], [y_min,y_min], [y_max,y_max], color=color, alpha=0.15)
+            # Mean line
+            ax.plot([lsl, usl], [y_mean, y_mean], color=color, linewidth=2, label=f"{prop} Predicted Mean")
+            # Observed min/max markers
+            ax.scatter([lsl, usl], [obs_min, obs_max], color=color, marker=marker, s=60, zorder=5)
+            # Annotate values
+            ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=10, fontweight='bold', color=color)
+            ax.text(lsl, obs_min, f"{obs_min:.1f}", ha='center', va='top', fontsize=10, color=color)
+            ax.text(usl, obs_max, f"{obs_max:.1f}", ha='center', va='bottom', fontsize=10, color=color)
     
-                    if N < 5:
-                        st.warning(f"Not enough data for {prop} prediction (N={N})")
-                        continue
+        # ---- Style
+        ax.set_xlabel("Hardness (HRB)", fontsize=12, fontweight='bold')
+        ax.set_ylabel("Mechanical Properties (MPa / %)", fontsize=12, fontweight='bold')
+        ax.set_title(f"Predicted vs Observed TS/YS/EL | Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight='bold')
+        ax.grid(True, linestyle='--', alpha=0.5)
+        ax.legend(loc="upper left", bbox_to_anchor=(1.02,1))
+        plt.tight_layout()
+        st.pyplot(fig)
     
-                    # ===== Linear regression (numpy) =====
-                    x = df["Hardness_LAB"].values
-                    y = df[prop].values
+        # ---- Tạo bảng collapsible
+        df_summary = pd.DataFrame(columns=[
+            "Property","Predicted Min","Predicted Mean","Predicted Max",
+            "Observed Min","Observed Mean","Observed Max"
+        ])
+        for prop in ["TS","YS","EL"]:
+            y_min, y_mean, y_max = predictions[prop]
+            obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
+            df_summary = pd.concat([df_summary, pd.DataFrame({
+                "Property":[prop],
+                "Predicted Min":[y_min],
+                "Predicted Mean":[y_mean],
+                "Predicted Max":[y_max],
+                "Observed Min":[obs_min],
+                "Observed Mean":[obs_mean],
+                "Observed Max":[obs_max]
+            })], ignore_index=True)
     
-                    a, b = np.polyfit(x, y, 1)
+        with st.expander(f"📋 Prediction vs Observed Table (N={N_coils})", expanded=False):
+            st.dataframe(df_summary.style.format("{:.1f}", subset=df_summary.columns[1:]), use_container_width=True)
     
-                    # ===== Prediction from hardness spec =====
-                    pred_min = a * Std_Min + b
-                    pred_max = a * Std_Max + b
-                    pred_mean = a * x.mean() + b
+        # ---- Quick Conclusion
+        conclusion = []
+        for prop in ["TS","YS","EL"]:
+            y_min, y_max = predictions[prop][0], predictions[prop][2]
+            obs_min, obs_max = sub_fit[prop].min(), sub_fit[prop].max()
+            status = "✅ Prediction within observed range" if y_min >= obs_min and y_max <= obs_max else "⚠️ Prediction out of observed range"
+            conclusion.append(f"{prop}: {status} | Predicted {y_min:.1f}-{y_max:.1f} vs Observed {obs_min:.1f}-{obs_max:.1f}")
     
-                    # ===== Prediction per coil =====
-                    df["Predicted"] = a * x + b
-                    df["Error_%"] = (df["Predicted"] - y) / y * 100
+        st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
     
-                    # ===== R² =====
-                    ss_res = np.sum((y - df["Predicted"]) ** 2)
-                    ss_tot = np.sum((y - y.mean()) ** 2)
-                    r2 = 1 - ss_res / ss_tot if ss_tot != 0 else np.nan
-    
-                    # =====================================================
-                    # 📊 CHART 1 — Distribution vs Prediction Band
-                    # =====================================================
-                    fig1, ax1 = plt.subplots()
-                    ax1.hist(y, bins=12, alpha=0.6)
-                    ax1.axvspan(pred_min, pred_max, alpha=0.25)
-                    ax1.axvline(pred_mean, linestyle="--")
-    
-                    ax1.set_title(f"{prop}: Observed Distribution vs Predicted Range")
-                    ax1.set_xlabel(prop)
-                    ax1.set_ylabel("Count")
-    
-                    st.pyplot(fig1)
-    
-                    # =====================================================
-                    # 📊 CHART 2 — Prediction vs Observed
-                    # =====================================================
-                    fig2, ax2 = plt.subplots()
-                    ax2.scatter(df["Predicted"], y)
-                    lims = [
-                        min(df["Predicted"].min(), y.min()),
-                        max(df["Predicted"].max(), y.max())
-                    ]
-                    ax2.plot(lims, lims)
-    
-                    ax2.set_xlabel(f"Predicted {prop}")
-                    ax2.set_ylabel(f"Observed {prop}")
-                    ax2.set_title(f"{prop}: Prediction vs Observed (R² = {r2:.2f})")
-    
-                    st.pyplot(fig2)
-    
-                    # =====================================================
-                    # 📋 SUMMARY TABLE (THU GỌN)
-                    # =====================================================
-                    summary = pd.DataFrame({
-                        "N_coils": [N],
-                        "Observed Mean": [y.mean()],
-                        "Predicted Mean": [df["Predicted"].mean()],
-                        "Mean Error %": [df["Error_%"].mean()],
-                        "R²": [r2]
-                    })
-    
-                    st.dataframe(summary, use_container_width=True)
+        # ---- Download chart
+        buf = fig_to_png(fig)
+        st.download_button(
+            label="📥 Download Predicted TS/YS/EL Chart",
+            data=buf,
+            file_name=f"Predicted_vs_Observed_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
+            mime="image/png"
+        )
