@@ -208,15 +208,31 @@ for _, g in valid.iterrows():
     if view_mode == "📋 Data Table":
         st.dataframe(sub, use_container_width=True)
 
-    else:
+        else:
         x = np.arange(1, len(sub) + 1)
-        fig, ax = plt.subplots(figsize=(7,4))
-        ax.plot(x, sub["Hardness_LAB"], marker="o", label="LAB")
-        ax.plot(x, sub["Hardness_LINE"], marker="s", label="LINE")
-        ax.axhline(lo, linestyle="--")
-        ax.axhline(hi, linestyle="--")
-        ax.set_title("Hardness Trend")
-        ax.set_ylabel("HRB")
-        ax.grid(alpha=0.3)
-        ax.legend()
+
+        fig, ax = plt.subplots(figsize=(8,4))
+
+        # ---- Trend lines
+        ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB")
+        ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE")
+
+        # ---- Spec limits
+        ax.axhline(lo, linestyle="--", linewidth=1.5, label=f"LSL = {lo}")
+        ax.axhline(hi, linestyle="--", linewidth=1.5, label=f"USL = {hi}")
+
+        # ---- Labels & style
+        ax.set_title("Hardness Trend by Coil Sequence", fontsize=12, weight="bold")
+        ax.set_xlabel("Coil Sequence")
+        ax.set_ylabel("Hardness (HRB)")
+        ax.grid(alpha=0.25)
+
+        # ---- Legend OUTSIDE (Power BI style)
+        ax.legend(
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.5),
+            frameon=False
+        )
+
+        plt.tight_layout()
         st.pyplot(fig)
