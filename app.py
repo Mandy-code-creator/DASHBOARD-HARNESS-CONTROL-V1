@@ -487,9 +487,15 @@ for _, g in valid.iterrows():
                     use_container_width=True
                 )
     
-            # ===== 7️⃣ Quick Conclusion
+            # ===== 7️⃣ Quick Conclusion + Dao động
             conclusion = []
             for prop, ng_col in [("TS","NG_TS"), ("YS","NG_YS"), ("EL","NG_EL")]:
+                series = df_bin[prop].dropna()
                 n_ng = df_bin[ng_col].fillna(False).sum()
-                conclusion.append(f"{prop} ✅ OK" if n_ng==0 else f"{prop} ⚠️ {n_ng}/{N} out of spec")
+                spread = series.max() - series.min() if len(series) > 0 else 0
+                mean_val = series.mean() if len(series) > 0 else np.nan
+                conclusion.append(
+                    f"{prop}: {'✅ OK' if n_ng==0 else f'⚠️ {n_ng}/{N} out of spec'} | "
+                    f"Mean={mean_val:.1f} | Range={spread:.1f}"
+                )
             st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
