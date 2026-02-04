@@ -347,19 +347,29 @@ for _, g in valid.iterrows():
         note_text = "\n".join(note_lines)
         st.text_area("📌 Summary Note (per HRB bin)", value=note_text, height=180)
     
-        # 6️⃣ Line plot
+        # 6️⃣ Line plot + annotations trên đường
         fig, ax = plt.subplots(figsize=(8,4))
         x = np.arange(len(summary))
-    
+        
+        # ---- TS
         ax.plot(x, summary["TS_mean"], marker="o", color="blue", label="TS Mean")
         ax.fill_between(x, summary["TS_min"], summary["TS_max"], color="blue", alpha=0.2, label="TS Min-Max")
-    
+        for i, row in summary.iterrows():
+            ax.text(x[i], row["TS_mean"], f"{row['TS_mean']:.1f}", color="blue", fontsize=9, ha="center", va="bottom")
+        
+        # ---- YS
         ax.plot(x, summary["YS_mean"], marker="s", color="green", label="YS Mean")
         ax.fill_between(x, summary["YS_min"], summary["YS_max"], color="green", alpha=0.2, label="YS Min-Max")
-    
+        for i, row in summary.iterrows():
+            ax.text(x[i], row["YS_mean"], f"{row['YS_mean']:.1f}", color="green", fontsize=9, ha="center", va="bottom")
+        
+        # ---- EL
         ax.plot(x, summary["EL_mean"], marker="^", color="orange", label="EL Mean")
         ax.fill_between(x, summary["EL_min"], summary["EL_max"], color="orange", alpha=0.2, label="EL Min-Max")
-    
+        for i, row in summary.iterrows():
+            ax.text(x[i], row["EL_mean"], f"{row['EL_mean']:.1f}", color="orange", fontsize=9, ha="center", va="bottom")
+        
+        # ---- style
         ax.set_xticks(x)
         ax.set_xticklabels(summary["HRB_bin"])
         ax.set_xlabel("Hardness (HRB bin)")
@@ -369,12 +379,3 @@ for _, g in valid.iterrows():
         ax.legend(loc="best")
         plt.tight_layout()
         st.pyplot(fig)
-    
-        # 7️⃣ Download chart
-        buf = fig_to_png(fig)
-        st.download_button(
-            label="📥 Download Hardness → TS/YS/EL Chart",
-            data=buf,
-            file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
-            mime="image/png"
-        )
