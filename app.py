@@ -474,24 +474,13 @@ for _, g in valid.iterrows():
                 st.dataframe(summary_bin.style.format("{:.1f}", subset=["TS","YS","EL"]),
                              use_container_width=True)
     
-            # ===== Quick Conclusion Safe Full
+            # ===== 7️⃣ Quick Conclusion (Min–Max)
             conclusion = []
             for prop, ng_col in [("TS","NG_TS"), ("YS","NG_YS"), ("EL","NG_EL")]:
-                series = df_bin[prop].dropna()
-                N = len(series)
-                if N == 0:
-                    conclusion.append(f"{prop}: ⚠️ No data")
-                    continue
-            
-                val_min = series.min()
-                val_max = series.max()
-                n_ng = df_bin.get(ng_col, pd.Series([False]*len(df_bin))).fillna(False).sum()
-                status = "✅ OK" if n_ng==0 else f"⚠️ {int(n_ng)}/{N} out of spec"
-            
-                # Format an toàn
-                val_min_s = f"{val_min:.1f}" if pd.notna(val_min) else "-"
-                val_max_s = f"{val_max:.1f}" if pd.notna(val_max) else "-"
-            
-                conclusion.append(f"{prop}: {status} | {val_min_s} – {val_max_s}")
+                n_ng = df_bin[ng_col].fillna(False).sum()
+                val_min = df_bin[prop].min()
+                val_max = df_bin[prop].max()
+                status = "✅ OK" if n_ng==0 else f"⚠️ {n_ng}/{N} out of spec"
+                conclusion.append(f"{prop}: {status} | {val_min:.1f} – {val_max:.1f}")
             
             st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
