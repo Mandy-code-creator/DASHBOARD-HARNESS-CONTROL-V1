@@ -474,21 +474,23 @@ for _, g in valid.iterrows():
                 st.dataframe(summary_bin.style.format("{:.1f}", subset=["TS","YS","EL"]),
                              use_container_width=True)
     
-            # ===== 7️⃣ Quick Conclusion Safe
-            conclusion = []
-            for prop, ng_col in [("TS","NG_TS"), ("YS","NG_YS"), ("EL","NG_EL")]:
-                if ng_col not in sub.columns or prop not in sub.columns:
-                    continue  # skip nếu cột không có
-                
-                n_ng = sub[ng_col].fillna(False).sum()
-                N = len(sub)
-                val_min, val_max = sub[prop].min(), sub[prop].max()
+            # ===== Quick Conclusion Safe & Gọn (HRB limit 1 lần)
+            if "Std_Min" in sub.columns and "Std_Max" in sub.columns:
+                lsl, usl = sub["Std_Min"].iloc[0], sub["Std_Max"].iloc[0]
                 observed_min, observed_max = sub["Hardness_LAB"].min(), sub["Hardness_LAB"].max()
-                status = "✅ OK" if n_ng==0 else f"⚠️ {n_ng}/{N} out of spec"
-                lsl, usl = sub[f"Std_Min"].iloc[0], sub[f"Std_Max"].iloc[0]
                 
-                conclusion.append(
-                    f"{prop}: {status} | HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | {prop}={val_min:.1f}-{val_max:.1f}"
-                )
+                conclusion = []
+                for prop, ng_col in [("TS","NG_TS"), ("YS","NG_YS"), ("EL","NG_EL")]:
+                    if prop not in sub.columns:
+                        continue
+                    n_ng = sub[ng_col].fillna(False).sum() if ng_col in sub.columns else 0
+                    N = len(sub)
+                    val_min, val_max = sub[prop].min(), sub[prop].max()
+                    status = "✅ OK" if n_ng==0 else f"⚠️ {n_ng}/{N} out of spec"
+                    conclusion.append(f"{prop}: {status} | {val_min:.1f}-{val_max:.1f}")
             
-            st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
+                st.markdown(
+                    f"**📌 Quick Conclusion:** HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | " +
+                    " | ".join(conclusion)
+                )
+
