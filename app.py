@@ -474,25 +474,26 @@ for _, g in valid.iterrows():
                 st.dataframe(summary_bin.style.format("{:.1f}", subset=["TS","YS","EL"]),
                              use_container_width=True)
     
-            # ===== 7️⃣ Quick Conclusion Full – safe 100%
+            # ===== Quick Conclusion Safe – Count by COIL_NO
             conclusion = []
-            for prop in ["TS","YS","EL"]:
+            
+            for prop in ["TS", "YS", "EL"]:
+                # Số cuộn thực tế
+                N_coil = df_bin["COIL_NO"].nunique()
+                
+                # Tính NG theo cuộn
+                ng_coils = df_bin.loc[df_bin[f"NG_{prop}"], "COIL_NO"].unique()
+                n_ng = len(ng_coils)
+                
+                # Giá trị min/max theo toàn bộ dòng
                 series = df_bin[prop].dropna()
-                n = len(series)
-                mean = series.mean()
-                minv, maxv = series.min(), series.max()
-                std = series.std(ddof=1)
-                if prop == "TS":
-                    lsl, usl = TS_LSL, TS_USL
-                elif prop == "YS":
-                    lsl, usl = YS_LSL, YS_USL
-                elif prop == "EL":
-                    lsl, usl = EL_LSL, EL_USL
-                cp = (usl-lsl)/(6*std) if std>0 else np.nan
-                cpk = min(usl-mean, mean-lsl)/(3*std) if std>0 else np.nan
-                n_ng = df_bin[f"NG_{prop}"].sum()
-                status = "✅ OK" if n_ng==0 else f"⚠️ {n_ng}/{N} out of spec"
-                conclusion.append(f"{prop}: {status} | Mean={mean:.1f} | Range={minv:.1f}-{maxv:.1f} | ±σ={std:.1f} | Cp/Cpk={cp:.2f}/{cpk:.2f}")
-            st.markdown("**📌 Quick Conclusion (Full):**")
-            for line in conclusion:
-                st.markdown(line)
+                if len(series) == 0:
+                    val_min = val_max = np.nan
+                else:
+                    val_min, val_max = series.min(), series.max()
+                
+                status = "✅ OK" if n_ng == 0 else f"⚠️ {n_ng}/{N_coil} out of spec"
+                conclusion.append(f"{prop}: {status} | Range={val_min:.1f}-{val_max:.1f}")
+            
+            st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
+
