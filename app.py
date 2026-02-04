@@ -316,7 +316,18 @@ for _, g in valid.iterrows():
         sub["EL_USL"] = sub["Standard EL max"]
     
         sub = sub.dropna(subset=["TS_LSL","TS_USL","YS_LSL","YS_USL","EL_LSL","EL_USL"])
-    
+            # ==== Note box outside chart ====
+        note_lines = []
+        for _, row in summary.iterrows():
+            note_lines.append(
+                f"HRB {row['HRB_bin']}: N={row['N_coils']}, "
+                f"TS({row['TS_min']:.1f}-{row['TS_max']:.1f}), "
+                f"YS({row['YS_min']:.1f}-{row['YS_max']:.1f}), "
+                f"EL({row['EL_min']:.1f}-{row['EL_max']:.1f})"
+            )
+        note_text = "\n".join(note_lines)
+        st.text_area("📌 Summary Note (per HRB bin)", value=note_text, height=180)
+
         # 3️⃣ Summary min/mean/max
         summary = sub.groupby("HRB_bin").agg(
             N_coils=("COIL_NO","count"),
