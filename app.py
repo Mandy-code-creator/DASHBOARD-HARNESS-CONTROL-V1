@@ -513,14 +513,12 @@ for _, g in valid.iterrows():
         for prop in ["TS", "YS", "EL"]:
             x = sub_fit["Hardness_LINE"].values
             y = sub_fit[prop].values
-            # Fit linear regression
             a, b = np.polyfit(x, y, 1)
             y_pred = a*x + b
             pred_values[prop] = y_pred
     
-            # ----- 95% CI approximation (mean ± 1.96*std of residuals)
-            resid = y - y_pred
-            resid_std = np.std(resid, ddof=1)
+            # ----- 95% CI approximation
+            resid_std = np.std(y - y_pred, ddof=1)
             ci_upper[prop] = y_pred + 1.96*resid_std
             ci_lower[prop] = y_pred - 1.96*resid_std
     
@@ -533,11 +531,12 @@ for _, g in valid.iterrows():
             ax.set_ylabel(prop)
             ax.grid(True, linestyle="--", alpha=0.3)
             ax.legend()
-        
+    
         axes[-1].set_xlabel("Coil Sequence")
         fig.suptitle("Predicted vs Observed Mechanical Properties based on LINE Hardness", fontsize=14, fontweight="bold")
         plt.tight_layout(rect=[0,0,1,0.97])
         st.pyplot(fig)
+    
         # ----- Automatic conclusion
         conclusion = []
         for prop in ["TS", "YS", "EL"]:
@@ -545,31 +544,33 @@ for _, g in valid.iterrows():
             predicted = pred_values[prop]
             upper = ci_upper[prop]
             lower = ci_lower[prop]
-        
+    
             n_outside = np.sum((observed < lower) | (observed > upper))
             bias = observed.mean() - predicted.mean()
             ci_width = np.mean(upper - lower)
-        
+    
             if n_outside == 0:
                 status = "✅ All observed values within 95% CI"
             else:
                 status = f"⚠️ {n_outside}/{N_coils} coils outside 95% CI"
-        
+    
             conclusion.append(
                 f"**{prop}:** Observed mean={observed.mean():.1f}, Predicted mean={predicted.mean():.1f}, "
                 f"Avg CI width={ci_width:.1f} | Bias={bias:.1f} | {status}"
             )
-        
+    
+        # ----- Show conclusion table
         st.markdown("### 📌 Prediction Summary")
         for line in conclusion:
             st.markdown(line)
     
-            # ----- CI Explanation in English
-            st.markdown(
-                """
+        # ----- CI Explanation (only once)
+        st.markdown(
+            """
     💡 **95% Confidence Interval (CI):**  
     - The shaded area around the predicted line represents the **95% Confidence Interval**.  
-    - It means that **there is approximately a 95% probability that the actual value will fall within this range** if the linear model is valid.  
-    - The narrower the CI, the more precise the prediction; the wider the CI, the more uncertainty exists.
+    - It indicates the range where **95% of future observations are expected to fall** if the linear model is valid.  
+    - Narrow CI → high precision; Wide CI → higher uncertainty.  
+    - This explanation is shown only once for clarity.
     """
         )
