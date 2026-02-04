@@ -1,20 +1,26 @@
+# ============================================================
+# SPC QUALITY DASHBOARD – POWER BI STYLE (MANAGEMENT VIEW)
+# ============================================================
+
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import requests
 import re
+from io import StringIO
+import matplotlib.pyplot as plt
 
-# =========================
+# ============================================================
 # PAGE CONFIG
-# =========================
+# ============================================================
 st.set_page_config(
     page_title="SPC Quality Dashboard",
     layout="wide"
 )
 
-# =========================
-# STYLE – POWER BI LOOK
-# =========================
+# ============================================================
+# STYLE (POWER BI LOOK)
+# ============================================================
 st.markdown("""
 <style>
 html, body, [class*="css"] {
@@ -42,199 +48,184 @@ html, body, [class*="css"] {
 }
 .kpi-pass { color: #16A34A; }
 .kpi-fail { color: #DC2626; }
-[data-testid="stDataFrame"] {
-    border: 1px solid #E5E7EB;
-    border-radius: 8px;
-}
 </style>
 """, unsafe_allow_html=True)
 
-# =========================
-# GOOGLE SHEET LOADER
-# =========================
-@st.cache_data
-def load_google_sheet(sheet_id, gid=0):
-    url = f"https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}"
-    return pd.read_csv(url)
-
-# ====== CHANGE THESE IDs ======
-MAIN_DATA_SHEET = "1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI"
-GAUGE_MASTER_SHEET = "1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM"
-
-df = load_google_sheet(MAIN_DATA_SHEET)
-gauge_master = load_google_sheet(GAUGE_MASTER_SHEET)
-
-# =========================
-# GAUGE RANGE PARSER
-# =========================
-def parse_range(text):
-    nums = re.findall(r"\d+\.?\d*", str(text))
-    if len(nums) < 2:
-        return None
-    return float(nums[0]), float(nums[1])
-
-gauge_ranges = []
-for _, r in gauge_master.iterrows():
-    parsed = parse_range(r["Range_Name"])
-    if parsed:
-        lo, hi = parsed
-        gauge_ranges.append((lo, hi, r["Range_Name"]))
-
-def map_gauge_range(x):
-    if pd.isna(x):
-        return np.nan
-    for lo, hi, name in gauge_ranges:
-        if lo <= x < hi:
-            return name
-    return np.nan
-
-df["Gauge_Range"] = df["ORDER_GAUGE"].apply(map_gauge_range)
-
-# =========================
-# QUALITY GROUP LOGIC
-# =========================
-def map_quality(q):
-    if q in ["CQ00", "CQ06"]:
-        return "CQ00/CQ06"
-    return q
-
-df["Quality_Group"] = df["QUALITY_CODE"].apply(map_quality)
-
-# =========================
-# SIDEBAR – FILTER
-# =========================
-st.sidebar.header("Filters")
-
-material = st.sidebar.multiselect(
-    "Classify Material",
-    sorted(df["Classify material"].dropna().unique())
-)
-
-coat = st.sidebar.multiselect(
-    "Metallic Coating Type",
-    sorted(df["METALLIC COATING TYPE"].dropna().unique())
-)
-
-quality = st.sidebar.multiselect(
-    "Quality Group",
-    sorted(df["Quality_Group"].dropna().unique())
-)
-
-gauge_range = st.sidebar.multiselect(
-    "Gauge Range",
-    sorted(df["Gauge_Range"].dropna().unique())
-)
-
-df_f = df.copy()
-
-if material:
-    df_f = df_f[df_f["Classify material"].isin(material)]
-if coat:
-    df_f = df_f[df_f["METALLIC COATING TYPE"].isin(coat)]
-if quality:
-    df_f = df_f[df_f["Quality_Group"].isin(quality)]
-if gauge_range:
-    df_f = df_f[df_f["Gauge_Range"].isin(gauge_range)]
-
-# =========================
+# ============================================================
 # HEADER
-# =========================
+# ============================================================
 st.title("📊 SPC Quality Dashboard – Management View")
 
 st.info("""
 **PC Analysis Logic – Management Note**
 
-• Grouped by: Classify Material, Metallic Coating Type, Quality Group, Gauge Range, HR Steel Grade  
-• CQ00 & CQ06 are merged due to equivalent quality behavior  
-• Thickness is analyzed by predefined gauge ranges  
-• SPC condition valid only when ≥ 30 coils  
+• Grouped by: Classify material, Metallic Coating Type, Quality Group, Gauge Range, HR Steel Grade  
+• CQ00 and CQ06 are merged due to equivalent quality behavior  
+• Thickness is analyzed by predefined gauge ranges (not single values)  
+• SPC condition is valid only when ≥ 30 coils  
 • QA logic is strict: **1 NG → FAIL**
 """)
 
-# =========================
+# ============================================================
+# DATA SOURCES (GOOGLE SHEET)
+# ============================================================
+MAIN_DATA_URL = "https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
+GAUGE_RANGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
+
+@st.cache_data
+def load_csv(url):
+    r = requests.get(url)
+    r.encoding = "utf-8"
+    return pd.read_csv(StringIO(r.text))
+
+df = load_csv(MAIN_DATA_URL)
+gauge_ref = load_csv(GAUGE_RANGE_URL)
+
+# ============================================================
+# NORMALIZE COLUMN NAMES
+# ============================================================
+df.columns = df.columns.str.strip().str.upper().str.replace(" ", "_")
+gauge_ref.columns = gauge_ref.columns.str.strip().str.upper().str.replace(" ", "_")
+
+# ============================================================
+# AUTO-DETECT IMPORTANT COLUMNS
+# ============================================================
+def find_col(keywords):
+    for c in df.columns:
+        for k in keywords:
+            if k in c:
+                return c
+    return None
+
+COL_MATERIAL = find_col(["HR_STEEL"])
+COL_CLASSIFY = find_col(["CLAASIFY", "CLASSIFY"])
+COL_METALLIC = find_col(["METALLIC"])
+COL_QUALITY  = find_col(["QUALITY"])
+COL_GAUGE    = find_col(["GAUGE", "THICKNESS"])
+COL_COIL     = find_col(["COIL"])
+COL_LAB      = find_col(["HARDNESS_冶金", "HARDNESS_LAB"])
+COL_LINE     = find_col(["HARDNESS_鍍鋅", "HARDNESS_LINE"])
+COL_STD      = find_col(["STANDARD"])
+
+required = [COL_MATERIAL, COL_CLASSIFY, COL_METALLIC, COL_QUALITY, COL_GAUGE, COL_COIL, COL_LAB, COL_LINE, COL_STD]
+if any(c is None for c in required):
+    st.error("❌ Missing required columns in data file")
+    st.stop()
+
+# ============================================================
+# QUALITY GROUP (CQ00 + CQ06)
+# ============================================================
+df["QUALITY_GROUP"] = df[COL_QUALITY].replace({"CQ00": "CQ00/CQ06", "CQ06": "CQ00/CQ06"})
+
+# ============================================================
+# PARSE STANDARD RANGE
+# ============================================================
+def parse_std(x):
+    if isinstance(x, str) and "~" in x:
+        a, b = x.split("~")
+        return float(a), float(b)
+    return np.nan, np.nan
+
+df[["STD_MIN", "STD_MAX"]] = df[COL_STD].apply(lambda x: pd.Series(parse_std(x)))
+
+# ============================================================
+# GAUGE RANGE PARSER (SUPPORT: 0.28≦T＜0.35)
+# ============================================================
+def parse_range(text):
+    nums = re.findall(r"\d+\.?\d*", str(text))
+    if len(nums) >= 2:
+        return float(nums[0]), float(nums[-1])
+    return None, None
+
+gauge_ref[["G_MIN", "G_MAX"]] = gauge_ref.iloc[:,0].apply(
+    lambda x: pd.Series(parse_range(x))
+)
+
+def map_gauge_range(val):
+    for _, r in gauge_ref.iterrows():
+        if r["G_MIN"] <= val < r["G_MAX"]:
+            return r.iloc[0]
+    return None
+
+df["GAUGE_VALUE"] = pd.to_numeric(df[COL_GAUGE], errors="coerce")
+df["GAUGE_RANGE"] = df["GAUGE_VALUE"].apply(map_gauge_range)
+
+# ============================================================
+# FILTERS
+# ============================================================
+st.sidebar.header("🎛 Filters")
+
+f_class = st.sidebar.selectbox("Classify Material", sorted(df[COL_CLASSIFY].dropna().unique()))
+f_metal = st.sidebar.selectbox("Metallic Coating", sorted(df[COL_METALLIC].dropna().unique()))
+f_qual  = st.sidebar.selectbox("Quality Group", sorted(df["QUALITY_GROUP"].dropna().unique()))
+f_gauge = st.sidebar.selectbox("Gauge Range", sorted(df["GAUGE_RANGE"].dropna().unique()))
+
+df_f = df[
+    (df[COL_CLASSIFY] == f_class) &
+    (df[COL_METALLIC] == f_metal) &
+    (df["QUALITY_GROUP"] == f_qual) &
+    (df["GAUGE_RANGE"] == f_gauge)
+].copy()
+
+# ============================================================
+# QA LOGIC
+# ============================================================
+df_f["NG_LAB"]  = (df_f[COL_LAB]  < df_f["STD_MIN"]) | (df_f[COL_LAB]  > df_f["STD_MAX"])
+df_f["NG_LINE"] = (df_f[COL_LINE] < df_f["STD_MIN"]) | (df_f[COL_LINE] > df_f["STD_MAX"])
+df_f["COIL_NG"] = df_f["NG_LAB"] | df_f["NG_LINE"]
+
+total = df_f[COL_COIL].nunique()
+ng_cnt = df_f[df_f["COIL_NG"]][COL_COIL].nunique()
+qa = "FAIL" if ng_cnt > 0 else "PASS"
+
+# ============================================================
 # KPI SUMMARY
-# =========================
-total_coils = len(df_f)
-ng_lab = (df_f["NG_LAB"] == 1).sum() if "NG_LAB" in df_f else 0
-ng_line = (df_f["NG_LINE"] == 1).sum() if "NG_LINE" in df_f else 0
-qa_result = "FAIL" if (ng_lab + ng_line) > 0 else "PASS"
+# ============================================================
+st.markdown('<div class="section-title">Summary</div>', unsafe_allow_html=True)
 
-st.markdown('<div class="section-title">Overall Summary</div>', unsafe_allow_html=True)
-
-c1, c2, c3, c4 = st.columns(4)
-
+c1, c2, c3 = st.columns(3)
 with c1:
-    st.markdown(f"""
-    <div class="kpi-box">
-        <div class="kpi-title">Total Coils</div>
-        <div class="kpi-value">{total_coils}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
+    st.markdown(f"<div class='kpi-box'><div class='kpi-title'>Total Coils</div><div class='kpi-value'>{total}</div></div>", unsafe_allow_html=True)
 with c2:
-    st.markdown(f"""
-    <div class="kpi-box">
-        <div class="kpi-title">NG (LAB)</div>
-        <div class="kpi-value">{ng_lab}</div>
-    </div>
-    """, unsafe_allow_html=True)
-
+    st.markdown(f"<div class='kpi-box'><div class='kpi-title'>NG Coils</div><div class='kpi-value'>{ng_cnt}</div></div>", unsafe_allow_html=True)
 with c3:
-    st.markdown(f"""
-    <div class="kpi-box">
-        <div class="kpi-title">NG (LINE)</div>
-        <div class="kpi-value">{ng_line}</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        f"<div class='kpi-box'><div class='kpi-title'>QA Result</div>"
+        f"<div class='kpi-value {'kpi-pass' if qa=='PASS' else 'kpi-fail'}'>{qa}</div></div>",
+        unsafe_allow_html=True
+    )
 
-with c4:
-    st.markdown(f"""
-    <div class="kpi-box">
-        <div class="kpi-title">QA Result</div>
-        <div class="kpi-value {'kpi-pass' if qa_result=='PASS' else 'kpi-fail'}">
-            {qa_result}
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
-
-# =========================
-# DATA TABLE – MANAGER FIRST
-# =========================
-st.markdown('<div class="section-title">Detail Data (Manager Priority)</div>', unsafe_allow_html=True)
+# ============================================================
+# DATA TABLE (PRIORITY FOR MANAGEMENT)
+# ============================================================
+st.markdown('<div class="section-title">Detail Data</div>', unsafe_allow_html=True)
 
 show_cols = [
-    "COIL_NO",
-    "Classify material",
-    "METALLIC COATING TYPE",
-    "Quality_Group",
-    "ORDER_GAUGE",
-    "Gauge_Range",
-    "Hardness_LAB",
-    "Hardness_LINE",
+    COL_COIL,
+    COL_MATERIAL,
+    "GAUGE_RANGE",
+    "QUALITY_GROUP",
+    COL_LAB,
+    COL_LINE,
     "NG_LAB",
     "NG_LINE"
 ]
 
-exist_cols = [c for c in show_cols if c in df_f.columns]
-
 st.dataframe(
-    df_f[exist_cols],
+    df_f[show_cols].sort_values(COL_COIL),
     use_container_width=True,
     hide_index=True
 )
 
-# =========================
-# SPC / ENGINEER VIEW
-# =========================
-st.markdown('<div class="section-title">SPC Analysis (Engineering View)</div>', unsafe_allow_html=True)
-
-with st.expander("Show SPC Charts"):
-    if len(df_f) >= 30 and "Hardness_LAB" in df_f:
-        fig, ax = plt.subplots()
-        ax.plot(df_f["Hardness_LAB"].values, marker="o")
-        ax.set_title("Hardness Trend (LAB)")
-        ax.set_ylabel("HRB")
-        ax.set_xlabel("Coil Sequence")
-        st.pyplot(fig)
-    else:
-        st.warning("SPC condition not met (≥ 30 coils required)")
+# ============================================================
+# SPC CHART (ENGINEER VIEW)
+# ============================================================
+with st.expander("📈 SPC Trend (Engineering View)"):
+    fig, ax = plt.subplots(figsize=(7,4))
+    ax.plot(df_f[COL_COIL], df_f[COL_LAB], marker="o", label="LAB")
+    ax.plot(df_f[COL_COIL], df_f[COL_LINE], marker="s", label="LINE")
+    ax.axhline(df_f["STD_MIN"].iloc[0], linestyle="--", color="red")
+    ax.axhline(df_f["STD_MAX"].iloc[0], linestyle="--", color="red")
+    ax.legend()
+    ax.grid(alpha=0.3)
+    st.pyplot(fig)
