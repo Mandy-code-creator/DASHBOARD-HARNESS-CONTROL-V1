@@ -273,7 +273,7 @@ for label, col in [("LAB", "Hardness_LAB"), ("LINE", "Hardness_LINE")]:
     ax.hist(data, bins=10, density=True, alpha=0.35, edgecolor="black")
 
     x = np.linspace(min(data), max(data), 200)
-   ax.plot(x, normal_pdf(x, mean, std), linewidth=2)
+    ax.plot(x, normal_pdf(x, mean, std), linewidth=2)
 
     ax.axvline(lo, linestyle="--", linewidth=1.5, label=f"LSL = {lo}")
     ax.axvline(hi, linestyle="--", linewidth=1.5, label=f"USL = {hi}")
