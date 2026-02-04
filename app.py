@@ -474,38 +474,21 @@ for _, g in valid.iterrows():
                 st.dataframe(summary_bin.style.format("{:.1f}", subset=["TS","YS","EL"]),
                              use_container_width=True)
     
-            # ===== 7️⃣ Quick Conclusion Safe – TS/YS/EL per group
+            # ===== 7️⃣ Quick Conclusion Safe
             conclusion = []
-            
-            # Dải hardness spec
-            hrb_min, hrb_max = sub[["Std_Min","Std_Max"]].iloc[0]
-            
-            # Quan sát Hardness thực tế (LAB)
-            obs_hrb_min = sub["Hardness_LAB"].min(skipna=True)
-            obs_hrb_max = sub["Hardness_LAB"].max(skipna=True)
-            observed_hrb = f"{obs_hrb_min:.1f} – {obs_hrb_max:.1f}" if not np.isnan(obs_hrb_min) else "-"
-            
             for prop, ng_col in [("TS","NG_TS"), ("YS","NG_YS"), ("EL","NG_EL")]:
-                # Số coil NG / tổng
+                if ng_col not in sub.columns or prop not in sub.columns:
+                    continue  # skip nếu cột không có
+                
                 n_ng = sub[ng_col].fillna(False).sum()
                 N = len(sub)
-                status = "✅ OK" if n_ng == 0 else f"⚠️ {n_ng}/{N} out of spec"
+                val_min, val_max = sub[prop].min(), sub[prop].max()
+                observed_min, observed_max = sub["Hardness_LAB"].min(), sub["Hardness_LAB"].max()
+                status = "✅ OK" if n_ng==0 else f"⚠️ {n_ng}/{N} out of spec"
+                lsl, usl = sub[f"Std_Min"].iloc[0], sub[f"Std_Max"].iloc[0]
                 
-                # Cơ tính thực tế
-                val_min = sub[prop].min(skipna=True)
-                val_max = sub[prop].max(skipna=True)
-                if np.isnan(val_min) or np.isnan(val_max):
-                    val_range = "-"
-                else:
-                    val_range = f"{val_min:.1f} – {val_max:.1f}"
-                
-                # Kết luận dạng:
-                # TS: ⚠️ 12/34 out of spec | HRB limit=88–97 | observed HRB=92.1–99.0 | TS=610–725
                 conclusion.append(
-                    f"{prop}: {status} | HRB limit={hrb_min:.1f}–{hrb_max:.1f} | observed HRB={observed_hrb} | {prop}={val_range}"
+                    f"{prop}: {status} | HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | {prop}={val_min:.1f}-{val_max:.1f}"
                 )
             
-            # Hiển thị Quick Conclusion
-            st.markdown("**📌 Quick Conclusion:**")
-            for line in conclusion:
-                st.markdown(line)
+            st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
