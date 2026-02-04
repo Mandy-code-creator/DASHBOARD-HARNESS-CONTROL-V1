@@ -494,7 +494,7 @@ for _, g in valid.iterrows():
                     f"**📌 Quick Conclusion:** HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | " +
                     " | ".join(conclusion)
                 )
-   elif view_mode == "🧮 Predict TS/YS/EL":
+    elif view_mode == "🧮 Predict TS/YS/EL":
         sub_fit = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
         if len(sub_fit) < 3:
             st.warning("⚠️ Not enough data to fit model for TS/YS/EL prediction. Showing available data.")
