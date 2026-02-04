@@ -516,8 +516,8 @@ for _, g in valid.iterrows():
         axes[1,1].axis('off')  # ô trống
     
         # ---- TS
-        ax_ts.plot(coils, sub_fit["TS"], linestyle="-", marker="o", color="#1f77b4", label="Observed TS")
-        ax_ts.plot(coils, pred_values["TS"], linestyle="--", marker="o", color="#1f77b4", label="Predicted TS")
+        ax_ts.plot(coils, sub_fit["TS"], linestyle="-", marker="o", color="#003f5c", label="Observed TS")
+        ax_ts.plot(coils, pred_values["TS"], linestyle="--", marker="o", color="#ffa600", label="Predicted TS")
         ax_ts.set_title("TS: Predicted vs Observed per Coil")
         ax_ts.set_xlabel("Coil Sequence")
         ax_ts.set_ylabel("MPa")
@@ -525,8 +525,8 @@ for _, g in valid.iterrows():
         ax_ts.legend()
     
         # ---- YS
-        ax_ys.plot(coils, sub_fit["YS"], linestyle="-", marker="s", color="#2ca02c", label="Observed YS")
-        ax_ys.plot(coils, pred_values["YS"], linestyle="--", marker="s", color="#2ca02c", label="Predicted YS")
+        ax_ys.plot(coils, sub_fit["YS"], linestyle="-", marker="s", color="#2f4b7c", label="Observed YS")
+        ax_ys.plot(coils, pred_values["YS"], linestyle="--", marker="s", color="#ffa600", label="Predicted YS")
         ax_ys.set_title("YS: Predicted vs Observed per Coil")
         ax_ys.set_xlabel("Coil Sequence")
         ax_ys.set_ylabel("MPa")
@@ -534,8 +534,8 @@ for _, g in valid.iterrows():
         ax_ys.legend()
     
         # ---- EL
-        ax_el.plot(coils, sub_fit["EL"], linestyle="-", marker="^", color="#ff7f0e", label="Observed EL")
-        ax_el.plot(coils, pred_values["EL"], linestyle="--", marker="^", color="#ff7f0e", label="Predicted EL")
+        ax_el.plot(coils, sub_fit["EL"], linestyle="-", marker="^", color="#665191", label="Observed EL")
+        ax_el.plot(coils, pred_values["EL"], linestyle="--", marker="^", color="#ffa600", label="Predicted EL")
         ax_el.set_title("EL: Predicted vs Observed per Coil")
         ax_el.set_xlabel("Coil Sequence")
         ax_el.set_ylabel("%")
