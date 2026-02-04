@@ -269,7 +269,7 @@ for _, g in valid.iterrows():
                 f"LINE:\n  N={len(line)}  Mean={mean_line:.2f}  Std={std_line:.2f}\n"
                 f"  Ca={ca_line:.2f}  Cp={cp_line:.2f}  Cpk={cpk_line:.2f}"
             )
-            ax.text(1.02, 0.3, note, transform=ax.transAxes, va="center",
+            ax.text(1.02, 0.4, note, transform=ax.transAxes, va="center",
                     bbox=dict(boxstyle="round,pad=0.4", facecolor="white", alpha=0.2, edgecolor="gray"))
     
             # ---- style
