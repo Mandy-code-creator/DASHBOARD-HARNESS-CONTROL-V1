@@ -388,6 +388,17 @@ for _, g in valid.iterrows():
     
         hrb_bins = [b for b in labels if b in sub["HRB_bin"].unique()]
     
+        # ===== Hàm check NG an toàn =====
+        def check_ng(series, lsl, usl):
+            if lsl == 0 and usl == 0:
+                return pd.Series([False]*len(series))
+            elif lsl != 0 and usl == 0:
+                return series < lsl
+            elif lsl == 0 and usl != 0:
+                return series > usl
+            else:
+                return (series < lsl) | (series > usl)
+    
         for hrb in hrb_bins:
             df_bin = sub[sub["HRB_bin"] == hrb].sort_values("COIL_NO")
             N = len(df_bin)
@@ -401,38 +412,51 @@ for _, g in valid.iterrows():
             EL_LSL = df_bin["Standard EL min"].iloc[0]
             EL_USL = df_bin["Standard EL max"].iloc[0]
     
+            # ===== Tạo cột NG cho highlight =====
+            df_bin["NG_TS"] = check_ng(df_bin["TS"], TS_LSL, TS_USL)
+            df_bin["NG_YS"] = check_ng(df_bin["YS"], YS_LSL, YS_USL)
+            df_bin["NG_EL"] = check_ng(df_bin["EL"], EL_LSL, EL_USL)
+    
             st.markdown(f"### HRB bin: {hrb} | N_coils={N}")
     
             # --- Trend chart ---
-            fig, ax = plt.subplots(figsize=(12,4))
+            fig, ax = plt.subplots(figsize=(14,4))
             x = np.arange(1, N+1)
     
+            # TS
             ax.plot(x, df_bin["TS"], marker="o", label="TS", color="#1f77b4")
-            ax.fill_between(x, df_bin["TS"].min(), df_bin["TS"].max(), color="#1f77b4", alpha=0.1)
+            ax.fill_between(x, df_bin["TS_min"] if "TS_min" in df_bin else df_bin["TS"].min(),
+                            df_bin["TS_max"] if "TS_max" in df_bin else df_bin["TS"].max(),
+                            color="#1f77b4", alpha=0.1)
+            # Highlight NG
+            ax.scatter(x[df_bin["NG_TS"]], df_bin["TS"][df_bin["NG_TS"]], color="red", s=50, zorder=5)
     
+            # YS
             ax.plot(x, df_bin["YS"], marker="s", label="YS", color="#2ca02c")
             ax.fill_between(x, df_bin["YS"].min(), df_bin["YS"].max(), color="#2ca02c", alpha=0.1)
+            ax.scatter(x[df_bin["NG_YS"]], df_bin["YS"][df_bin["NG_YS"]], color="red", s=50, zorder=5)
     
+            # EL
             ax.plot(x, df_bin["EL"], marker="^", label="EL", color="#ff7f0e")
             ax.fill_between(x, df_bin["EL"].min(), df_bin["EL"].max(), color="#ff7f0e", alpha=0.1)
+            ax.scatter(x[df_bin["NG_EL"]], df_bin["EL"][df_bin["NG_EL"]], color="red", s=50, zorder=5)
     
             # Spec lines
-            ax.axhline(TS_LSL, color="#1f77b4", linestyle="--", alpha=0.5)
-            ax.axhline(TS_USL, color="#1f77b4", linestyle="--", alpha=0.5)
-            ax.axhline(YS_LSL, color="#2ca02c", linestyle="--", alpha=0.5)
-            ax.axhline(YS_USL, color="#2ca02c", linestyle="--", alpha=0.5)
-            ax.axhline(EL_LSL, color="#ff7f0e", linestyle="--", alpha=0.5)
-            ax.axhline(EL_USL, color="#ff7f0e", linestyle="--", alpha=0.5)
+            for val, col in [(TS_LSL, "#1f77b4"), (TS_USL, "#1f77b4"),
+                             (YS_LSL, "#2ca02c"), (YS_USL, "#2ca02c"),
+                             (EL_LSL, "#ff7f0e"), (EL_USL, "#ff7f0e")]:
+                if val != 0:
+                    ax.axhline(val, color=col, linestyle="--", alpha=0.5)
     
             ax.set_xlabel("Coil Sequence")
-            ax.set_ylabel("Mechanical Properties")
+            ax.set_ylabel("Mechanical Properties (MPa / %)")
             ax.set_title(f"Trend: TS/YS/EL for HRB {hrb}")
             ax.grid(True, linestyle="--", alpha=0.5)
             ax.legend(loc="best")
             plt.tight_layout()
             st.pyplot(fig)
     
-            # Safe key cho download
+            # Safe key download
             safe_hrb = re.sub(r"[<≥]", "", str(hrb))
             buf = fig_to_png(fig)
             st.download_button(
@@ -443,52 +467,27 @@ for _, g in valid.iterrows():
                 key=f"download_trend_{safe_hrb}"
             )
     
-            # --- Distribution chart ---
-            fig, ax = plt.subplots(figsize=(12,4))
-            ax.hist(df_bin["TS"], bins=10, alpha=0.4, label="TS", color="#1f77b4", edgecolor="black")
-            ax.hist(df_bin["YS"], bins=10, alpha=0.4, label="YS", color="#2ca02c", edgecolor="black")
-            ax.hist(df_bin["EL"], bins=10, alpha=0.4, label="EL", color="#ff7f0e", edgecolor="black")
-    
-            ax.set_title(f"Distribution: TS/YS/EL for HRB {hrb}")
-            ax.set_xlabel("Value")
-            ax.set_ylabel("Count")
-            ax.grid(alpha=0.3, linestyle="--")
-            ax.legend()
-            plt.tight_layout()
-            st.pyplot(fig)
-    
-            buf = fig_to_png(fig)
-            st.download_button(
-                label=f"📥 Download Distribution HRB {hrb}",
-                data=buf,
-                file_name=f"dist_{safe_hrb}.png",
-                mime="image/png",
-                key=f"download_dist_{safe_hrb}"
-            )
-    
             # --- Mechanical Properties Table collapsible ---
-            summary_bin = df_bin[["COIL_NO","TS","YS","EL","HRB_bin"]].copy()
-            
-            # Thêm cột tiêu chuẩn
+            summary_bin = df_bin[["COIL_NO","TS","YS","EL","HRB_bin","NG_TS","NG_YS","NG_EL"]].copy()
             summary_bin["TS_LSL"] = TS_LSL
             summary_bin["TS_USL"] = TS_USL
             summary_bin["YS_LSL"] = YS_LSL
             summary_bin["YS_USL"] = YS_USL
             summary_bin["EL_LSL"] = EL_LSL
             summary_bin["EL_USL"] = EL_USL
-            
+    
             with st.expander(f"📋 Mechanical Properties Table (HRB {hrb})", expanded=False):
                 st.dataframe(
                     summary_bin.style.format("{:.1f}", subset=["TS","YS","EL","TS_LSL","TS_USL","YS_LSL","YS_USL","EL_LSL","EL_USL"]),
                     use_container_width=True
                 )
-
     
-            # --- Kết luận tự động ---
+            # --- Quick conclusion ---
             conclusion = []
-            for prop, lsl, usl in [("TS", TS_LSL, TS_USL), ("YS", YS_LSL, YS_USL), ("EL", EL_LSL, EL_USL)]:
-                series = df_bin[prop]
-                n_ng = ((series < lsl) | (series > usl)).sum()
+            for prop, lsl, usl, ng_col in [("TS", TS_LSL, TS_USL, "NG_TS"),
+                                           ("YS", YS_LSL, YS_USL, "NG_YS"),
+                                           ("EL", EL_LSL, EL_USL, "NG_EL")]:
+                n_ng = df_bin[ng_col].sum()
                 if n_ng == 0:
                     conclusion.append(f"{prop} ✅ OK")
                 else:
