@@ -173,9 +173,9 @@ view_mode = st.sidebar.radio(
 GROUP_COLS = ["Rolling_Type","Metallic_Type","Quality_Group","Gauge_Range","Material"]
 
 cnt = df.groupby(GROUP_COLS).agg(N_Coils=("COIL_NO","nunique")).reset_index()
-valid = cnt[cnt["N_Coils"] >= 25]
+valid = cnt[cnt["N_Coils"] >= 30]
 if valid.empty:
-    st.warning("⚠️ No group with ≥25 coils")
+    st.warning("⚠️ No group with ≥30 coils")
     st.stop()
 
 # ================================
