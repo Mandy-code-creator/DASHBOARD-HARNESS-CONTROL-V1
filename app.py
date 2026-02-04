@@ -390,7 +390,7 @@ for _, g in valid.iterrows():
     
         # ===== 2️⃣ Hàm check NG safe NA
         def check_ng(series, lsl, usl):
-            series = series.fillna(0)  # Replace NA tạm thời để tránh lỗi
+            series = series.fillna(0)
             if lsl == 0 and usl == 0:
                 return pd.Series([False]*len(series), index=series.index)
             elif lsl != 0 and usl == 0:
@@ -400,19 +400,19 @@ for _, g in valid.iterrows():
             else:
                 return (series < lsl) | (series > usl)
     
-        # ===== 3️⃣ Loop qua từng HRB bin
-        for hrb in hrb_bins:
+        # ===== 3️⃣ Loop HRB bin
+        for i, hrb in enumerate(hrb_bins):
             df_bin = sub[sub["HRB_bin"] == hrb].sort_values("COIL_NO")
             N = len(df_bin)
             if N == 0:
                 continue
     
-            # Lấy giới hạn cơ tính
+            # Giới hạn cơ tính
             TS_LSL, TS_USL = df_bin["Standard TS min"].iloc[0], df_bin["Standard TS max"].iloc[0]
             YS_LSL, YS_USL = df_bin["Standard YS min"].iloc[0], df_bin["Standard YS max"].iloc[0]
             EL_LSL, EL_USL = df_bin["Standard EL min"].iloc[0], df_bin["Standard EL max"].iloc[0]
     
-            # ===== 3️⃣ Tạo cột NG safe NA
+            # Tạo cột NG
             df_bin["NG_TS"] = check_ng(df_bin["TS"], TS_LSL, TS_USL)
             df_bin["NG_YS"] = check_ng(df_bin["YS"], YS_LSL, YS_USL)
             df_bin["NG_EL"] = check_ng(df_bin["EL"], EL_LSL, EL_USL)
@@ -426,11 +426,9 @@ for _, g in valid.iterrows():
             for col, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
                 ax.plot(x, df_bin[col], marker=marker, label=col, color=color)
                 ax.fill_between(x, df_bin[col].min(), df_bin[col].max(), color=color, alpha=0.1)
-                # Highlight NG points safe
                 ng_idx = df_bin.index[df_bin[f"NG_{col}"].fillna(False)].to_list()
-                ax.scatter([x[i] for i in range(N) if i in ng_idx],
-                           df_bin.loc[ng_idx, col],
-                           color="red", s=50, zorder=5)
+                ax.scatter([x[j] for j in range(N) if df_bin.index[j] in ng_idx],
+                           df_bin.loc[ng_idx, col], color="red", s=50, zorder=5)
     
             # Spec lines
             for val, col in [(TS_LSL, "#1f77b4"), (TS_USL, "#1f77b4"),
@@ -455,7 +453,7 @@ for _, g in valid.iterrows():
                 data=buf,
                 file_name=f"trend_{safe_hrb}.png",
                 mime="image/png",
-                key=f"download_trend_{safe_hrb}"
+                key=f"download_trend_{safe_hrb}_{i}"   # ✅ index i để unique key
             )
     
             # ===== 5️⃣ Distribution Chart
@@ -476,10 +474,10 @@ for _, g in valid.iterrows():
                 data=buf,
                 file_name=f"dist_{safe_hrb}.png",
                 mime="image/png",
-                key=f"download_dist_{safe_hrb}"
+                key=f"download_dist_{safe_hrb}_{i}"   # ✅ index i để unique key
             )
     
-            # ===== 6️⃣ Mechanical Properties Table (Collapsible)
+            # ===== 6️⃣ Mechanical Properties Table
             summary_bin = df_bin[["COIL_NO","TS","YS","EL","HRB_bin","NG_TS","NG_YS","NG_EL"]].copy()
             summary_bin["TS_LSL"], summary_bin["TS_USL"] = TS_LSL, TS_USL
             summary_bin["YS_LSL"], summary_bin["YS_USL"] = YS_LSL, YS_USL
