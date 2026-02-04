@@ -1,11 +1,12 @@
 # ================================
-# FULL STREAMLIT APP – FINAL VERSION
+# FULL STREAMLIT APP – FINAL STABLE
 # ================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
 import requests
+import re
 from io import StringIO, BytesIO
 import matplotlib.pyplot as plt
 
@@ -43,14 +44,14 @@ raw = load_csv(MAIN_DATA_URL)
 gauge_master = load_csv(GAUGE_MASTER_URL)
 
 # ================================
-# FIND METALLIC COLUMN
+# FIND METALLIC TYPE COLUMN
 # ================================
 metal_col = next(
     (c for c in raw.columns if "METALLIC" in c.upper() and "COATING" in c.upper()),
     None
 )
 if metal_col is None:
-    st.error("❌ METALLIC COATING TYPE column not found")
+    st.error("❌ Cannot find METALLIC COATING TYPE column")
     st.stop()
 
 raw["Metallic_Type"] = raw[metal_col]
@@ -84,7 +85,7 @@ df["Quality_Group"] = np.where(
 )
 
 # ================================
-# STANDARD RANGE
+# SPLIT STANDARD HARDNESS
 # ================================
 def split_std(x):
     if isinstance(x, str) and "~" in x:
@@ -100,41 +101,76 @@ df[["Std_Min", "Std_Max"]] = df["Std_Range_Text"].apply(
 )
 
 # ================================
-# NUMERIC
+# FORCE NUMERIC
 # ================================
 for c in ["Order_Gauge", "Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL"]:
     df[c] = pd.to_numeric(df[c], errors="coerce")
 
 # ================================
-# GAUGE RANGE MAPPING
+# PARSE GAUGE RANGE (ROBUST)
 # ================================
 def parse_range(text):
-    nums = [float(x) for x in text.replace("≦", "<=").replace("＜", "<").replace("≤", "<=").replace("≥", ">=").replace("＞", ">").replace("=", "").split() if x.replace('.', '', 1).isdigit()]
-    return nums[0], nums[-1]
+    """
+    Parse range text like:
+    '0.28≦T＜0.35', '0.28~0.35', '0.28 - 0.35'
+    Return (lo, hi)
+    """
+    if not isinstance(text, str):
+        return None
 
+    nums = re.findall(r"\d+\.?\d*", text)
+    if len(nums) < 2:
+        return None
+
+    return float(nums[0]), float(nums[1])
+
+# ================================
+# BUILD GAUGE RANGE LIST
+# ================================
 gauge_ranges = []
+
 for _, r in gauge_master.iterrows():
-    lo, hi = parse_range(r["Range_Name"])
+    parsed = parse_range(r["Range_Name"])
+    if parsed is None:
+        continue
+    lo, hi = parsed
     gauge_ranges.append((lo, hi, r["Range_Name"]))
 
+if not gauge_ranges:
+    st.error("❌ No valid gauge range parsed from master sheet")
+    st.stop()
+
+# ================================
+# MAP ORDER GAUGE → GAUGE RANGE
+# ================================
 def map_gauge_range(x):
+    if pd.isna(x):
+        return np.nan
     for lo, hi, name in gauge_ranges:
         if lo <= x < hi:
             return name
     return np.nan
 
 df["Gauge_Range"] = df["Order_Gauge"].apply(map_gauge_range)
-
 df = df.dropna(subset=["Gauge_Range"])
 
 # ================================
-# SIDEBAR FILTER
+# SIDEBAR FILTERS
 # ================================
 st.sidebar.header("🎛 FILTERS")
 
-rolling = st.sidebar.radio("Classify Material", sorted(df["Rolling_Type"].unique()))
-metal = st.sidebar.radio("Metallic Coating", sorted(df["Metallic_Type"].unique()))
-qg = st.sidebar.radio("Quality Group", sorted(df["Quality_Group"].unique()))
+rolling = st.sidebar.radio(
+    "Classify Material",
+    sorted(df["Rolling_Type"].dropna().unique())
+)
+metal = st.sidebar.radio(
+    "Metallic Coating Type",
+    sorted(df["Metallic_Type"].dropna().unique())
+)
+qg = st.sidebar.radio(
+    "Quality Group",
+    sorted(df["Quality_Group"].dropna().unique())
+)
 
 df = df[
     (df["Rolling_Type"] == rolling) &
@@ -143,7 +179,7 @@ df = df[
 ]
 
 # ================================
-# GROUP CONDITION ≥ 30
+# GROUP CONDITION (≥ 30 COILS)
 # ================================
 GROUP_COLS = [
     "Rolling_Type",
@@ -155,8 +191,8 @@ GROUP_COLS = [
 
 count_df = (
     df.groupby(GROUP_COLS)
-    .agg(N_Coils=("COIL_NO", "nunique"))
-    .reset_index()
+      .agg(N_Coils=("COIL_NO", "nunique"))
+      .reset_index()
 )
 
 valid = count_df[count_df["N_Coils"] >= 30]
@@ -166,7 +202,7 @@ if valid.empty:
     st.stop()
 
 # ================================
-# MAIN LOOP (LOGIC GIỮ NGUYÊN)
+# MAIN LOOP (QA LOGIC GIỮ NGUYÊN)
 # ================================
 for _, cond in valid.iterrows():
 
@@ -190,11 +226,11 @@ for _, cond in valid.iterrows():
     st.markdown(
         f"""
         ## 🧱 {cond["Material"]} | {cond["Gauge_Range"]}
-        - Rolling: **{cond["Rolling_Type"]}**
-        - Metallic: **{cond["Metallic_Type"]}**
-        - Quality: **{cond["Quality_Group"]}**
+        - Rolling Type: **{cond["Rolling_Type"]}**
+        - Metallic Coating: **{cond["Metallic_Type"]}**
+        - Quality Group: **{cond["Quality_Group"]}**
         - n = **{cond["N_Coils"]} coils**
-        - ❌ Out = **{n_out}** → **{qa}**
+        - ❌ Out = **{n_out} → {qa}**
         """
     )
 
