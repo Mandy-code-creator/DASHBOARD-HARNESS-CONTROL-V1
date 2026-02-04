@@ -494,4 +494,98 @@ for _, g in valid.iterrows():
                     f"**📌 Quick Conclusion:** HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | " +
                     " | ".join(conclusion)
                 )
+    elif view_mode == "🧮 Predict TS/YS/EL":
+        sub_fit = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
+        if len(sub_fit) < 5:
+            st.warning("⚠️ Not enough data to fit model for TS/YS/EL prediction.")
+            continue
+    
+        # Hardness spec
+        lsl, usl = sub_fit["Std_Min"].iloc[0], sub_fit["Std_Max"].iloc[0]
+    
+        # 1️⃣ Fit linear regression using numpy.polyfit
+        predictions = {}
+        for prop in ["TS","YS","EL"]:
+            X = sub_fit["Hardness_LAB"].values
+            y = sub_fit[prop].values
+            a, b = np.polyfit(X, y, 1)
+            y_min = a*lsl + b
+            y_max = a*usl + b
+            y_mean = a*(lsl+usl)/2 + b
+            predictions[prop] = {"min": y_min, "mean": y_mean, "max": y_max}
+    
+        # 2️⃣ Quan sát thực tế
+        observed = {}
+        for prop in ["TS","YS","EL"]:
+            obs_min = sub_fit[prop].min()
+            obs_max = sub_fit[prop].max()
+            obs_mean = sub_fit[prop].mean()
+            observed[prop] = {"min": obs_min, "mean": obs_mean, "max": obs_max}
+    
+        # 3️⃣ Biểu đồ so sánh Predicted vs Observed
+        props = ["TS","YS","EL"]
+        x = np.arange(len(props))
+        width = 0.35
+    
+        fig, ax = plt.subplots(figsize=(8,5))
+        pred_means = [predictions[p]["mean"] for p in props]
+        pred_err = [[pred_means[i]-predictions[props[i]]["min"] for i in range(3)],
+                    [predictions[props[i]]["max"]-pred_means[i] for i in range(3)]]
+    
+        obs_means = [observed[p]["mean"] for p in props]
+        obs_err = [[obs_means[i]-observed[props[i]]["min"] for i in range(3)],
+                   [observed[props[i]]["max"]-obs_means[i] for i in range(3)]]
+    
+        bars1 = ax.bar(x - width/2, pred_means, width, yerr=pred_err, capsize=6,
+                       label="Predicted", color="#1f77b4", alpha=0.7)
+        bars2 = ax.bar(x + width/2, obs_means, width, yerr=obs_err, capsize=6,
+                       label="Observed", color="#ff7f0e", alpha=0.7)
+    
+        # Highlight nếu Predicted vượt Observed
+        for i, p in enumerate(props):
+            if predictions[p]["min"] < observed[p]["min"] or predictions[p]["max"] > observed[p]["max"]:
+                bars1[i].set_edgecolor("red")
+                bars1[i].set_linewidth(2)
+    
+        ax.set_xticks(x)
+        ax.set_xticklabels(props, fontsize=12, fontweight="bold")
+        ax.set_ylabel("Value (MPa / %)")
+        ax.set_title(f"Predicted vs Observed TS/YS/EL for Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight="bold")
+        ax.grid(True, linestyle="--", alpha=0.3)
+        ax.legend()
+    
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+        # Download chart
+        buf = fig_to_png(fig)
+        st.download_button(
+            label="📥 Download Prediction vs Observed Chart",
+            data=buf,
+            file_name=f"Predicted_vs_Observed_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
+            mime="image/png"
+        )
+    
+        # 4️⃣ Bảng collapsible thu gọn
+        df_summary = pd.DataFrame({
+            "Property": props,
+            "Predicted Min": [predictions[p]["min"] for p in props],
+            "Predicted Mean": [predictions[p]["mean"] for p in props],
+            "Predicted Max": [predictions[p]["max"] for p in props],
+            "Observed Min": [observed[p]["min"] for p in props],
+            "Observed Mean": [observed[p]["mean"] for p in props],
+            "Observed Max": [observed[p]["max"] for p in props],
+        })
+    
+        with st.expander("📋 Detailed Table (collapsed)", expanded=False):
+            st.dataframe(df_summary.style.format("{:.1f}", subset=df_summary.columns[1:]),
+                         use_container_width=True)
+    
+        # 5️⃣ Quick Conclusion
+        conclusion = []
+        for p in props:
+            status = "✅ Within observed range" if (predictions[p]["min"] >= observed[p]["min"] and
+                                                   predictions[p]["max"] <= observed[p]["max"]) else "⚠️ Out of observed range"
+            conclusion.append(f"{p}: {status}")
+        st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
     
