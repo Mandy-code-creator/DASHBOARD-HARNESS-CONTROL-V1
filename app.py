@@ -474,27 +474,38 @@ for _, g in valid.iterrows():
                 st.dataframe(summary_bin.style.format("{:.1f}", subset=["TS","YS","EL"]),
                              use_container_width=True)
     
-            # ===== Quick Conclusion Safe + Hardness Limits
-            lsl, usl = sub["Std_Min"].iloc[0], sub["Std_Max"].iloc[0]  # giới hạn Hardness
-            
+            # ===== 7️⃣ Quick Conclusion Safe – TS/YS/EL per group
             conclusion = []
+            
+            # Dải hardness spec
+            hrb_min, hrb_max = sub[["Std_Min","Std_Max"]].iloc[0]
+            
+            # Quan sát Hardness thực tế (LAB)
+            obs_hrb_min = sub["Hardness_LAB"].min(skipna=True)
+            obs_hrb_max = sub["Hardness_LAB"].max(skipna=True)
+            observed_hrb = f"{obs_hrb_min:.1f} – {obs_hrb_max:.1f}" if not np.isnan(obs_hrb_min) else "-"
+            
             for prop, ng_col in [("TS","NG_TS"), ("YS","NG_YS"), ("EL","NG_EL")]:
-                series = df_bin[prop].dropna()
-                N = len(series)
-                if N == 0:
-                    conclusion.append(f"{prop}: ⚠️ No data")
-                    continue
+                # Số coil NG / tổng
+                n_ng = sub[ng_col].fillna(False).sum()
+                N = len(sub)
+                status = "✅ OK" if n_ng == 0 else f"⚠️ {n_ng}/{N} out of spec"
+                
+                # Cơ tính thực tế
+                val_min = sub[prop].min(skipna=True)
+                val_max = sub[prop].max(skipna=True)
+                if np.isnan(val_min) or np.isnan(val_max):
+                    val_range = "-"
+                else:
+                    val_range = f"{val_min:.1f} – {val_max:.1f}"
+                
+                # Kết luận dạng:
+                # TS: ⚠️ 12/34 out of spec | HRB limit=88–97 | observed HRB=92.1–99.0 | TS=610–725
+                conclusion.append(
+                    f"{prop}: {status} | HRB limit={hrb_min:.1f}–{hrb_max:.1f} | observed HRB={observed_hrb} | {prop}={val_range}"
+                )
             
-                val_min = series.min()
-                val_max = series.max()
-                n_ng = df_bin.get(ng_col, pd.Series([False]*len(df_bin))).fillna(False).sum()
-                status = "✅ OK" if n_ng==0 else f"⚠️ {int(n_ng)}/{N} out of spec"
-            
-                val_min_s = f"{val_min:.1f}" if pd.notna(val_min) else "-"
-                val_max_s = f"{val_max:.1f}" if pd.notna(val_max) else "-"
-            
-                # Thêm giới hạn Hardness Min/Max
-                conclusion.append(f"{prop}: {status} | HRB limit={lsl:.1f}-{usl:.1f} | {val_min_s} – {val_max_s}")
-            
-            st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
-            
+            # Hiển thị Quick Conclusion
+            st.markdown("**📌 Quick Conclusion:**")
+            for line in conclusion:
+                st.markdown(line)
