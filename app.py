@@ -474,26 +474,40 @@ for _, g in valid.iterrows():
                 st.dataframe(summary_bin.style.format("{:.1f}", subset=["TS","YS","EL"]),
                              use_container_width=True)
     
-            # ===== Quick Conclusion Safe – Count by COIL_NO
+            # ===== Quick Conclusion Full Safe
             conclusion = []
-            
-            for prop in ["TS", "YS", "EL"]:
-                # Số cuộn thực tế
-                N_coil = df_bin["COIL_NO"].nunique()
-                
-                # Tính NG theo cuộn
-                ng_coils = df_bin.loc[df_bin[f"NG_{prop}"], "COIL_NO"].unique()
-                n_ng = len(ng_coils)
-                
-                # Giá trị min/max theo toàn bộ dòng
+            for prop in ["TS","YS","EL"]:
                 series = df_bin[prop].dropna()
-                if len(series) == 0:
-                    val_min = val_max = np.nan
-                else:
-                    val_min, val_max = series.min(), series.max()
+                N = len(series)
                 
-                status = "✅ OK" if n_ng == 0 else f"⚠️ {n_ng}/{N_coil} out of spec"
-                conclusion.append(f"{prop}: {status} | Range={val_min:.1f}-{val_max:.1f}")
+                # Nếu không có dữ liệu, hiển thị "-"
+                if N == 0:
+                    conclusion.append(f"{prop}: ⚠️ No data")
+                    continue
+                
+                mean = series.mean()
+                minv, maxv = series.min(), series.max()
+                std = series.std(ddof=1) if N>1 else np.nan
+                
+                # Lấy giới hạn safe, nếu không có, mặc định np.nan
+                lsl = df_bin.get(f"{prop}_LSL", pd.Series([np.nan]*len(df_bin))).iloc[0]
+                usl = df_bin.get(f"{prop}_USL", pd.Series([np.nan]*len(df_bin))).iloc[0]
+                
+                # Cp / Cpk safe
+                cp = (usl-lsl)/(6*std) if std>0 and pd.notna(lsl) and pd.notna(usl) else np.nan
+                cpk = min(usl-mean, mean-lsl)/(3*std) if std>0 and pd.notna(lsl) and pd.notna(usl) else np.nan
+                
+                # NG count safe
+                n_ng = df_bin.get(f"NG_{prop}", pd.Series([False]*len(df_bin))).sum()
+                status = "✅ OK" if n_ng==0 else f"⚠️ {int(n_ng)}/{N} out of spec"
+                
+                # Build conclusion string
+                conclusion.append(
+                    f"{prop}: {status} | N={N} | Mean={mean:.1f} | Range={minv:.1f}-{maxv:.1f} | ±σ={std:.1f if not np.isnan(std) else '-'} | Cp/Cpk={cp:.2f if not np.isnan(cp) else '-'}/{cpk:.2f if not np.isnan(cpk) else '-'}"
+                )
             
-            st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
+            # Show Quick Conclusion
+            st.markdown("**📌 Quick Conclusion (Full Safe):**")
+            for line in conclusion:
+                st.markdown(line)
 
