@@ -301,7 +301,7 @@ for _, g in valid.iterrows():
            file_name=f"distribution_{g['Material']}_{g['Gauge_Range']}.png",
            mime="image/png"
         )
-   elif view_mode == "🛠 Hardness → TS/YS/EL":
+    elif view_mode == "🛠 Hardness → TS/YS/EL":
         import plotly.graph_objects as go
     
         # =========================
