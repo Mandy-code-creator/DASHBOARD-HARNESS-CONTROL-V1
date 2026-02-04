@@ -1,178 +1,127 @@
-# ================================
-# FULL STREAMLIT APP – LOGIC CONFIRMED
-# - GIỮ NGUYÊN LOGIC QA STRICT (1 NG = FAIL)
-# - TÁCH BIỂU ĐỒ LAB / LINE
-# - KHÔNG VẼ HARDNESS = 0
-# - Y TICK STEP = 2.5 HRB
-# - LEGEND Ở NGOÀI BIỂU ĐỒ
-# - VIEW MODE: TABLE → TREND → DISTRIBUTION
-# ================================
-
 import streamlit as st
 import pandas as pd
 import numpy as np
+import matplotlib.pyplot as plt
 import requests
 from io import StringIO
-import matplotlib.pyplot as plt
-from io import BytesIO
-# ================================
-# UTILITY FUNCTION
-# ================================
-def fig_to_png(fig, dpi=200):
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
-    buf.seek(0)
-    return buf
+
 # ================================
 # PAGE CONFIG
 # ================================
-st.set_page_config(page_title="Material-level Hardness Detail", layout="wide")
-st.title("📊 Material-level Hardness & Mechanical Detail (Offline only)")
+st.set_page_config(
+    page_title="SPC Quality Dashboard",
+    layout="wide"
+)
+
+st.title("📊 SPC Quality Control Dashboard")
 
 # ================================
-# REFRESH BUTTON
+# NOTE FOR MANAGEMENT
 # ================================
-if st.sidebar.button("🔄 Refresh Data"):
-    st.cache_data.clear()
-    st.rerun()
+st.info("""
+**SPC Analysis Logic – Management Note**
+
+• Data is grouped by: Classify material, Metallic Coating Type, Quality Group, Gauge Range, HR Steel Grade  
+• CQ00 and CQ06 are merged due to equivalent quality behavior  
+• Thickness is analyzed by predefined gauge ranges (not single values)  
+• SPC condition is valid only when ≥ 30 coils  
+• QA logic is strict: **1 NG → FAIL**
+""")
 
 # ================================
 # LOAD DATA
 # ================================
-DATA_URL = "https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
-
 @st.cache_data
-def load_data(url):
-    r = requests.get(url)
-    r.encoding = "utf-8"
-    return pd.read_csv(StringIO(r.text))
+def load_main_data():
+    return pd.read_csv("data.csv")   # ← file chính của bạn
 
-raw = load_data(DATA_URL)
-
-# ================================
-# FIND METALLIC TYPE COLUMN
-# ================================
-metal_col = None
-for c in raw.columns:
-    if "METALLIC" in c.upper() and "COATING" in c.upper():
-        metal_col = c
-        break
-
-if metal_col is None:
-    st.error("❌ Cannot find METALLIC COATING TYPE column")
-    st.stop()
-
-raw["Metallic_Type"] = raw[metal_col]
-
-# ================================
-# RENAME COLUMNS
-# ================================
-column_mapping = {
-    "PRODUCT SPECIFICATION CODE": "Product_Spec",
-    "HR STEEL GRADE": "Material",
-    "Claasify material": "Rolling_Type",
-    "TOP COATMASS": "Top_Coatmass",
-    "ORDER GAUGE": "Order_Gauge",
-    "COIL NO": "COIL_NO",
-    "QUALITY_CODE": "Quality_Code",
-    "Standard Hardness": "Std_Range_Text",
-    "HARDNESS 冶金": "Hardness_LAB",
-    "HARDNESS 鍍鋅線 C": "Hardness_LINE",
-    "TENSILE_YIELD": "YS",
-    "TENSILE_TENSILE": "TS",
-    "TENSILE_ELONG": "EL",
-}
-
-df = raw.rename(columns={k: v for k, v in column_mapping.items() if k in raw.columns})
-
-# ================================
-# CHECK REQUIRED COLUMNS
-# ================================
-required_cols = [
-    "Product_Spec","Material","Rolling_Type","Metallic_Type",
-    "Top_Coatmass","Order_Gauge","COIL_NO","Quality_Code",
-    "Std_Range_Text","Hardness_LAB","Hardness_LINE","YS","TS","EL"
-]
-
-missing = [c for c in required_cols if c not in df.columns]
-if missing:
-    st.error(f"❌ Missing columns: {missing}")
-    st.stop()
-
-# ================================
-# SPLIT STANDARD RANGE
-# ================================
-def split_std(x):
-    if isinstance(x, str) and "~" in x:
-        try:
-            lo, hi = x.split("~")
-            return pd.Series([float(lo), float(hi)])
-        except:
-            return pd.Series([np.nan, np.nan])
-    return pd.Series([np.nan, np.nan])
-
-df[["Std_Min","Std_Max"]] = df["Std_Range_Text"].apply(split_std)
-df.drop(columns=["Std_Range_Text"], inplace=True)
+df = load_main_data()
 
 # ================================
 # FORCE NUMERIC
 # ================================
-for c in ["Hardness_LAB","Hardness_LINE","YS","TS","EL"]:
+NUM_COLS = ["Hardness_LAB", "Hardness_LINE", "Order_Gauge"]
+for c in NUM_COLS:
     df[c] = pd.to_numeric(df[c], errors="coerce")
+
+# ================================
+# QUALITY CODE GROUPING
+# ================================
+def map_quality_group(q):
+    if q in ["CQ00", "CQ06"]:
+        return "CQ00/CQ06"
+    return q
+
+df["QUALITY_CODE_GROUP"] = df["Quality_Code"].apply(map_quality_group)
+
+# ================================
+# LOAD GAUGE RANGE MASTER
+# ================================
+GAUGE_GROUP_URL = "https://docs.google.com/spreadsheets/d/XXXX/export?format=csv"
+
+@st.cache_data
+def load_gauge_master(url):
+    r = requests.get(url)
+    r.encoding = "utf-8"
+    return pd.read_csv(StringIO(r.text))
+
+gauge_master = load_gauge_master(GAUGE_GROUP_URL)
+
+def map_gauge_range(g):
+    row = gauge_master[
+        (gauge_master["Gauge_Min"] <= g) &
+        (gauge_master["Gauge_Max"] > g)
+    ]
+    if not row.empty:
+        return row.iloc[0]["Gauge_Group"]
+    return "UNDEFINED"
+
+df["Gauge_Range"] = df["Order_Gauge"].apply(map_gauge_range)
 
 # ================================
 # SIDEBAR FILTERS
 # ================================
-st.sidebar.header("🎛 FILTERS")
+st.sidebar.header("🎛 Filters")
 
-rolling = st.sidebar.radio("Rolling Type", sorted(df["Rolling_Type"].dropna().unique()))
+rolling = st.sidebar.radio(
+    "Classify Material",
+    sorted(df["Rolling_Type"].dropna().unique())
+)
 df = df[df["Rolling_Type"] == rolling]
 
-metal = st.sidebar.radio("Metallic Coating", sorted(df["Metallic_Type"].dropna().unique()))
+metal = st.sidebar.radio(
+    "Metallic Coating Type",
+    sorted(df["Metallic_Type"].dropna().unique())
+)
 df = df[df["Metallic_Type"] == metal]
 
-qc = st.sidebar.radio("Quality Code", sorted(df["Quality_Code"].dropna().unique()))
-df = df[df["Quality_Code"] == qc]
-
-# ================================
-# VIEW MODE
-# ================================
-view_mode = st.sidebar.radio(
-    "📊 View Mode",
-    [
-        "📋 Data Table",
-        "📈 Trend (LAB / LINE)",
-        "📊 Distribution",
-        "📐 Hardness Optimal Range (IQR)"
-    ],
-    index=0
+qc = st.sidebar.radio(
+    "Quality Group",
+    sorted(df["QUALITY_CODE_GROUP"].dropna().unique())
 )
-
-if view_mode == "📐 Hardness Optimal Range (IQR)":
-    K = st.sidebar.selectbox(
-        "IQR factor K",
-        [0.5, 0.75, 1.0, 1.25, 1.5],
-        index=2
-    )
-
-
-st.write("DEBUG view_mode =", view_mode)
+df = df[df["QUALITY_CODE_GROUP"] == qc]
 
 # ================================
-# GROUP CONDITION (≥30 COILS)
+# CONDITION DEFINITION
 # ================================
-GROUP_COLS = ["Product_Spec","Material","Metallic_Type","Top_Coatmass","Order_Gauge"]
+GROUP_COLS = [
+    "Rolling_Type",
+    "Metallic_Type",
+    "QUALITY_CODE_GROUP",
+    "Gauge_Range",
+    "Material"
+]
 
-count_df = (
+cond_df = (
     df.groupby(GROUP_COLS)
-      .agg(N_Coils=("COIL_NO","nunique"))
+      .agg(N_Coils=("COIL_NO", "nunique"))
       .reset_index()
 )
 
-valid_conditions = count_df[count_df["N_Coils"] >= 30]
+valid_conditions = cond_df[cond_df["N_Coils"] >= 30]
 
 if valid_conditions.empty:
-    st.warning("⚠️ No condition with ≥ 30 coils")
+    st.warning("⚠️ No SPC condition with ≥ 30 coils")
     st.stop()
 
 # ================================
@@ -180,179 +129,38 @@ if valid_conditions.empty:
 # ================================
 for _, cond in valid_conditions.iterrows():
 
-    spec, mat, coat, gauge, n = (
-        cond["Product_Spec"], cond["Material"], cond["Top_Coatmass"],
-        cond["Order_Gauge"], int(cond["N_Coils"])
+    st.subheader(
+        f"Material: {cond['Material']} | "
+        f"Gauge: {cond['Gauge_Range']} | "
+        f"Coils: {cond['N_Coils']}"
     )
 
     sub = df[
-        (df["Product_Spec"] == spec) &
-        (df["Material"] == mat) &
-        (df["Top_Coatmass"] == coat) &
-        (df["Order_Gauge"] == gauge)
+        (df["Rolling_Type"] == cond["Rolling_Type"]) &
+        (df["Metallic_Type"] == cond["Metallic_Type"]) &
+        (df["QUALITY_CODE_GROUP"] == cond["QUALITY_CODE_GROUP"]) &
+        (df["Gauge_Range"] == cond["Gauge_Range"]) &
+        (df["Material"] == cond["Material"])
     ].copy().sort_values("COIL_NO").reset_index(drop=True)
 
-    lo, hi = sub[["Std_Min","Std_Max"]].iloc[0]
+    # ===== QA LOGIC =====
+    sub["QA_Result"] = np.where(sub["NG_Flag"] == 1, "FAIL", "PASS")
 
-    # ===== QA STRICT LOGIC (KHÔNG ĐỔI) =====
-    sub["NG_LAB"]  = (sub["Hardness_LAB"]  < lo) | (sub["Hardness_LAB"]  > hi)
-    sub["NG_LINE"] = (sub["Hardness_LINE"] < lo) | (sub["Hardness_LINE"] > hi)
-    sub["COIL_NG"] = sub["NG_LAB"] | sub["NG_LINE"]
+    # ===== TABLE =====
+    st.dataframe(sub, use_container_width=True)
 
-    n_out = sub[sub["COIL_NG"]]["COIL_NO"].nunique()
-    qa_result = "FAIL" if n_out > 0 else "PASS"
+    # ===== SPC CHART =====
+    fig, ax = plt.subplots(figsize=(10, 4))
 
-    st.markdown(
-        f"## 🧱 `{spec}`  \n"
-        f"Material: **{mat}** | Coatmass: **{coat}** | Gauge: **{gauge}**  \n"
-        f"➡️ n = **{n} coils** | ❌ Out = **{n_out}** | 🧪 **{qa_result}**"
-    )
+    y = sub["Hardness_LAB"]
+    ax.plot(y.index + 1, y, marker="o")
+    ax.set_title("Hardness LAB Trend")
+    ax.set_xlabel("Batch No")
+    ax.set_ylabel("HRB")
 
-    # ================================
-     # ================================
-    # VIEW 1 — DATA TABLE
-    # ================================
-    if view_mode == "📋 Data Table":
+    ax.axhline(y.mean(), linestyle="--")
+    ax.grid(True)
 
-        show_cols = [
-            "COIL_NO",
-            "Std_Min", "Std_Max",
-            "Hardness_LAB", "Hardness_LINE",
-            "NG_LAB", "NG_LINE",
-            "YS", "TS", "EL",
-            "Standard_YS_Min", "Standard_YS_Max",
-            "Standard_TS_Min", "Standard_TS_Max",
-            "Standard_EL_Min", "Standard_EL_Max",
-        ]
+    st.pyplot(fig)
 
-        show_cols = [c for c in show_cols if c in sub.columns]
-
-        st.dataframe(
-            sub[show_cols].sort_values("COIL_NO"),
-            use_container_width=True
-        )
-
-    # ================================
-    # VIEW 2 — TREND
-    # ================================
-    elif view_mode == "📈 Trend (LAB / LINE)":
-
-        sub["X"] = np.arange(1, len(sub) + 1)
-
-        lab_df  = sub[sub["Hardness_LAB"]  > 0]
-        line_df = sub[sub["Hardness_LINE"] > 0]
-
-        y_min = np.floor(min(lo, lab_df["Hardness_LAB"].min(), line_df["Hardness_LINE"].min()))
-        y_max = np.ceil (max(hi, lab_df["Hardness_LAB"].max(), line_df["Hardness_LINE"].max()))
-
-        c1, c2 = st.columns(2)
-
-        with c1:
-            fig, ax = plt.subplots(figsize=(5,3))
-            ax.plot(lab_df["X"], lab_df["Hardness_LAB"], marker="o")
-            ax.axhline(lo, linestyle="--")
-            ax.axhline(hi, linestyle="--")
-            ax.set_ylim(y_min, y_max)
-            ax.set_yticks(np.arange(y_min, y_max+0.01, 2.5))
-            ax.set_title("Hardness LAB")
-            ax.grid(alpha=0.3)
-            st.pyplot(fig)
-            img = fig_to_png(fig)
-            st.download_button(
-            "⬇️ Download LAB Trend",
-            data=img,
-            file_name=f"{spec}_LAB_trend.png",
-            mime="image/png",
-            key=f"dl_lab_{spec}_{mat}_{gauge}_{coat}"
-            )
-
-        with c2:
-            fig, ax = plt.subplots(figsize=(5,3))
-            ax.plot(line_df["X"], line_df["Hardness_LINE"], marker="o")
-            ax.axhline(lo, linestyle="--")
-            ax.axhline(hi, linestyle="--")
-            ax.set_ylim(y_min, y_max)
-            ax.set_yticks(np.arange(y_min, y_max+0.01, 2.5))
-            ax.set_title("Hardness LINE")
-            ax.grid(alpha=0.3)
-            st.pyplot(fig)
-            img = fig_to_png(fig)
-            st.download_button(
-            "⬇️ Download LINE Trend",
-            data=img,
-            file_name=f"{spec}_LINE_trend.png",
-            mime="image/png",
-            key=f"dl_line_{spec}_{mat}_{gauge}_{coat}"
-            )
-
-
-    # ================================
-       # ================================
-    # VIEW 4 — HARDNESS OPTIMAL RANGE (IQR)
-    # ================================
-    elif view_mode == "📐 Hardness Optimal Range (IQR)":
-
-        st.markdown("### 📐 Hardness Optimal Control Range – IQR Method")
-        st.caption("🎯 LAB & LINE on same chart | Adjustable K | Compare with SPEC")
-
-        # ===== VALID DATA =====
-        lab = sub.loc[sub["Hardness_LAB"] > 0, "Hardness_LAB"]
-        line = sub.loc[sub["Hardness_LINE"] > 0, "Hardness_LINE"]
-
-        if lab.empty or line.empty:
-            st.warning("⚠️ Not enough valid LAB / LINE data")
-            continue
-
-        # ===== IQR FUNCTION =====
-        def iqr_range(x, k):
-            q1 = x.quantile(0.25)
-            q3 = x.quantile(0.75)
-            iqr = q3 - q1
-            return q1 - k * iqr, q3 + k * iqr
-
-        L_lab, U_lab = iqr_range(lab, K)
-        L_line, U_line = iqr_range(line, K)
-
-        # ===== COMBINED OPTIMAL =====
-        opt_lo = max(L_lab, L_line)
-        opt_hi = min(U_lab, U_line)
-
-        spec_lo, spec_hi = lo, hi
-        safe_lo = max(opt_lo, spec_lo)
-        safe_hi = min(opt_hi, spec_hi)
-
-        target = (safe_lo + safe_hi) / 2 if safe_lo < safe_hi else np.nan
-
-        # ===== PLOT =====
-        fig, ax = plt.subplots(figsize=(6,4))
-
-        ax.hist(lab, bins=10, alpha=0.5, label="LAB", edgecolor="black")
-        ax.hist(line, bins=10, alpha=0.5, label="LINE", edgecolor="black")
-
-        ax.axvline(spec_lo, linestyle="--", label="LSL")
-        ax.axvline(spec_hi, linestyle="--", label="USL")
-
-        if safe_lo < safe_hi:
-            ax.axvspan(safe_lo, safe_hi, alpha=0.25, label="OPTIMAL RANGE")
-
-        if not np.isnan(target):
-            ax.axvline(target, linestyle="-.", linewidth=2, label=f"TARGET ≈ {target:.1f}")
-
-        ax.set_title("LAB + LINE Hardness – Optimal Control Range")
-        ax.set_xlabel("HRB")
-        ax.set_ylabel("Count")
-        ax.legend(bbox_to_anchor=(1.02, 0.5), loc="center left", frameon=False)
-        ax.grid(alpha=0.3)
-
-        st.pyplot(fig)
-
-        # ===== SUMMARY =====
-        st.markdown("#### 📌 Decision Summary")
-        st.markdown(
-            f"""
-            - **SPEC Range** : {spec_lo:.1f} ~ {spec_hi:.1f} HRB  
-            - **IQR (K={K}) Optimal Range** : {opt_lo:.1f} ~ {opt_hi:.1f} HRB  
-            - **SAFE Control Range** : {safe_lo:.1f} ~ {safe_hi:.1f} HRB  
-            - **🎯 Suggested Target** : **{target:.1f} HRB**
-            """
-        )
+    st.divider()
