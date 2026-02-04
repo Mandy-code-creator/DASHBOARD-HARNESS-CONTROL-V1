@@ -1,6 +1,9 @@
 # ================================
-# FULL STREAMLIT APP – FINAL
+# FULL STREAMLIT APP – FINAL FIXED
+# CQ00 + CQ06 MERGED
+# PRODUCT SPEC MERGED IN SAME GAUGE RANGE
 # ================================
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -11,17 +14,8 @@ import matplotlib.pyplot as plt
 # ================================
 # PAGE CONFIG
 # ================================
-st.set_page_config(page_title="Material-level Hardness Detail", layout="wide")
-st.title("📊 Material-level Hardness & Mechanical Detail")
-
-# ================================
-# UTILS
-# ================================
-def fig_to_png(fig, dpi=200):
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=dpi, bbox_inches="tight")
-    buf.seek(0)
-    return buf
+st.set_page_config(page_title="SPC Hardness Dashboard", layout="wide")
+st.title("📊 SPC Hardness – Material / Gauge Level Analysis")
 
 # ================================
 # REFRESH
@@ -29,6 +23,15 @@ def fig_to_png(fig, dpi=200):
 if st.sidebar.button("🔄 Refresh Data"):
     st.cache_data.clear()
     st.rerun()
+
+# ================================
+# UTILS
+# ================================
+def fig_to_png(fig):
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
+    buf.seek(0)
+    return buf
 
 # ================================
 # LOAD MAIN DATA
@@ -44,13 +47,13 @@ def load_main():
 raw = load_main()
 
 # ================================
-# METALLIC TYPE AUTO FIND
+# METALLIC TYPE AUTO
 # ================================
 metal_col = next(c for c in raw.columns if "METALLIC" in c.upper())
 raw["Metallic_Type"] = raw[metal_col]
 
 # ================================
-# RENAME
+# RENAME COLUMNS
 # ================================
 df = raw.rename(columns={
     "PRODUCT SPECIFICATION CODE": "Product_Spec",
@@ -69,7 +72,7 @@ df = raw.rename(columns={
 })
 
 # ================================
-# STANDARD RANGE
+# STANDARD HARDNESS
 # ================================
 def split_std(x):
     if isinstance(x, str) and "~" in x:
@@ -80,7 +83,7 @@ def split_std(x):
 df[["Std_Min","Std_Max"]] = df["Std_Text"].apply(lambda x: pd.Series(split_std(x)))
 
 # ================================
-# NUMERIC
+# FORCE NUMERIC
 # ================================
 for c in ["Hardness_LAB","Hardness_LINE","YS","TS","EL","Order_Gauge"]:
     df[c] = pd.to_numeric(df[c], errors="coerce")
@@ -89,8 +92,8 @@ for c in ["Hardness_LAB","Hardness_LINE","YS","TS","EL","Order_Gauge"]:
 # QUALITY GROUP (CQ00 + CQ06)
 # ================================
 df["Quality_Group"] = df["Quality_Code"].replace({
-    "CQ00": "CQ00/CQ06",
-    "CQ06": "CQ00/CQ06"
+    "CQ00": "CQ00 / CQ06",
+    "CQ06": "CQ00 / CQ06"
 })
 
 # ================================
@@ -104,11 +107,10 @@ def load_gauge():
 
 gauge_df = load_gauge()
 gauge_df.columns = gauge_df.columns.str.strip()
-
 gauge_col = next(c for c in gauge_df.columns if "RANGE" in c.upper())
 
-def parse_range(txt):
-    nums = re.findall(r"\d+\.\d+|\d+", str(txt))
+def parse_range(text):
+    nums = re.findall(r"\d+\.\d+|\d+", str(text))
     if len(nums) < 2:
         return None, None
     return float(nums[0]), float(nums[-1])
@@ -131,10 +133,10 @@ df = df.dropna(subset=["Gauge_Range"])
 # ================================
 # SIDEBAR FILTER
 # ================================
-st.sidebar.header("🎛 FILTERS")
+st.sidebar.header("🎛 FILTER")
 
 rolling = st.sidebar.radio("Rolling Type", sorted(df["Rolling_Type"].unique()))
-metal   = st.sidebar.radio("Metallic Coating", sorted(df["Metallic_Type"].unique()))
+metal   = st.sidebar.radio("Metallic Type", sorted(df["Metallic_Type"].unique()))
 qgroup  = st.sidebar.radio("Quality Group", sorted(df["Quality_Group"].unique()))
 
 df = df[
@@ -145,29 +147,30 @@ df = df[
 
 view_mode = st.sidebar.radio(
     "📊 View Mode",
-    ["📋 Data Table","📈 Trend (LAB / LINE)","📐 Hardness Optimal Range (IQR)"]
+    ["📋 Data Table", "📈 Trend (LAB / LINE)"]
 )
 
-if view_mode == "📐 Hardness Optimal Range (IQR)":
-    K = st.sidebar.selectbox("IQR K", [0.5,0.75,1,1.25,1.5], index=2)
-
 # ================================
-# GROUP CONDITION ≥30
+# GROUP CONDITION (NO PRODUCT SPEC)
 # ================================
 GROUP_COLS = [
-    "Product_Spec","Material","Metallic_Type",
-    "Quality_Group","Gauge_Range"
+    "Rolling_Type",
+    "Metallic_Type",
+    "Quality_Group",
+    "Gauge_Range",
+    "Material"
 ]
 
 cnt = (
     df.groupby(GROUP_COLS)
-      .agg(N=("COIL_NO","nunique"))
+      .agg(N_Coils=("COIL_NO","nunique"))
       .reset_index()
 )
 
-valid = cnt[cnt["N"] >= 30]
+valid = cnt[cnt["N_Coils"] >= 30]
+
 if valid.empty:
-    st.warning("⚠️ No group with ≥ 30 coils")
+    st.warning("⚠️ No group with ≥30 coils")
     st.stop()
 
 # ================================
@@ -176,9 +179,11 @@ if valid.empty:
 for _, g in valid.iterrows():
 
     sub = df[
-        (df["Product_Spec"] == g["Product_Spec"]) &
-        (df["Material"] == g["Material"]) &
-        (df["Gauge_Range"] == g["Gauge_Range"])
+        (df["Rolling_Type"] == g["Rolling_Type"]) &
+        (df["Metallic_Type"] == g["Metallic_Type"]) &
+        (df["Quality_Group"] == g["Quality_Group"]) &
+        (df["Gauge_Range"] == g["Gauge_Range"]) &
+        (df["Material"] == g["Material"])
     ].sort_values("COIL_NO")
 
     lo, hi = sub.iloc[0][["Std_Min","Std_Max"]]
@@ -188,32 +193,30 @@ for _, g in valid.iterrows():
     sub["NG"] = sub["NG_LAB"] | sub["NG_LINE"]
 
     qa = "FAIL" if sub["NG"].any() else "PASS"
+    specs = ", ".join(sorted(sub["Product_Spec"].unique()))
 
     st.markdown(
         f"""
-### 🧱 {g['Product_Spec']}
+### 🧱 Quality Group: {g['Quality_Group']}
 **Material:** {g['Material']}  
 **Gauge Range:** {g['Gauge_Range']}  
-**Coils:** {g['N']} | **QA:** 🧪 **{qa}**
+**Product Specs:** {specs}  
+**Coils:** {sub['COIL_NO'].nunique()} | **QA:** 🧪 **{qa}**
 """
     )
 
     if view_mode == "📋 Data Table":
         st.dataframe(sub, use_container_width=True)
 
-    elif view_mode == "📈 Trend (LAB / LINE)":
-        x = np.arange(1,len(sub)+1)
-        fig, ax = plt.subplots()
+    else:
+        x = np.arange(1, len(sub) + 1)
+        fig, ax = plt.subplots(figsize=(7,4))
         ax.plot(x, sub["Hardness_LAB"], marker="o", label="LAB")
         ax.plot(x, sub["Hardness_LINE"], marker="s", label="LINE")
-        ax.axhline(lo, ls="--")
-        ax.axhline(hi, ls="--")
-        ax.legend()
+        ax.axhline(lo, linestyle="--")
+        ax.axhline(hi, linestyle="--")
+        ax.set_title("Hardness Trend")
+        ax.set_ylabel("HRB")
         ax.grid(alpha=0.3)
+        ax.legend()
         st.pyplot(fig)
-
-    else:
-        lab = sub[sub["Hardness_LAB"]>0]["Hardness_LAB"]
-        q1,q3 = lab.quantile([0.25,0.75])
-        iqr = q3-q1
-        st.write("IQR Range:", q1-K*iqr, "→", q3+K*iqr)
