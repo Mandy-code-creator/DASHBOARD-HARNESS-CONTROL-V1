@@ -224,59 +224,59 @@ for _, g in valid.iterrows():
         st.pyplot(fig)
 
     elif view_mode == "📊 Distribution (LAB + LINE)":
-    lab = sub["Hardness_LAB"].dropna()
-    line = sub["Hardness_LINE"].dropna()
-    if len(lab) >= 10 and len(line) >= 10:
-        mean_lab, std_lab = lab.mean(), lab.std(ddof=1)
-        mean_line, std_line = line.mean(), line.std(ddof=1)
-        x_min = min(mean_lab - 3*std_lab, mean_line - 3*std_line)
-        x_max = max(mean_lab + 3*std_lab, mean_line + 3*std_line)
-        bins = np.linspace(x_min, x_max, 25)
-        fig, ax = plt.subplots(figsize=(8,4.5))
-
-        # ---- histogram
-        ax.hist(lab, bins=bins, density=True, alpha=0.4, color="#1f77b4", edgecolor="black", label="LAB")
-        ax.hist(line, bins=bins, density=True, alpha=0.4, color="#ff7f0e", edgecolor="black", label="LINE")
-
-        # ---- normal curves
-        xs = np.linspace(x_min, x_max, 400)
-        ys_lab = (1/(std_lab*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_lab)/std_lab)**2)
-        ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
-        ax.plot(xs, ys_lab, linewidth=2.5, label="LAB Normal (±3σ)", color="#1f77b4")
-        ax.plot(xs, ys_line, linewidth=2.5, linestyle="--", label="LINE Normal (±3σ)", color="#ff7f0e")
-
-        # ---- spec limits
-        ax.axvline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
-        ax.axvline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
-
-        # ---- mean lines
-        ax.axvline(mean_lab, linestyle=":", linewidth=2, color="#0b3d91", label=f"LAB Mean {mean_lab:.2f}")
-        ax.axvline(mean_line, linestyle=":", linewidth=2, color="#b25e00", label=f"LINE Mean {mean_line:.2f}")
-
-        # ---- Ca, Cp, Cpk
-        target = (hi + lo)/2
-        ca_lab = abs(mean_lab - target)/((hi-lo)/2)
-        ca_line = abs(mean_line - target)/((hi-lo)/2)
-        cp_lab = (hi - lo)/(6*std_lab)
-        cp_line = (hi - lo)/(6*std_line)
-        cpk_lab = min((hi-mean_lab)/(3*std_lab), (mean_lab-lo)/(3*std_lab))
-        cpk_line = min((hi-mean_line)/(3*std_line), (mean_line-lo)/(3*std_line))
-
-        # ---- note box
-        note = (
-            f"LAB:\n  N={len(lab)}  Mean={mean_lab:.2f}  Std={std_lab:.2f}\n"
-            f"  Ca={ca_lab:.2f}  Cp={cp_lab:.2f}  Cpk={cpk_lab:.2f}\n\n"
-            f"LINE:\n  N={len(line)}  Mean={mean_line:.2f}  Std={std_line:.2f}\n"
-            f"  Ca={ca_line:.2f}  Cp={cp_line:.2f}  Cpk={cpk_line:.2f}"
-        )
-        ax.text(1.02, 0.5, note, transform=ax.transAxes, va="center",
-                bbox=dict(boxstyle="round,pad=0.4", facecolor="white", alpha=0.2, edgecolor="gray"))
-
-        # ---- style
-        ax.set_title("Hardness Distribution – LAB vs LINE (3σ)", weight="bold")
-        ax.set_xlabel("Hardness (HRB)")
-        ax.set_ylabel("Density")
-        ax.grid(alpha=0.3)
-        ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.85), frameon=False)
+        lab = sub["Hardness_LAB"].dropna()
+        line = sub["Hardness_LINE"].dropna()
+        if len(lab) >= 10 and len(line) >= 10:
+            mean_lab, std_lab = lab.mean(), lab.std(ddof=1)
+            mean_line, std_line = line.mean(), line.std(ddof=1)
+            x_min = min(mean_lab - 3*std_lab, mean_line - 3*std_line)
+            x_max = max(mean_lab + 3*std_lab, mean_line + 3*std_line)
+            bins = np.linspace(x_min, x_max, 25)
+            fig, ax = plt.subplots(figsize=(8,4.5))
+    
+            # ---- histogram
+            ax.hist(lab, bins=bins, density=True, alpha=0.4, color="#1f77b4", edgecolor="black", label="LAB")
+            ax.hist(line, bins=bins, density=True, alpha=0.4, color="#ff7f0e", edgecolor="black", label="LINE")
+    
+            # ---- normal curves
+            xs = np.linspace(x_min, x_max, 400)
+            ys_lab = (1/(std_lab*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_lab)/std_lab)**2)
+            ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
+            ax.plot(xs, ys_lab, linewidth=2.5, label="LAB Normal (±3σ)", color="#1f77b4")
+            ax.plot(xs, ys_line, linewidth=2.5, linestyle="--", label="LINE Normal (±3σ)", color="#ff7f0e")
+    
+            # ---- spec limits
+            ax.axvline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
+            ax.axvline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
+    
+            # ---- mean lines
+            ax.axvline(mean_lab, linestyle=":", linewidth=2, color="#0b3d91", label=f"LAB Mean {mean_lab:.2f}")
+            ax.axvline(mean_line, linestyle=":", linewidth=2, color="#b25e00", label=f"LINE Mean {mean_line:.2f}")
+    
+            # ---- Ca, Cp, Cpk
+            target = (hi + lo)/2
+            ca_lab = abs(mean_lab - target)/((hi-lo)/2)
+            ca_line = abs(mean_line - target)/((hi-lo)/2)
+            cp_lab = (hi - lo)/(6*std_lab)
+            cp_line = (hi - lo)/(6*std_line)
+            cpk_lab = min((hi-mean_lab)/(3*std_lab), (mean_lab-lo)/(3*std_lab))
+            cpk_line = min((hi-mean_line)/(3*std_line), (mean_line-lo)/(3*std_line))
+    
+            # ---- note box
+            note = (
+                f"LAB:\n  N={len(lab)}  Mean={mean_lab:.2f}  Std={std_lab:.2f}\n"
+                f"  Ca={ca_lab:.2f}  Cp={cp_lab:.2f}  Cpk={cpk_lab:.2f}\n\n"
+                f"LINE:\n  N={len(line)}  Mean={mean_line:.2f}  Std={std_line:.2f}\n"
+                f"  Ca={ca_line:.2f}  Cp={cp_line:.2f}  Cpk={cpk_line:.2f}"
+            )
+            ax.text(1.02, 0.5, note, transform=ax.transAxes, va="center",
+                    bbox=dict(boxstyle="round,pad=0.4", facecolor="white", alpha=0.2, edgecolor="gray"))
+    
+            # ---- style
+            ax.set_title("Hardness Distribution – LAB vs LINE (3σ)", weight="bold")
+            ax.set_xlabel("Hardness (HRB)")
+            ax.set_ylabel("Density")
+            ax.grid(alpha=0.3)
+            ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.85), frameon=False)
         plt.tight_layout()
         st.pyplot(fig)
