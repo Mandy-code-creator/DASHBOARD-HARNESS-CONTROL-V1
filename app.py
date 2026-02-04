@@ -495,62 +495,99 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL":
+        # ----- Sidebar note: CI explanation (once)
+        with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
+            st.markdown(
+                """
+    - The shaded area around the predicted line represents the **95% Confidence Interval (CI)**.
+    - It means that **approximately 95% of future observations are expected to fall within this range** if the linear model is valid.
+    - Narrow CI → high precision; wide CI → higher uncertainty.
+    - This note is **shown once** for clarity and can be collapsed.
+    """
+            )
+    
         # ----- Use LINE hardness as predictor
         sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         N_coils = len(sub_fit)
-        
         if N_coils < 5:
             st.warning(f"⚠️ Not enough data to perform prediction (N={N_coils})")
             continue
     
-        # ----- Coil sequence
-        coils = np.arange(1, N_coils+1)
+        coils = np.arange(1, N_coils + 1)
     
-        # ----- Linear regression: y = a*x + b
+        # ----- Linear regression for each property
         pred_values = {}
         ci_upper = {}
         ci_lower = {}
         for prop in ["TS", "YS", "EL"]:
             x = sub_fit["Hardness_LINE"].values
             y = sub_fit[prop].values
+    
+            # Linear regression
             a, b = np.polyfit(x, y, 1)
-            y_pred = a*x + b
+            y_pred = a * x + b
             pred_values[prop] = y_pred
     
-            # ----- 95% CI (mean ± 1.96*std residuals)
+            # 95% CI approximation: mean ± 1.96*std(residuals)
             resid = y - y_pred
             resid_std = np.std(resid, ddof=1)
-            ci_upper[prop] = y_pred + 1.96*resid_std
-            ci_lower[prop] = y_pred - 1.96*resid_std
+            ci_upper[prop] = y_pred + 1.96 * resid_std
+            ci_lower[prop] = y_pred - 1.96 * resid_std
     
-        # ----- Plot observed vs predicted with CI
-        fig, axes = plt.subplots(3,1, figsize=(14,10), sharex=True)
-        colors_obs = {"TS":"#003f5c","YS":"#2f4b7c","EL":"#665191"}
-        markers = {"TS":"o","YS":"s","EL":"^"}
-        for ax, prop in zip(axes, ["TS","YS","EL"]):
-            ax.plot(coils, sub_fit[prop], linestyle="-", marker=markers[prop], color=colors_obs[prop], label=f"Observed {prop}")
-            ax.plot(coils, pred_values[prop], linestyle="--", marker=markers[prop], color="#ffa600", label=f"Predicted {prop}")
-            ax.fill_between(coils, ci_lower[prop], ci_upper[prop], color="#ffa600", alpha=0.2, label="95% CI")
-            ax.set_ylabel(prop)
-            ax.grid(True, linestyle="--", alpha=0.3)
-            ax.legend()
+        # ----- Plot observed vs predicted
+        fig, axes = plt.subplots(2, 2, figsize=(16, 10), gridspec_kw={'height_ratios':[1,1]})
+        ax_ts, ax_ys = axes[0, 0], axes[0, 1]
+        ax_el = axes[1, 0]
+        axes[1, 1].axis('off')  # empty subplot
     
-        axes[-1].set_xlabel("Coil Sequence")
-        fig.suptitle("Predicted vs Observed Mechanical Properties based on LINE Hardness", fontsize=14, fontweight="bold")
-        plt.tight_layout(rect=[0,0,1,0.97])
+        # TS
+        ax_ts.plot(coils, sub_fit["TS"], linestyle="-", marker="o", color="#003f5c", label="Observed TS")
+        ax_ts.plot(coils, pred_values["TS"], linestyle="--", marker="o", color="#ffa600", label="Predicted TS")
+        ax_ts.fill_between(coils, ci_lower["TS"], ci_upper["TS"], color="#ffa600", alpha=0.2, label="95% CI")
+        ax_ts.set_title("TS: Predicted vs Observed per Coil")
+        ax_ts.set_ylabel("MPa")
+        ax_ts.grid(True, linestyle="--", alpha=0.3)
+        ax_ts.legend()
+    
+        # YS
+        ax_ys.plot(coils, sub_fit["YS"], linestyle="-", marker="s", color="#2f4b7c", label="Observed YS")
+        ax_ys.plot(coils, pred_values["YS"], linestyle="--", marker="s", color="#ffa600", label="Predicted YS")
+        ax_ys.fill_between(coils, ci_lower["YS"], ci_upper["YS"], color="#ffa600", alpha=0.2, label="95% CI")
+        ax_ys.set_title("YS: Predicted vs Observed per Coil")
+        ax_ys.set_ylabel("MPa")
+        ax_ys.grid(True, linestyle="--", alpha=0.3)
+        ax_ys.legend()
+    
+        # EL
+        ax_el.plot(coils, sub_fit["EL"], linestyle="-", marker="^", color="#665191", label="Observed EL")
+        ax_el.plot(coils, pred_values["EL"], linestyle="--", marker="^", color="#ffa600", label="Predicted EL")
+        ax_el.fill_between(coils, ci_lower["EL"], ci_upper["EL"], color="#ffa600", alpha=0.2, label="95% CI")
+        ax_el.set_title("EL: Predicted vs Observed per Coil")
+        ax_el.set_xlabel("Coil Sequence")
+        ax_el.set_ylabel("%")
+        ax_el.grid(True, linestyle="--", alpha=0.3)
+        ax_el.legend()
+    
+        plt.tight_layout()
+        fig.suptitle("Predicted vs Observed Mechanical Properties based on LINE Hardness", fontsize=14, fontweight="bold", y=1.02)
         st.pyplot(fig)
     
-        # ----- Automatic conclusion table
+        # ----- Automatic conclusion
         conclusion = []
-        for prop in ["TS","YS","EL"]:
+        for prop in ["TS", "YS", "EL"]:
             observed = sub_fit[prop].values
             predicted = pred_values[prop]
             upper = ci_upper[prop]
             lower = ci_lower[prop]
+    
             n_outside = np.sum((observed < lower) | (observed > upper))
             bias = observed.mean() - predicted.mean()
             ci_width = np.mean(upper - lower)
-            status = "✅ All observed values within 95% CI" if n_outside==0 else f"⚠️ {n_outside}/{N_coils} coils outside 95% CI"
+    
+            if n_outside == 0:
+                status = "✅ All observed values within 95% CI"
+            else:
+                status = f"⚠️ {n_outside}/{N_coils} coils outside 95% CI"
     
             conclusion.append(
                 f"**{prop}:** Observed mean={observed.mean():.1f}, Predicted mean={predicted.mean():.1f}, "
@@ -560,14 +597,3 @@ for _, g in valid.iterrows():
         st.markdown("### 📌 Prediction Summary")
         for line in conclusion:
             st.markdown(line)
-    
-        # ----- 95% CI Explanation in sidebar (collapsible)
-        with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
-            st.markdown(
-                """
-    - The shaded area around the predicted line represents the **95% Confidence Interval (CI)**.
-    - It indicates the range where **95% of future observations are expected to fall** if the linear model is valid.
-    - Narrow CI → high precision; Wide CI → higher uncertainty.
-    - This note appears **once** for clarity and can be collapsed.
-    """
-            )
