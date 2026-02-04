@@ -302,80 +302,64 @@ for _, g in valid.iterrows():
            mime="image/png"
         )
     elif view_mode == "🛠 Hardness → TS/YS/EL":
-        # 1️⃣ Binning Hardness
-        bins = [0, 56, 58, 60, 62, 100]  # điều chỉnh theo nhu cầu
-        labels = ["<56","56-58","58-60","60-62",">62"]
-        sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels)
+        # 1️⃣ Binning Hardness - Gom nhóm độ dày/độ cứng theo khoảng
+        # Sử dụng ký hiệu kỹ thuật như sếp yêu cầu: 56≦T＜58
+        bins = [0, 56, 58, 60, 62, 100]  
+        labels = ["T<56", "56≦T<58", "58≦T<60", "60≦T<62", "T≧62"]
+        sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
     
-        # 2️⃣ Lấy giới hạn cơ tính từ sheet
-        sub["TS_LSL"] = sub["Standard TS min"]
-        sub["TS_USL"] = sub["Standard TS max"]
-        sub["YS_LSL"] = sub["Standard YS min"]
-        sub["YS_USL"] = sub["Standard YS max"]
-        sub["EL_LSL"] = sub["Standard EL min"]
-        sub["EL_USL"] = sub["Standard EL max"]
+        # 2️⃣ Lấy giới hạn cơ tính
+        mech_cols = ["Standard TS min", "Standard TS max", "Standard YS min", "Standard YS max", "Standard EL min", "Standard EL max"]
+        sub = sub.dropna(subset=mech_cols)
     
-        sub = sub.dropna(subset=["TS_LSL","TS_USL","YS_LSL","YS_USL","EL_LSL","EL_USL"])
-    
-        # 3️⃣ Summary min/mean/max
+        # 3️⃣ Summary thống kê
         summary = sub.groupby("HRB_bin").agg(
             N_coils=("COIL_NO","count"),
-            TS_mean=("TS","mean"),
-            TS_min=("TS","min"),
-            TS_max=("TS","max"),
-            YS_mean=("YS","mean"),
-            YS_min=("YS","min"),
-            YS_max=("YS","max"),
-            EL_mean=("EL","mean"),
-            EL_min=("EL","min"),
-            EL_max=("EL","max")
+            TS_mean=("TS","mean"), TS_min=("TS","min"), TS_max=("TS","max"),
+            YS_mean=("YS","mean"), YS_min=("YS","min"), YS_max=("YS","max"),
+            EL_mean=("EL","mean"), EL_min=("EL","min"), EL_max=("EL","max")
         ).reset_index()
     
-        # 4️⃣ Hiển thị bảng
-        st.markdown("### 🔹 Mechanical Properties per Hardness Range (Current Distribution)")
-        st.dataframe(summary, use_container_width=True)
+        # 4️⃣ Hiển thị bảng dữ liệu (Thay thế cho Summary Note)
+        st.markdown("### 🔹 Mechanical Properties per Hardness Range")
+        st.dataframe(summary.style.format("{:.1f}", subset=summary.columns[2:]), use_container_width=True)
     
-        # 5️⃣ Note box ngoài chart
-        note_lines = []
-        for _, row in summary.iterrows():
-            note_lines.append(
-                f"HRB {row['HRB_bin']}: N={row['N_coils']}, "
-                f"TS({row['TS_min']:.1f}-{row['TS_max']:.1f}), "
-                f"YS({row['YS_min']:.1f}-{row['YS_max']:.1f}), "
-                f"EL({row['EL_min']:.1f}-{row['EL_max']:.1f})"
-            )
-        note_text = "\n".join(note_lines)
-        st.text_area("📌 Summary Note (per HRB bin)", value=note_text, height=180)
-    
-        # 6️⃣ Line plot + annotations trên đường
-        fig, ax = plt.subplots(figsize=(8,4))
+        # 5️⃣ Line plot tối ưu hiển thị
+        fig, ax = plt.subplots(figsize=(10, 5))
         x = np.arange(len(summary))
         
-        # ---- TS
-        ax.plot(x, summary["TS_mean"], marker="o", color="blue", label="TS Mean")
-        ax.fill_between(x, summary["TS_min"], summary["TS_max"], color="blue", alpha=0.2, label="TS Min-Max")
-        for i, row in summary.iterrows():
-            ax.text(x[i], row["TS_mean"], f"{row['TS_mean']:.1f}", color="blue", fontsize=9, ha="center", va="bottom")
+        # Vẽ TS
+        ax.plot(x, summary["TS_mean"], marker="o", color="#1f77b4", linewidth=2, label="TS Mean")
+        ax.fill_between(x, summary["TS_min"], summary["TS_max"], color="#1f77b4", alpha=0.15)
         
-        # ---- YS
-        ax.plot(x, summary["YS_mean"], marker="s", color="green", label="YS Mean")
-        ax.fill_between(x, summary["YS_min"], summary["YS_max"], color="green", alpha=0.2, label="YS Min-Max")
-        for i, row in summary.iterrows():
-            ax.text(x[i], row["YS_mean"], f"{row['YS_mean']:.1f}", color="green", fontsize=9, ha="center", va="bottom")
+        # Vẽ YS
+        ax.plot(x, summary["YS_mean"], marker="s", color="#2ca02c", linewidth=2, label="YS Mean")
+        ax.fill_between(x, summary["YS_min"], summary["YS_max"], color="#2ca02c", alpha=0.15)
+    
+        # Tạo trục tung thứ 2 cho EL (vì EL thường có đơn vị khác/nhỏ hơn TS/YS)
+        ax2 = ax.twinx()
+        ax2.plot(x, summary["EL_mean"], marker="^", color="#ff7f0e", linewidth=2, label="EL Mean (%)")
+        ax2.fill_between(x, summary["EL_min"], summary["EL_max"], color="#ff7f0e", alpha=0.15)
         
-        # ---- EL
-        ax.plot(x, summary["EL_mean"], marker="^", color="orange", label="EL Mean")
-        ax.fill_between(x, summary["EL_min"], summary["EL_max"], color="orange", alpha=0.2, label="EL Min-Max")
+        # ---- Tối ưu Annotations (Ghi số trên đường)
         for i, row in summary.iterrows():
-            ax.text(x[i], row["EL_mean"], f"{row['EL_mean']:.1f}", color="orange", fontsize=9, ha="center", va="bottom")
-        
-        # ---- style
+            ax.annotate(f"{row['TS_mean']:.1f}", (x[i], row['TS_mean']), textcoords="offset points", xytext=(0,10), ha='center', color="#1f77b4", fontsize=8, fontweight='bold')
+            ax.annotate(f"{row['YS_mean']:.1f}", (x[i], row['YS_mean']), textcoords="offset points", xytext=(0,-15), ha='center', color="#2ca02c", fontsize=8, fontweight='bold')
+            ax2.annotate(f"{row['EL_mean']:.1f}%", (x[i], row['EL_mean']), textcoords="offset points", xytext=(0,10), ha='center', color="#ff7f0e", fontsize=8)
+    
+        # ---- Đưa Legend ra ngoài biểu đồ để tránh che dữ liệu
+        lines, labels = ax.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        ax.legend(lines + lines2, labels + labels2, loc='upper left', bbox_to_anchor=(1.15, 1), borderaxespad=0.)
+    
+        # ---- Style biểu đồ
         ax.set_xticks(x)
-        ax.set_xticklabels(summary["HRB_bin"])
-        ax.set_xlabel("Hardness (HRB bin)")
-        ax.set_ylabel("Mechanical Properties")
-        ax.set_title("Hardness vs TS/YS/EL Range (Current)")
-        ax.grid(alpha=0.3)
-        ax.legend(loc="best")
+        ax.set_xticklabels(summary["HRB_bin"], fontweight='bold')
+        ax.set_xlabel("Hardness Range (HRB)")
+        ax.set_ylabel("Strength (MPa)")
+        ax2.set_ylabel("Elongation (%)")
+        ax.set_title("Correlation: Hardness vs Mechanical Properties", pad=20, fontweight='bold')
+        ax.grid(True, linestyle='--', alpha=0.6)
+        
         plt.tight_layout()
         st.pyplot(fig)
