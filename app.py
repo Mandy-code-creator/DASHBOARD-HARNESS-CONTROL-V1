@@ -1,190 +1,254 @@
-# ================================
-# FULL STREAMLIT APP – GOOGLE SHEET
-# SPC HARDNESS DASHBOARD
-# ================================
+# ==========================================
+# SPC HARDNESS DASHBOARD – FINAL STABLE
+# DATA FROM GOOGLE SHEET
+# ==========================================
 
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
+import requests, re, math
 from io import StringIO
-import requests
-import math
+import matplotlib.pyplot as plt
 
-# ================================
+# ==========================================
 # PAGE CONFIG
-# ================================
-st.set_page_config(page_title="SPC Hardness Dashboard", layout="wide")
-st.title("📊 SPC Hardness – Google Sheet Data")
-
-# ================================
-# GOOGLE SHEET INPUT
-# ================================
-st.sidebar.header("🔗 Google Sheet")
-
-sheet_link = st.sidebar.text_input(
-    "Paste Google Sheet link",
-    placeholder="https://docs.google.com/spreadsheets/d/XXXX/edit#gid=0"
+# ==========================================
+st.set_page_config(
+    page_title="SPC Hardness Dashboard",
+    layout="wide"
 )
 
+st.title("📊 SPC Hardness Dashboard (Power BI Style)")
+
+# ==========================================
+# GOOGLE SHEET LINKS
+# ==========================================
+DATA_URL = "https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
+GAUGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
+
+# ==========================================
+# CACHE LOAD
+# ==========================================
 @st.cache_data
-def load_google_sheet(link):
-    csv_url = link.replace("/edit#gid=", "/export?format=csv&gid=")
-    r = requests.get(csv_url)
+def load_csv(url):
+    r = requests.get(url)
     r.encoding = "utf-8"
     return pd.read_csv(StringIO(r.text))
 
-if not sheet_link:
-    st.info("⬅️ Paste Google Sheet link to start")
-    st.stop()
+raw = load_csv(DATA_URL)
+gauge_df = load_csv(GAUGE_URL)
 
-df = load_google_sheet(sheet_link)
-
-# ================================
-# COLUMN STANDARDIZE (CHỈNH NẾU CẦN)
-# ================================
-df = df.rename(columns={
+# ==========================================
+# RENAME COLUMNS
+# ==========================================
+df = raw.rename(columns={
+    "PRODUCT SPECIFICATION CODE": "Product_Spec",
     "HR STEEL GRADE": "Material",
-    "ORDER GAUGE": "Gauge",
-    "COIL NO": "Coil_No",
-    "QUALITY_CODE": "Quality",
+    "Claasify material": "Rolling_Type",
+    "ORDER GAUGE": "Order_Gauge",
+    "COIL NO": "COIL_NO",
+    "QUALITY_CODE": "Quality_Code",
     "Standard Hardness": "Std_Text",
     "HARDNESS 冶金": "Hardness_LAB",
     "HARDNESS 鍍鋅線 C": "Hardness_LINE",
 })
 
-# ================================
-# STANDARD HARDNESS SPLIT
-# ================================
+# ==========================================
+# METALLIC TYPE AUTO
+# ==========================================
+metal_col = next(c for c in df.columns if "METALLIC" in c.upper())
+df["Metallic_Type"] = df[metal_col]
+
+# ==========================================
+# STANDARD HARDNESS
+# ==========================================
 def split_std(x):
     if isinstance(x, str) and "~" in x:
-        a, b = x.split("~")
-        return float(a), float(b)
+        lo, hi = x.split("~")
+        return float(lo), float(hi)
     return np.nan, np.nan
 
-df[["LSL", "USL"]] = df["Std_Text"].apply(lambda x: pd.Series(split_std(x)))
-
-# ================================
-# FORCE NUMERIC
-# ================================
-for c in ["Gauge", "Hardness_LAB", "Hardness_LINE"]:
-    df[c] = pd.to_numeric(df[c], errors="coerce")
-
-df = df.dropna(subset=["Hardness_LAB", "Hardness_LINE", "LSL", "USL"])
-
-# ================================
-# SIDEBAR FILTER
-# ================================
-st.sidebar.header("🎛 Filter")
-
-material = st.sidebar.selectbox("Material", sorted(df["Material"].dropna().unique()))
-quality  = st.sidebar.selectbox("Quality", sorted(df["Quality"].dropna().unique()))
-
-df = df[
-    (df["Material"] == material) &
-    (df["Quality"] == quality)
-].sort_values("Coil_No")
-
-# ================================
-# SPC STATS (NO SCIPY)
-# ================================
-def spc_stats(data, lsl, usl):
-    n = len(data)
-    mean = data.mean()
-    std = data.std(ddof=1)
-
-    cp = (usl - lsl) / (6 * std) if std > 0 else np.nan
-    ca = (mean - (usl + lsl) / 2) / ((usl - lsl) / 2) * 100
-    cpk = min(usl - mean, mean - lsl) / (3 * std) if std > 0 else np.nan
-
-    return n, mean, std, cp, ca, cpk
-
-def normal_pdf(x, mean, std):
-    return (1 / (std * math.sqrt(2 * math.pi))) * np.exp(-0.5 * ((x - mean) / std) ** 2)
-
-lsl = df["LSL"].iloc[0]
-usl = df["USL"].iloc[0]
-
-# ================================
-# TREND CHART
-# ================================
-st.subheader("📈 Hardness Trend")
-
-x = np.arange(1, len(df) + 1)
-
-fig, ax = plt.subplots(figsize=(9, 4))
-
-ax.plot(x, df["Hardness_LAB"], marker="o", label="LAB")
-ax.plot(x, df["Hardness_LINE"], marker="s", label="LINE")
-
-ax.axhline(lsl, linestyle="--", linewidth=1.5, label=f"LSL = {lsl}")
-ax.axhline(usl, linestyle="--", linewidth=1.5, label=f"USL = {usl}")
-
-ax.set_xlabel("Coil Sequence")
-ax.set_ylabel("Hardness (HRB)")
-ax.set_title("Hardness Trend by Coil")
-ax.grid(alpha=0.3)
-
-ax.legend(
-    loc="center left",
-    bbox_to_anchor=(1.02, 0.5),
-    frameon=False
+df[["Std_Min", "Std_Max"]] = df["Std_Text"].apply(
+    lambda x: pd.Series(split_std(x))
 )
 
-plt.tight_layout()
-st.pyplot(fig)
+# ==========================================
+# FORCE NUMERIC
+# ==========================================
+for c in ["Hardness_LAB", "Hardness_LINE", "Order_Gauge"]:
+    df[c] = pd.to_numeric(df[c], errors="coerce")
 
-# ================================
-# DISTRIBUTION + NORMAL CURVE
-# ================================
-st.subheader("📊 Distribution & Normal Curve")
+# ==========================================
+# QUALITY GROUP (CQ00 + CQ06)
+# ==========================================
+df["Quality_Group"] = df["Quality_Code"].replace({
+    "CQ00": "CQ00 / CQ06",
+    "CQ06": "CQ00 / CQ06"
+})
 
-for label, col in [("LAB", "Hardness_LAB"), ("LINE", "Hardness_LINE")]:
-    data = df[col].dropna()
-    if len(data) < 5:
+# ==========================================
+# GAUGE RANGE MAP
+# ==========================================
+gauge_df.columns = gauge_df.columns.str.strip()
+range_col = next(c for c in gauge_df.columns if "RANGE" in c.upper())
+
+def parse_range(txt):
+    nums = re.findall(r"\d+\.\d+|\d+", str(txt))
+    if len(nums) < 2:
+        return None, None
+    return float(nums[0]), float(nums[1])
+
+ranges = []
+for _, r in gauge_df.iterrows():
+    lo, hi = parse_range(r[range_col])
+    if lo is not None:
+        ranges.append((lo, hi, r[range_col]))
+
+def map_gauge(val):
+    for lo, hi, name in ranges:
+        if lo <= val < hi:
+            return name
+    return None
+
+df["Gauge_Range"] = df["Order_Gauge"].apply(map_gauge)
+df = df.dropna(subset=["Gauge_Range"])
+
+# ==========================================
+# SIDEBAR FILTER
+# ==========================================
+st.sidebar.header("🎛 Filters")
+
+rolling = st.sidebar.selectbox("Rolling Type", sorted(df["Rolling_Type"].unique()))
+metal = st.sidebar.selectbox("Metallic Type", sorted(df["Metallic_Type"].unique()))
+qgroup = st.sidebar.selectbox("Quality Group", sorted(df["Quality_Group"].unique()))
+
+df = df[
+    (df["Rolling_Type"] == rolling) &
+    (df["Metallic_Type"] == metal) &
+    (df["Quality_Group"] == qgroup)
+]
+
+view_mode = st.sidebar.radio(
+    "View Mode",
+    ["📈 Trend + Distribution", "📋 Data Table"]
+)
+
+# ==========================================
+# GROUP LOGIC (NO PRODUCT SPEC)
+# ==========================================
+GROUP_COLS = [
+    "Rolling_Type",
+    "Metallic_Type",
+    "Quality_Group",
+    "Gauge_Range",
+    "Material"
+]
+
+cnt = (
+    df.groupby(GROUP_COLS)
+      .agg(N_Coils=("COIL_NO", "nunique"))
+      .reset_index()
+)
+
+valid = cnt[cnt["N_Coils"] >= 30]
+
+if valid.empty:
+    st.warning("No group has ≥30 coils")
+    st.stop()
+
+# ==========================================
+# NORMAL PDF (NO SCIPY)
+# ==========================================
+def normal_pdf(x, mean, std):
+    return (1 / (std * math.sqrt(2 * math.pi))) * np.exp(
+        -0.5 * ((x - mean) / std) ** 2
+    )
+
+# ==========================================
+# MAIN LOOP
+# ==========================================
+for _, g in valid.iterrows():
+
+    sub = df[
+        (df["Rolling_Type"] == g["Rolling_Type"]) &
+        (df["Metallic_Type"] == g["Metallic_Type"]) &
+        (df["Quality_Group"] == g["Quality_Group"]) &
+        (df["Gauge_Range"] == g["Gauge_Range"]) &
+        (df["Material"] == g["Material"])
+    ].sort_values("COIL_NO")
+
+    lo, hi = sub.iloc[0][["Std_Min", "Std_Max"]]
+
+    ng = (
+        (sub["Hardness_LAB"] < lo) | (sub["Hardness_LAB"] > hi) |
+        (sub["Hardness_LINE"] < lo) | (sub["Hardness_LINE"] > hi)
+    )
+
+    qa = "FAIL" if ng.any() else "PASS"
+    specs = ", ".join(sorted(sub["Product_Spec"].unique()))
+
+    st.markdown(f"""
+### 🧱 {g['Quality_Group']} | {g['Material']} | {g['Gauge_Range']}
+**Product Specs:** {specs}  
+**Coils:** {sub['COIL_NO'].nunique()} | **QA:** **{qa}**
+""")
+
+    if view_mode == "📋 Data Table":
+        st.dataframe(sub, use_container_width=True)
         continue
 
-    n, mean, std, cp, ca, cpk = spc_stats(data, lsl, usl)
-
+    # ---------- TREND ----------
+    x = np.arange(1, len(sub) + 1)
     fig, ax = plt.subplots(figsize=(8, 4))
 
-    ax.hist(data, bins=10, density=True, alpha=0.35, edgecolor="black")
+    ax.plot(x, sub["Hardness_LAB"], marker="o", label="LAB")
+    ax.plot(x, sub["Hardness_LINE"], marker="s", label="LINE")
+    ax.axhline(lo, linestyle="--", label=f"LSL {lo}")
+    ax.axhline(hi, linestyle="--", label=f"USL {hi}")
 
-    x_pdf = np.linspace(min(data), max(data), 200)
-    ax.plot(x_pdf, normal_pdf(x_pdf, mean, std), linewidth=2)
-
-    ax.axvline(lsl, linestyle="--", label="LSL")
-    ax.axvline(usl, linestyle="--", label="USL")
-    ax.axvline(mean, linestyle=":", label=f"Mean = {mean:.2f}")
-
-    note = (
-        f"N = {n}\n"
-        f"Mean = {mean:.2f}\n"
-        f"Std = {std:.2f}\n"
-        f"Cp = {cp:.2f}\n"
-        f"Ca = {ca:.1f}%\n"
-        f"Cpk = {cpk:.2f}"
-    )
-
-    ax.text(
-        1.02, 0.5,
-        note,
-        transform=ax.transAxes,
-        va="center",
-        fontsize=10,
-        bbox=dict(boxstyle="round,pad=0.4", alpha=0.15)
-    )
-
-    ax.set_title(f"{label} Hardness Distribution")
-    ax.set_xlabel("Hardness (HRB)")
-    ax.set_ylabel("Density")
+    ax.set_title("Hardness Trend")
+    ax.set_xlabel("Coil Sequence")
+    ax.set_ylabel("HRB")
     ax.grid(alpha=0.3)
 
-    ax.legend(
-        loc="center left",
-        bbox_to_anchor=(1.02, 0.9),
-        frameon=False
-    )
-
-    plt.tight_layout()
+    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
     st.pyplot(fig)
+
+    # ---------- DISTRIBUTION ----------
+    for label, col in [("LAB", "Hardness_LAB"), ("LINE", "Hardness_LINE")]:
+        data = sub[col].dropna()
+        if len(data) < 10:
+            continue
+
+        mean = data.mean()
+        std = data.std(ddof=1)
+
+        fig, ax = plt.subplots(figsize=(7, 4))
+        ax.hist(data, bins=10, density=True, alpha=0.35, edgecolor="black")
+
+        xs = np.linspace(data.min(), data.max(), 200)
+        ax.plot(xs, normal_pdf(xs, mean, std), linewidth=2)
+
+        ax.axvline(lo, linestyle="--", label="LSL")
+        ax.axvline(hi, linestyle="--", label="USL")
+        ax.axvline(mean, linestyle=":", label=f"Mean {mean:.2f}")
+
+        ax.set_title(f"{label} Distribution")
+        ax.grid(alpha=0.3)
+
+        note = (
+            f"N = {len(data)}\n"
+            f"Mean = {mean:.2f}\n"
+            f"Std = {std:.2f}"
+        )
+
+        ax.text(
+            1.02, 0.5,
+            note,
+            transform=ax.transAxes,
+            va="center",
+            bbox=dict(boxstyle="round", alpha=0.15)
+        )
+
+        ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.85), frameon=False)
+        st.pyplot(fig)
