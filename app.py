@@ -222,7 +222,14 @@ for _, g in valid.iterrows():
         ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
         plt.tight_layout()
         st.pyplot(fig)
-
+        # ==== DOWNLOAD BUTTON ====
+            buf = fig_to_png(fig)
+            st.download_button(
+                label="📥 Download Trend Chart",
+                data=buf,
+                file_name=f"trend_{g['Material']}_{g['Gauge_Range']}.png",
+                mime="image/png"
+            )
     elif view_mode == "📊 Distribution (LAB + LINE)":
         lab = sub["Hardness_LAB"].dropna()
         line = sub["Hardness_LINE"].dropna()
@@ -280,3 +287,11 @@ for _, g in valid.iterrows():
             ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.85), frameon=False)
         plt.tight_layout()
         st.pyplot(fig)
+        # ==== DOWNLOAD BUTTON ====
+                buf = fig_to_png(fig)
+                st.download_button(
+                    label="📥 Download Distribution Chart",
+                    data=buf,
+                    file_name=f"distribution_{g['Material']}_{g['Gauge_Range']}.png",
+                    mime="image/png"
+                )
