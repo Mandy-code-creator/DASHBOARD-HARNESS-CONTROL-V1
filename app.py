@@ -515,40 +515,46 @@ for _, g in valid.iterrows():
             predictions[prop] = (y_min, y_mean, y_max)
     
         # ---- Vẽ biểu đồ
-        fig, ax = plt.subplots(figsize=(12,5))
+        fig, ax = plt.subplots(figsize=(12,6)) # Tăng chiều cao để không gian rộng hơn
+        
         for prop, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
             y_min, y_mean, y_max = predictions[prop]
-            ax.plot([lsl, usl],[y_mean, y_mean], color=color, linewidth=2, label=f"{prop} Mean")
-            ax.fill_between([lsl, usl],[y_min,y_min],[y_max,y_max], color=color, alpha=0.15, label=f"{prop} Min-Max")
-            ax.scatter([lsl, usl],[y_min, y_max], color=color, marker=marker, s=50)
-            ax.text(lsl, y_min, f"{y_min:.1f}", ha='center', va='top', fontsize=10, color=color)
-            ax.text(usl, y_max, f"{y_max:.1f}", ha='center', va='bottom', fontsize=10, color=color)
-            ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=10, fontweight='bold', color=color)
+            
+            # Vẽ đường Mean và vùng Min-Max
+            ax.plot([lsl, usl], [y_mean, y_mean], color=color, linewidth=2, label=f"{prop} Mean")
+            ax.fill_between([lsl, usl], [y_min, y_min], [y_max, y_max], color=color, alpha=0.15)
+            ax.scatter([lsl, usl], [y_min, y_max], color=color, marker=marker, s=60, zorder=3)
+            
+            # ---- XỬ LÝ GHI CHÚ (ANNOTATIONS) ĐỂ KHÔNG TRÙNG NHAU ----
+            # TS: Căn lề cực biên (Top/Bottom xa nhất)
+            if prop == "TS":
+                ax.text(lsl, y_min, f"{y_min:.1f}", ha='center', va='bottom', fontsize=9, color=color, fontweight='bold')
+                ax.text(usl, y_max, f"{y_max:.1f}", ha='center', va='bottom', fontsize=9, color=color, fontweight='bold')
+                ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=10, fontweight='bold', color=color)
+            
+            # YS: Căn lề ngược lại với TS để tách chữ
+            elif prop == "YS":
+                ax.text(lsl, y_min, f"{y_min:.1f}", ha='center', va='top', fontsize=9, color=color, fontweight='bold')
+                ax.text(usl, y_max, f"{y_max:.1f}", ha='center', va='top', fontsize=9, color=color, fontweight='bold')
+                ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='top', fontsize=10, fontweight='bold', color=color)
+            
+            # EL: Giữ nguyên mặc định hoặc căn chỉnh nhẹ
+            else:
+                ax.text(lsl, y_min, f"{y_min:.1f}", ha='center', va='top', fontsize=9, color=color)
+                ax.text(usl, y_max, f"{y_max:.1f}", ha='center', va='bottom', fontsize=9, color=color)
+                ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=9, color=color)
     
+        # Tự động điều chỉnh trục Y sát dữ liệu để các đường tách nhau ra
+        all_vals = [v for p in predictions.values() for v in p]
+        ax.set_ylim(min(all_vals)*0.95, max(all_vals)*1.05)
+
         ax.set_xlabel("Hardness (HRB)")
         ax.set_ylabel("Mechanical Properties (MPa / %)")
         ax.set_title(f"Predicted TS/YS/EL for Std Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight='bold')
         ax.grid(True, linestyle="--", alpha=0.5)
-        ax.legend(loc="upper left", bbox_to_anchor=(1.02,1))
+        
+        # Đưa Legend ra ngoài để tránh che dữ liệu
+        ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1), frameon=False)
+        
         plt.tight_layout()
         st.pyplot(fig)
-    
-        # ---- Bảng Quick Prediction
-        df_pred = pd.DataFrame({
-            "Property":["TS","YS","EL"],
-            "Predicted Min":[predictions[p][0] for p in ["TS","YS","EL"]],
-            "Predicted Mean":[predictions[p][1] for p in ["TS","YS","EL"]],
-            "Predicted Max":[predictions[p][2] for p in ["TS","YS","EL"]]
-        })
-        st.markdown("### 🔹 Quick Prediction Table")
-        st.dataframe(df_pred.style.format("{:.1f}", subset=["Predicted Min","Predicted Mean","Predicted Max"]),
-                     use_container_width=True)
-    
-        # ---- Download Chart
-        buf = fig_to_png(fig)
-        st.download_button(
-            label="📥 Download Predicted TS/YS/EL Chart",
-            data=buf,
-            file_name=f"Predicted_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
-            mime="image/png"
-        )
