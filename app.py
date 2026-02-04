@@ -429,7 +429,16 @@ for _, g in valid.iterrows():
                             df_bin["TS_max"] if "TS_max" in df_bin else df_bin["TS"].max(),
                             color="#1f77b4", alpha=0.1)
             # Highlight NG
-            ax.scatter(x[df_bin["NG_TS"]], df_bin["TS"][df_bin["NG_TS"]], color="red", s=50, zorder=5)
+            # --- Highlight NG points ---
+            ng_idx = df_bin.index[df_bin["NG_TS"]].to_list()
+            ax.scatter(x[ng_idx], df_bin.loc[ng_idx, "TS"], color="red", s=50, zorder=5)
+            
+            ng_idx = df_bin.index[df_bin["NG_YS"]].to_list()
+            ax.scatter(x[ng_idx], df_bin.loc[ng_idx, "YS"], color="red", s=50, zorder=5)
+            
+            ng_idx = df_bin.index[df_bin["NG_EL"]].to_list()
+            ax.scatter(x[ng_idx], df_bin.loc[ng_idx, "EL"], color="red", s=50, zorder=5)
+
     
             # YS
             ax.plot(x, df_bin["YS"], marker="s", label="YS", color="#2ca02c")
