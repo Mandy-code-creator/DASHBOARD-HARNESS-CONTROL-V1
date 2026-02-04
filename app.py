@@ -374,18 +374,19 @@ for _, g in valid.iterrows():
             mime="image/png"
         )
     elif view_mode == "📊 TS/YS/EL Trend & Distribution":
-        # Group theo HRB_bin
+        import re
+    
+        # 1️⃣ Binning Hardness
         bins = [0, 56, 58, 60, 62, 100]
         labels = ["<56", "56-58", "58-60", "60-62", "≥62"]
         sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
     
-        mech_cols = ["Standard TS min", "Standard TS max", 
-                     "Standard YS min", "Standard YS max", 
+        mech_cols = ["Standard TS min", "Standard TS max",
+                     "Standard YS min", "Standard YS max",
                      "Standard EL min", "Standard EL max"]
         sub = sub.dropna(subset=mech_cols)
     
-        hrb_bins = sub["HRB_bin"].unique()
-        hrb_bins = [b for b in labels if b in hrb_bins]
+        hrb_bins = [b for b in labels if b in sub["HRB_bin"].unique()]
     
         for hrb in hrb_bins:
             df_bin = sub[sub["HRB_bin"] == hrb].sort_values("COIL_NO")
@@ -402,15 +403,20 @@ for _, g in valid.iterrows():
     
             st.markdown(f"### HRB bin: {hrb} | N_coils={N}")
     
-            # ---- Trend chart
-            fig, ax = plt.subplots(figsize=(14,4))
+            # --- Trend chart ---
+            fig, ax = plt.subplots(figsize=(12,4))
             x = np.arange(1, N+1)
     
             ax.plot(x, df_bin["TS"], marker="o", label="TS", color="#1f77b4")
-            ax.plot(x, df_bin["YS"], marker="s", label="YS", color="#2ca02c")
-            ax.plot(x, df_bin["EL"], marker="^", label="EL", color="#ff7f0e")
+            ax.fill_between(x, df_bin["TS"].min(), df_bin["TS"].max(), color="#1f77b4", alpha=0.1)
     
-            # Spec limit lines
+            ax.plot(x, df_bin["YS"], marker="s", label="YS", color="#2ca02c")
+            ax.fill_between(x, df_bin["YS"].min(), df_bin["YS"].max(), color="#2ca02c", alpha=0.1)
+    
+            ax.plot(x, df_bin["EL"], marker="^", label="EL", color="#ff7f0e")
+            ax.fill_between(x, df_bin["EL"].min(), df_bin["EL"].max(), color="#ff7f0e", alpha=0.1)
+    
+            # Spec lines
             ax.axhline(TS_LSL, color="#1f77b4", linestyle="--", alpha=0.5)
             ax.axhline(TS_USL, color="#1f77b4", linestyle="--", alpha=0.5)
             ax.axhline(YS_LSL, color="#2ca02c", linestyle="--", alpha=0.5)
@@ -425,11 +431,20 @@ for _, g in valid.iterrows():
             ax.legend(loc="best")
             plt.tight_layout()
             st.pyplot(fig)
-            buf = fig_to_png(fig)
-            st.download_button(f"📥 Download Trend HRB {hrb}", data=buf, file_name=f"trend_{hrb}.png", mime="image/png")
     
-            # ---- Distribution histogram
-            fig, ax = plt.subplots(figsize=(10,4))
+            # Safe key cho download
+            safe_hrb = re.sub(r"[<≥]", "", str(hrb))
+            buf = fig_to_png(fig)
+            st.download_button(
+                label=f"📥 Download Trend HRB {hrb}",
+                data=buf,
+                file_name=f"trend_{safe_hrb}.png",
+                mime="image/png",
+                key=f"download_trend_{safe_hrb}"
+            )
+    
+            # --- Distribution chart ---
+            fig, ax = plt.subplots(figsize=(12,4))
             ax.hist(df_bin["TS"], bins=10, alpha=0.4, label="TS", color="#1f77b4", edgecolor="black")
             ax.hist(df_bin["YS"], bins=10, alpha=0.4, label="YS", color="#2ca02c", edgecolor="black")
             ax.hist(df_bin["EL"], bins=10, alpha=0.4, label="EL", color="#ff7f0e", edgecolor="black")
@@ -441,5 +456,28 @@ for _, g in valid.iterrows():
             ax.legend()
             plt.tight_layout()
             st.pyplot(fig)
+    
             buf = fig_to_png(fig)
-            st.download_button(f"📥 Download Distribution HRB {hrb}", data=buf, file_name=f"dist_{hrb}.png", mime="image/png")
+            st.download_button(
+                label=f"📥 Download Distribution HRB {hrb}",
+                data=buf,
+                file_name=f"dist_{safe_hrb}.png",
+                mime="image/png",
+                key=f"download_dist_{safe_hrb}"
+            )
+    
+            # --- Mechanical Properties Table collapsible ---
+            summary_bin = df_bin[["COIL_NO","TS","YS","EL","HRB_bin"]].copy()
+            with st.expander(f"📋 Mechanical Properties Table (HRB {hrb})", expanded=False):
+                st.dataframe(summary_bin.style.format("{:.1f}", subset=["TS","YS","EL"]), use_container_width=True)
+    
+            # --- Kết luận tự động ---
+            conclusion = []
+            for prop, lsl, usl in [("TS", TS_LSL, TS_USL), ("YS", YS_LSL, YS_USL), ("EL", EL_LSL, EL_USL)]:
+                series = df_bin[prop]
+                n_ng = ((series < lsl) | (series > usl)).sum()
+                if n_ng == 0:
+                    conclusion.append(f"{prop} ✅ OK")
+                else:
+                    conclusion.append(f"{prop} ⚠️ {n_ng}/{N} out of spec")
+            st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
