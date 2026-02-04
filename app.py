@@ -158,8 +158,14 @@ df = df[
 
 view_mode = st.sidebar.radio(
     "📊 View Mode",
-    ["📋 Data Table", "📈 Trend (LAB / LINE)", "📊 Distribution (LAB + LINE)"]
+    [
+        "📋 Data Table",
+        "📈 Trend (LAB / LINE)",
+        "📊 Distribution (LAB + LINE)",
+        "🛠 Hardness → TS/YS/EL"   # <-- mới
+    ]
 )
+
 
 # ================================
 # GROUP CONDITION
