@@ -135,8 +135,13 @@ df = df[
 
 view_mode = st.sidebar.radio(
     "📊 View Mode",
-    ["📋 Data Table", "📈 Trend + Distribution"]
+    [
+        "📋 Data Table",
+        "📈 Trend (LAB / LINE)",
+        "📊 Distribution (LAB + LINE)"
+    ]
 )
+
 
 # ================================
 # GROUP CONDITION (NO PRODUCT SPEC)
@@ -161,56 +166,55 @@ if valid.empty:
 # ================================
 # MAIN LOOP
 # ================================
-for _, g in valid.iterrows():
+# VIEW 1 – DATA TABLE
+# ================================
+if view_mode == "📋 Data Table":
+    st.dataframe(sub, use_container_width=True)
 
-    sub = df[
-        (df["Rolling_Type"] == g["Rolling_Type"]) &
-        (df["Metallic_Type"] == g["Metallic_Type"]) &
-        (df["Quality_Group"] == g["Quality_Group"]) &
-        (df["Gauge_Range"] == g["Gauge_Range"]) &
-        (df["Material"] == g["Material"])
-    ].sort_values("COIL_NO")
 
-    lo, hi = sub.iloc[0][["Std_Min","Std_Max"]]
+# ================================
+# VIEW 2 – TREND ONLY
+# ================================
+elif view_mode == "📈 Trend (LAB / LINE)":
 
-    specs = ", ".join(sorted(sub["Product_Spec"].unique()))
-
-    st.markdown(
-        f"""
-### 🧱 Quality Group: {g['Quality_Group']}
-**Material:** {g['Material']}  
-**Gauge Range:** {g['Gauge_Range']}  
-**Product Specs:** {specs}  
-**Coils:** {sub['COIL_NO'].nunique()}
-"""
-    )
-
-    if view_mode == "📋 Data Table":
-        st.dataframe(sub, use_container_width=True)
-        continue
-
-    # ---------- TREND ----------
-    x = np.arange(1, len(sub)+1)
+    x = np.arange(1, len(sub) + 1)
     fig, ax = plt.subplots(figsize=(8,4))
+
     ax.plot(x, sub["Hardness_LAB"], marker="o", label="LAB")
     ax.plot(x, sub["Hardness_LINE"], marker="s", label="LINE")
-    ax.axhline(lo, linestyle="--", linewidth=2, label="LSL")
-    ax.axhline(hi, linestyle="--", linewidth=2, label="USL")
-    ax.set_title("Hardness Trend")
-    ax.set_ylabel("HRB")
+
+    ax.axhline(lo, color="red", linestyle="--", linewidth=2, label=f"LSL = {lo}")
+    ax.axhline(hi, color="red", linestyle="--", linewidth=2, label=f"USL = {hi}")
+
+    ax.set_title("Hardness Trend by Coil Sequence", weight="bold")
+    ax.set_xlabel("Coil Sequence")
+    ax.set_ylabel("Hardness (HRB)")
     ax.grid(alpha=0.3)
-    ax.legend()
+
+    ax.legend(
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.5),
+        frameon=False
+    )
+
     st.pyplot(fig)
 
-    # ---------- DISTRIBUTION : LAB + LINE COMBINED ----------
+
+# ================================
+# VIEW 3 – DISTRIBUTION ONLY
+# ================================
+elif view_mode == "📊 Distribution (LAB + LINE)":
+
     lab = sub["Hardness_LAB"].dropna()
     line = sub["Hardness_LINE"].dropna()
 
-    if len(lab) >= 10 and len(line) >= 10:
-
+    if len(lab) < 10 or len(line) < 10:
+        st.info("⚠️ Not enough data for distribution (need ≥10 points each)")
+    else:
         mean_lab, std_lab = lab.mean(), lab.std(ddof=1)
         mean_line, std_line = line.mean(), line.std(ddof=1)
 
+        # ===== 3 SIGMA RANGE (CHUNG)
         x_min = min(mean_lab - 3*std_lab, mean_line - 3*std_line)
         x_max = max(mean_lab + 3*std_lab, mean_line + 3*std_line)
 
@@ -218,18 +222,26 @@ for _, g in valid.iterrows():
 
         fig, ax = plt.subplots(figsize=(8,4.5))
 
-        ax.hist(lab, bins=bins, density=True, alpha=0.35, edgecolor="black", label="LAB")
-        ax.hist(line, bins=bins, density=True, alpha=0.35, edgecolor="black", label="LINE")
+        # HIST
+        ax.hist(lab, bins=bins, density=True, alpha=0.35,
+                edgecolor="black", label="LAB")
+        ax.hist(line, bins=bins, density=True, alpha=0.35,
+                edgecolor="black", label="LINE")
 
+        # NORMAL CURVE
         xs = np.linspace(x_min, x_max, 400)
-        ax.plot(xs, np.exp(-0.5*((xs-mean_lab)/std_lab)**2)/(std_lab*np.sqrt(2*np.pi)),
+        ax.plot(xs,
+                np.exp(-0.5*((xs-mean_lab)/std_lab)**2)/(std_lab*np.sqrt(2*np.pi)),
                 linewidth=2.5, label="LAB Normal (±3σ)")
-        ax.plot(xs, np.exp(-0.5*((xs-mean_line)/std_line)**2)/(std_line*np.sqrt(2*np.pi)),
+        ax.plot(xs,
+                np.exp(-0.5*((xs-mean_line)/std_line)**2)/(std_line*np.sqrt(2*np.pi)),
                 linewidth=2.5, linestyle="--", label="LINE Normal (±3σ)")
 
-        ax.axvline(lo, color="red", linestyle="--", linewidth=2, label=f"LSL {lo}")
-        ax.axvline(hi, color="red", linestyle="--", linewidth=2, label=f"USL {hi}")
+        # SPEC LIMIT
+        ax.axvline(lo, color="red", linestyle="--", linewidth=2, label=f"LSL = {lo}")
+        ax.axvline(hi, color="red", linestyle="--", linewidth=2, label=f"USL = {hi}")
 
+        # MEAN
         ax.axvline(mean_lab, linestyle=":", linewidth=2, label=f"LAB Mean {mean_lab:.2f}")
         ax.axvline(mean_line, linestyle=":", linewidth=2, label=f"LINE Mean {mean_line:.2f}")
 
@@ -243,9 +255,18 @@ for _, g in valid.iterrows():
             f"LINE: N={len(line)} | Mean={mean_line:.2f} | Std={std_line:.2f}"
         )
 
-        ax.text(1.02, 0.5, note, transform=ax.transAxes,
-                va="center", bbox=dict(boxstyle="round", alpha=0.15))
+        ax.text(
+            1.02, 0.5, note,
+            transform=ax.transAxes,
+            va="center",
+            bbox=dict(boxstyle="round", alpha=0.15)
+        )
 
-        ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.85), frameon=False)
+        ax.legend(
+            loc="center left",
+            bbox_to_anchor=(1.02, 0.85),
+            frameon=False
+        )
+
         plt.tight_layout()
         st.pyplot(fig)
