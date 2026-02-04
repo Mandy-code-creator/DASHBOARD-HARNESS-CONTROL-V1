@@ -517,16 +517,19 @@ for _, g in valid.iterrows():
             y_pred = a*x + b
             pred_values[prop] = y_pred
     
-            # ----- 95% CI approximation
-            resid_std = np.std(y - y_pred, ddof=1)
+            # ----- 95% CI (mean ± 1.96*std residuals)
+            resid = y - y_pred
+            resid_std = np.std(resid, ddof=1)
             ci_upper[prop] = y_pred + 1.96*resid_std
             ci_lower[prop] = y_pred - 1.96*resid_std
     
         # ----- Plot observed vs predicted with CI
         fig, axes = plt.subplots(3,1, figsize=(14,10), sharex=True)
-        for ax, prop, color_obs, marker in zip(axes, ["TS","YS","EL"], ["#003f5c","#2f4b7c","#665191"], ["o","s","^"]):
-            ax.plot(coils, sub_fit[prop], linestyle="-", marker=marker, color=color_obs, label=f"Observed {prop}")
-            ax.plot(coils, pred_values[prop], linestyle="--", marker=marker, color="#ffa600", label=f"Predicted {prop}")
+        colors_obs = {"TS":"#003f5c","YS":"#2f4b7c","EL":"#665191"}
+        markers = {"TS":"o","YS":"s","EL":"^"}
+        for ax, prop in zip(axes, ["TS","YS","EL"]):
+            ax.plot(coils, sub_fit[prop], linestyle="-", marker=markers[prop], color=colors_obs[prop], label=f"Observed {prop}")
+            ax.plot(coils, pred_values[prop], linestyle="--", marker=markers[prop], color="#ffa600", label=f"Predicted {prop}")
             ax.fill_between(coils, ci_lower[prop], ci_upper[prop], color="#ffa600", alpha=0.2, label="95% CI")
             ax.set_ylabel(prop)
             ax.grid(True, linestyle="--", alpha=0.3)
@@ -537,40 +540,34 @@ for _, g in valid.iterrows():
         plt.tight_layout(rect=[0,0,1,0.97])
         st.pyplot(fig)
     
-        # ----- Automatic conclusion
+        # ----- Automatic conclusion table
         conclusion = []
-        for prop in ["TS", "YS", "EL"]:
+        for prop in ["TS","YS","EL"]:
             observed = sub_fit[prop].values
             predicted = pred_values[prop]
             upper = ci_upper[prop]
             lower = ci_lower[prop]
-    
             n_outside = np.sum((observed < lower) | (observed > upper))
             bias = observed.mean() - predicted.mean()
             ci_width = np.mean(upper - lower)
-    
-            if n_outside == 0:
-                status = "✅ All observed values within 95% CI"
-            else:
-                status = f"⚠️ {n_outside}/{N_coils} coils outside 95% CI"
+            status = "✅ All observed values within 95% CI" if n_outside==0 else f"⚠️ {n_outside}/{N_coils} coils outside 95% CI"
     
             conclusion.append(
                 f"**{prop}:** Observed mean={observed.mean():.1f}, Predicted mean={predicted.mean():.1f}, "
                 f"Avg CI width={ci_width:.1f} | Bias={bias:.1f} | {status}"
             )
     
-        # ----- Show conclusion table
         st.markdown("### 📌 Prediction Summary")
         for line in conclusion:
             st.markdown(line)
     
-        # ----- CI Explanation (only once)
-        st.markdown(
-            """
-    💡 **95% Confidence Interval (CI):**  
-    - The shaded area around the predicted line represents the **95% Confidence Interval**.  
-    - It indicates the range where **95% of future observations are expected to fall** if the linear model is valid.  
-    - Narrow CI → high precision; Wide CI → higher uncertainty.  
-    - This explanation is shown only once for clarity.
+        # ----- 95% CI Explanation in sidebar (collapsible)
+        with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
+            st.markdown(
+                """
+    - The shaded area around the predicted line represents the **95% Confidence Interval (CI)**.
+    - It indicates the range where **95% of future observations are expected to fall** if the linear model is valid.
+    - Narrow CI → high precision; Wide CI → higher uncertainty.
+    - This note appears **once** for clarity and can be collapsed.
     """
-        )
+            )
