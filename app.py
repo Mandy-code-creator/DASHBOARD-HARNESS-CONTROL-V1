@@ -495,97 +495,86 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL":
-        sub_fit = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
-        if len(sub_fit) < 5:
-            st.warning("⚠️ Not enough data to fit model for TS/YS/EL prediction.")
+        # ---- Lọc dữ liệu hợp lệ từ sub hiện tại
+        sub_fit = sub.dropna(subset=["Hardness_LAB", "TS", "YS", "EL"]).copy()
+        N_coils = len(sub_fit)
+        if N_coils < 5:
+            st.warning(f"⚠️ Not enough data to predict TS/YS/EL for this group (N={N_coils})")
             continue
     
-        # Hardness spec
+        # ---- Hardness limits
         lsl, usl = sub_fit["Std_Min"].iloc[0], sub_fit["Std_Max"].iloc[0]
     
-        # 1️⃣ Fit linear regression using numpy.polyfit
+        # ---- Predict TS/YS/EL using linear regression (polyfit)
         predictions = {}
-        for prop in ["TS","YS","EL"]:
+        for prop in ["TS", "YS", "EL"]:
             X = sub_fit["Hardness_LAB"].values
             y = sub_fit[prop].values
-            a, b = np.polyfit(X, y, 1)
-            y_min = a*lsl + b
-            y_max = a*usl + b
-            y_mean = a*(lsl+usl)/2 + b
-            predictions[prop] = {"min": y_min, "mean": y_mean, "max": y_max}
+            a, b = np.polyfit(X, y, 1)  # tuyến tính
+            y_min = a * lsl + b
+            y_max = a * usl + b
+            y_mean = a * (lsl + usl)/2 + b
+            predictions[prop] = (y_min, y_mean, y_max)
     
-        # 2️⃣ Quan sát thực tế
-        observed = {}
-        for prop in ["TS","YS","EL"]:
-            obs_min = sub_fit[prop].min()
-            obs_max = sub_fit[prop].max()
-            obs_mean = sub_fit[prop].mean()
-            observed[prop] = {"min": obs_min, "mean": obs_mean, "max": obs_max}
+        # ---- Biểu đồ Prediction vs Observed
+        fig, ax = plt.subplots(figsize=(12,5))
+        for prop, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
+            y_min, y_mean, y_max = predictions[prop]
+            obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
     
-        # 3️⃣ Biểu đồ so sánh Predicted vs Observed
-        props = ["TS","YS","EL"]
-        x = np.arange(len(props))
-        width = 0.35
+            # Fill predicted range
+            ax.fill_between([lsl, usl], [y_min,y_min], [y_max,y_max], color=color, alpha=0.15)
+            # Mean line
+            ax.plot([lsl, usl], [y_mean, y_mean], color=color, linewidth=2, label=f"{prop} Predicted Mean")
+            # Observed min/max markers
+            ax.scatter([lsl, usl], [obs_min, obs_max], color=color, marker=marker, s=60, zorder=5)
+            # Annotate
+            ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=10, fontweight='bold', color=color)
+            ax.text(lsl, obs_min, f"{obs_min:.1f}", ha='center', va='top', fontsize=10, color=color)
+            ax.text(usl, obs_max, f"{obs_max:.1f}", ha='center', va='bottom', fontsize=10, color=color)
     
-        fig, ax = plt.subplots(figsize=(8,5))
-        pred_means = [predictions[p]["mean"] for p in props]
-        pred_err = [[pred_means[i]-predictions[props[i]]["min"] for i in range(3)],
-                    [predictions[props[i]]["max"]-pred_means[i] for i in range(3)]]
-    
-        obs_means = [observed[p]["mean"] for p in props]
-        obs_err = [[obs_means[i]-observed[props[i]]["min"] for i in range(3)],
-                   [observed[props[i]]["max"]-obs_means[i] for i in range(3)]]
-    
-        bars1 = ax.bar(x - width/2, pred_means, width, yerr=pred_err, capsize=6,
-                       label="Predicted", color="#1f77b4", alpha=0.7)
-        bars2 = ax.bar(x + width/2, obs_means, width, yerr=obs_err, capsize=6,
-                       label="Observed", color="#ff7f0e", alpha=0.7)
-    
-        # Highlight nếu Predicted vượt Observed
-        for i, p in enumerate(props):
-            if predictions[p]["min"] < observed[p]["min"] or predictions[p]["max"] > observed[p]["max"]:
-                bars1[i].set_edgecolor("red")
-                bars1[i].set_linewidth(2)
-    
-        ax.set_xticks(x)
-        ax.set_xticklabels(props, fontsize=12, fontweight="bold")
-        ax.set_ylabel("Value (MPa / %)")
-        ax.set_title(f"Predicted vs Observed TS/YS/EL for Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight="bold")
-        ax.grid(True, linestyle="--", alpha=0.3)
-        ax.legend()
-    
+        ax.set_xlabel("Hardness (HRB)")
+        ax.set_ylabel("Mechanical Properties (MPa / %)")
+        ax.set_title(f"Predicted vs Observed TS/YS/EL | Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight='bold')
+        ax.grid(True, linestyle='--', alpha=0.5)
+        ax.legend(loc="upper left", bbox_to_anchor=(1.02,1))
         plt.tight_layout()
         st.pyplot(fig)
     
-        # Download chart
+        # ---- Bảng collapsible thu gọn
+        df_summary = pd.DataFrame(columns=["Property","Predicted Min","Predicted Mean","Predicted Max",
+                                           "Observed Min","Observed Mean","Observed Max"])
+        for prop in ["TS","YS","EL"]:
+            y_min, y_mean, y_max = predictions[prop]
+            obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
+            df_summary = pd.concat([df_summary, pd.DataFrame({
+                "Property":[prop],
+                "Predicted Min":[y_min],
+                "Predicted Mean":[y_mean],
+                "Predicted Max":[y_max],
+                "Observed Min":[obs_min],
+                "Observed Mean":[obs_mean],
+                "Observed Max":[obs_max]
+            })], ignore_index=True)
+    
+        with st.expander(f"📋 Prediction vs Observed Table (N={N_coils})", expanded=False):
+            st.dataframe(df_summary.style.format("{:.1f}", subset=df_summary.columns[1:]), use_container_width=True)
+    
+        # ---- Quick Conclusion
+        conclusion = []
+        for prop in ["TS","YS","EL"]:
+            y_min, y_max = predictions[prop][0], predictions[prop][2]
+            obs_min, obs_max = sub_fit[prop].min(), sub_fit[prop].max()
+            status = "✅ Prediction within observed range" if y_min >= obs_min and y_max <= obs_max else "⚠️ Prediction out of observed range"
+            conclusion.append(f"{prop}: {status} | Predicted {y_min:.1f}-{y_max:.1f} vs Observed {obs_min:.1f}-{obs_max:.1f}")
+    
+        st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
+    
+        # ---- Download chart
         buf = fig_to_png(fig)
         st.download_button(
-            label="📥 Download Prediction vs Observed Chart",
+            label="📥 Download Predicted TS/YS/EL Chart",
             data=buf,
             file_name=f"Predicted_vs_Observed_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
             mime="image/png"
         )
-    
-        # 4️⃣ Bảng collapsible thu gọn
-        df_summary = pd.DataFrame({
-            "Property": props,
-            "Predicted Min": [predictions[p]["min"] for p in props],
-            "Predicted Mean": [predictions[p]["mean"] for p in props],
-            "Predicted Max": [predictions[p]["max"] for p in props],
-            "Observed Min": [observed[p]["min"] for p in props],
-            "Observed Mean": [observed[p]["mean"] for p in props],
-            "Observed Max": [observed[p]["max"] for p in props],
-        })
-    
-        with st.expander("📋 Detailed Table (collapsed)", expanded=False):
-            st.dataframe(df_summary.style.format("{:.1f}", subset=df_summary.columns[1:]),
-                         use_container_width=True)
-    
-        # 5️⃣ Quick Conclusion
-        conclusion = []
-        for p in props:
-            status = "✅ Within observed range" if (predictions[p]["min"] >= observed[p]["min"] and
-                                                   predictions[p]["max"] <= observed[p]["max"]) else "⚠️ Out of observed range"
-            conclusion.append(f"{p}: {status}")
-        st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
-    
