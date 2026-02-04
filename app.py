@@ -495,94 +495,79 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
-        # 1️⃣ Lọc dữ liệu hợp lệ
+        # ---- Lọc dữ liệu hợp lệ
         sub_fit = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
         if len(sub_fit) < 5:
-            st.warning("⚠️ Không đủ dữ liệu để tạo mô hình dự đoán cho nhóm này.")
+            st.warning("⚠️ Not enough data to fit model for TS/YS/EL prediction.")
             continue
     
         lsl, usl = sub_fit["Std_Min"].iloc[0], sub_fit["Std_Max"].iloc[0]
     
-        # 2️⃣ Dự đoán TS/YS/EL dùng hồi quy tuyến tính (numpy.polyfit)
+        # ---- Dự đoán TS/YS/EL dùng numpy.polyfit
         predictions = {}
         for prop in ["TS","YS","EL"]:
             X = sub_fit["Hardness_LAB"].values
             y = sub_fit[prop].values
-            a, b = np.polyfit(X, y, 1)  
-            y_min = a * lsl + b
-            y_max = a * usl + b
-            y_mean = a * (lsl + usl) / 2 + b
+            a, b = np.polyfit(X, y, 1)  # tuyến tính
+            y_min = a*lsl + b
+            y_max = a*usl + b
+            y_mean = a*(lsl+usl)/2 + b
             predictions[prop] = (y_min, y_mean, y_max)
     
-        # 3️⃣ Vẽ biểu đồ tối ưu hiển thị
-        fig, ax = plt.subplots(figsize=(12, 7)) # Tăng chiều cao để có không gian cho nhãn
-        
+        # ---- Biểu đồ
+        fig, ax = plt.subplots(figsize=(12,5))
         for prop, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
             y_min, y_mean, y_max = predictions[prop]
-            
-            # Vẽ đường xu hướng và vùng dao động
-            ax.plot([lsl, usl], [y_mean, y_mean], color=color, linewidth=2, label=f"{prop} Mean")
-            ax.fill_between([lsl, usl], [y_min, y_min], [y_max, y_max], color=color, alpha=0.15)
-            ax.scatter([lsl, usl], [y_min, y_max], color=color, marker=marker, s=80, zorder=5)
-            
-            # --- XỬ LÝ NHÃN (ANNOTATIONS) CHỐNG TRÙNG ---
-            if prop == "TS":
-                # TS: Luôn đẩy LÊN TRÊN (va='bottom') với khoảng cách 12 points
-                ax.annotate(f"{y_min:.1f}", (lsl, y_min), textcoords="offset points", xytext=(0, 12), 
-                            ha='center', va='bottom', color=color, fontsize=10, fontweight='bold')
-                ax.annotate(f"{y_max:.1f}", (usl, y_max), textcoords="offset points", xytext=(0, 12), 
-                            ha='center', va='bottom', color=color, fontsize=10, fontweight='bold')
-                ax.annotate(f"{y_mean:.1f}", ((lsl+usl)/2, y_mean), textcoords="offset points", xytext=(0, 12), 
-                            ha='center', va='bottom', color=color, fontsize=11, fontweight='bold')
-            
-            elif prop == "YS":
-                # YS: Luôn kéo XUỐNG DƯỚI (va='top') với khoảng cách -18 points
-                ax.annotate(f"{y_min:.1f}", (lsl, y_min), textcoords="offset points", xytext=(0, -18), 
-                            ha='center', va='top', color=color, fontsize=10, fontweight='bold')
-                ax.annotate(f"{y_max:.1f}", (usl, y_max), textcoords="offset points", xytext=(0, -18), 
-                            ha='center', va='top', color=color, fontsize=10, fontweight='bold')
-                ax.annotate(f"{y_mean:.1f}", ((lsl+usl)/2, y_mean), textcoords="offset points", xytext=(0, -18), 
-                            ha='center', va='top', color=color, fontsize=11, fontweight='bold')
-            
-            else: # EL (Thường nằm ở dải thấp hơn hẳn nên không lo trùng với TS/YS)
-                ax.annotate(f"{y_min:.1f}", (lsl, y_min), textcoords="offset points", xytext=(0, 10), 
-                            ha='center', va='bottom', color=color, fontsize=9)
-                ax.annotate(f"{y_max:.1f}", (usl, y_max), textcoords="offset points", xytext=(0, 10), 
-                            ha='center', va='bottom', color=color, fontsize=9)
-                ax.annotate(f"{y_mean:.1f}", ((lsl+usl)/2, y_mean), textcoords="offset points", xytext=(0, -15), 
-                            ha='center', va='top', color=color, fontsize=9)
+            ax.plot([lsl, usl],[y_mean, y_mean], color=color, linewidth=2, label=f"{prop} Predicted Mean")
+            ax.fill_between([lsl, usl],[y_min,y_min],[y_max,y_max], color=color, alpha=0.15, label=f"{prop} Predicted Min-Max")
+            ax.scatter([lsl, usl],[y_min, y_max], color=color, marker=marker, s=50)
+            ax.text(lsl, y_min, f"{y_min:.1f}", ha='center', va='top', fontsize=10, color=color)
+            ax.text(usl, y_max, f"{y_max:.1f}", ha='center', va='bottom', fontsize=10, color=color)
+            ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=10, fontweight='bold', color=color)
     
-        # Tối ưu hóa trục Y để giãn khoảng cách giữa các đường
-        all_vals = [v for p in predictions.values() for v in p]
-        ax.set_ylim(min(all_vals) * 0.9, max(all_vals) * 1.1)
-    
-        ax.set_xlabel("Hardness (HRB)", fontweight='bold')
-        ax.set_ylabel("Mechanical Properties (MPa / %)", fontweight='bold')
-        ax.set_title(f"Predicted Mechanical Properties for Hardness {lsl:.1f} - {usl:.1f}", fontsize=14, fontweight='bold', pad=20)
+        ax.set_xlabel("Hardness (HRB)")
+        ax.set_ylabel("Mechanical Properties (MPa / %)")
+        ax.set_title(f"Predicted vs Observed TS/YS/EL for Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight='bold')
         ax.grid(True, linestyle="--", alpha=0.5)
-        
-        # Legend đặt ngoài biểu đồ để tránh đè dữ liệu
-        ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1), borderaxespad=0., frameon=False)
-        
+        ax.legend(loc="upper left", bbox_to_anchor=(1.02,1))
         plt.tight_layout()
         st.pyplot(fig)
     
-        # 4️⃣ Bảng Quick Prediction
-        st.markdown("### 🔹 Quick Prediction Table")
-        df_pred = pd.DataFrame({
-            "Property": ["TS", "YS", "EL"],
-            "Predicted Min": [predictions[p][0] for p in ["TS", "YS", "EL"]],
-            "Predicted Mean": [predictions[p][1] for p in ["TS", "YS", "EL"]],
-            "Predicted Max": [predictions[p][2] for p in ["TS", "YS", "EL"]]
-        })
-        st.dataframe(df_pred.style.format("{:.1f}", subset=["Predicted Min","Predicted Mean","Predicted Max"]), use_container_width=True)
-        # ===== Quick Conclusion
+        # ---- Bảng so sánh dự báo vs thực tế
+        df_summary = pd.DataFrame(columns=["Property","Predicted Min","Predicted Mean","Predicted Max",
+                                           "Observed Min","Observed Mean","Observed Max"])
+        for prop in ["TS","YS","EL"]:
+            y_min, y_mean, y_max = predictions[prop]
+            obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
+            df_summary = pd.concat([df_summary, pd.DataFrame({
+                "Property":[prop],
+                "Predicted Min":[y_min],
+                "Predicted Mean":[y_mean],
+                "Predicted Max":[y_max],
+                "Observed Min":[obs_min],
+                "Observed Mean":[obs_mean],
+                "Observed Max":[obs_max]
+            })], ignore_index=True)
+    
+        st.markdown("### 🔹 Prediction vs Observed Table")
+        st.dataframe(df_summary.style.format("{:.1f}", subset=df_summary.columns[1:]), use_container_width=True)
+    
+        # ---- Quick Conclusion
         conclusion = []
         for prop in ["TS","YS","EL"]:
             y_min, y_mean, y_max = predictions[prop]
-            status = "✅ OK" if (y_min >= sub[prop].min()) and (y_max <= sub[prop].max()) else "⚠️ Check"
-            conclusion.append(f"{prop}: {status} | Predicted {y_min:.1f}-{y_max:.1f}")
-        
-        st.markdown(
-            f"**📌 Quick Conclusion for Hardness {lsl:.1f}-{usl:.1f}:** " + " | ".join(conclusion)
+            obs_min, obs_max = sub_fit[prop].min(), sub_fit[prop].max()
+            # so sánh dự báo có nằm trong giới hạn thực tế
+            status = "✅ Prediction within observed range" if y_min >= obs_min and y_max <= obs_max else "⚠️ Prediction out of observed range"
+            conclusion.append(f"{prop}: {status} | Predicted {y_min:.1f}-{y_max:.1f} vs Observed {obs_min:.1f}-{obs_max:.1f}")
+    
+        st.markdown("**📌 Quick Conclusion:**\n" + " | ".join(conclusion))
+    
+        # ---- Download chart
+        buf = fig_to_png(fig)
+        st.download_button(
+            label="📥 Download Predicted TS/YS/EL Chart",
+            data=buf,
+            file_name=f"Predicted_vs_Observed_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
+            mime="image/png"
         )
