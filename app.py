@@ -514,31 +514,32 @@ for _, g in valid.iterrows():
             y_mean = a*(lsl+usl)/2 + b
             predictions[prop] = (y_min,y_mean,y_max)
     
-        # ----- Biểu đồ so sánh trực quan
+        # ----- Biểu đồ 2 đường
         fig, ax = plt.subplots(figsize=(8,5))
         props = ["TS","YS","EL"]
         colors = ["#1f77b4","#2ca02c","#ff7f0e"]
     
-        for i, prop in enumerate(props):
-            y_min, y_mean, y_max = predictions[prop]
-            obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
+        # Tạo list mean observed
+        observed_mean = [sub_fit[prop].mean() for prop in props]
+        predicted_mean = [predictions[prop][1] for prop in props]
+        predicted_min = [predictions[prop][0] for prop in props]
+        predicted_max = [predictions[prop][2] for prop in props]
     
-            # Dải dự báo (fill nhạt)
-            ax.fill_between([i-0.2, i+0.2], [y_min,y_min], [y_max,y_max], color=colors[i], alpha=0.2)
+        x = np.arange(len(props))
     
-            # Đường Predicted Mean
-            ax.plot([i-0.2, i+0.2], [y_mean,y_mean], color=colors[i], linewidth=3, label=f"{prop} Predicted Mean")
+        # Dải dự báo nhạt
+        ax.fill_between(x, predicted_min, predicted_max, color="gray", alpha=0.2, label="Predicted Range")
     
-            # Thanh quan sát Min → Max
-            ax.bar(i, obs_max-obs_min, bottom=obs_min, width=0.1, color=colors[i], alpha=0.8, label=f"{prop} Observed Range")
+        # Đường Predicted Mean
+        ax.plot(x, predicted_mean, color="red", linewidth=3, marker='o', label="Predicted Mean")
     
-            # Marker mean quan sát
-            ax.scatter(i, obs_mean, color="black", zorder=5, s=50, label=f"{prop} Observed Mean" if i==0 else "")
+        # Đường Observed Mean
+        ax.plot(x, observed_mean, color="blue", linewidth=3, marker='s', label="Observed Mean")
     
-        ax.set_xticks(range(len(props)))
+        ax.set_xticks(x)
         ax.set_xticklabels(props, fontsize=12, fontweight="bold")
         ax.set_ylabel("Mechanical Properties (MPa / %)", fontsize=12, fontweight="bold")
-        ax.set_title(f"Predicted vs Observed TS/YS/EL | Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight="bold")
+        ax.set_title(f"Predicted vs Observed Mean TS/YS/EL | Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight="bold")
         ax.grid(True, linestyle="--", alpha=0.3)
         ax.legend(loc="upper left", bbox_to_anchor=(1.02,1))
         plt.tight_layout()
