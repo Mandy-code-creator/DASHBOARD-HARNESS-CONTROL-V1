@@ -456,7 +456,7 @@ for _, g in valid.iterrows():
                 key=f"download_trend_{safe_hrb}_{i}"   # ✅ index i để unique key
             )
     
-            # ===== 5️⃣ Distribution Chart
+           # ===== 5️⃣ Distribution Chart
             fig, ax = plt.subplots(figsize=(14,4))
             for col, color in [("TS","#1f77b4"), ("YS","#2ca02c"), ("EL","#ff7f0e")]:
                 ax.hist(df_bin[col], bins=10, alpha=0.4, label=col, color=color, edgecolor="black")
@@ -467,29 +467,28 @@ for _, g in valid.iterrows():
             ax.legend()
             plt.tight_layout()
             st.pyplot(fig)
-    
-            buf = fig_to_png(fig)
+            
+            buf_dist = fig_to_png(fig)  # <-- thêm dòng này
+            
             import uuid
-
             # Trend download
             st.download_button(
                 label=f"📥 Download Trend HRB {hrb}",
                 data=buf,
                 file_name=f"trend_{safe_hrb}.png",
                 mime="image/png",
-                key=str(uuid.uuid4())   # ✅ 100% unique mỗi lần render
+                key=str(uuid.uuid4())   # 100% unique mỗi lần render
             )
             
             # Distribution download
             st.download_button(
                 label=f"📥 Download Distribution HRB {hrb}",
-                data=buf_dist,
+                data=buf_dist,  # ✅ dùng buf_dist đã tạo
                 file_name=f"dist_{safe_hrb}.png",
                 mime="image/png",
-                key=str(uuid.uuid4())   # ✅ 100% unique
+                key=str(uuid.uuid4())   # 100% unique
             )
 
-    
             # ===== 6️⃣ Mechanical Properties Table
             summary_bin = df_bin[["COIL_NO","TS","YS","EL","HRB_bin","NG_TS","NG_YS","NG_EL"]].copy()
             summary_bin["TS_LSL"], summary_bin["TS_USL"] = TS_LSL, TS_USL
