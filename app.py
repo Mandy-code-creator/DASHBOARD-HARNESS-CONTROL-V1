@@ -468,8 +468,21 @@ for _, g in valid.iterrows():
     
             # --- Mechanical Properties Table collapsible ---
             summary_bin = df_bin[["COIL_NO","TS","YS","EL","HRB_bin"]].copy()
+            
+            # Thêm cột tiêu chuẩn
+            summary_bin["TS_LSL"] = TS_LSL
+            summary_bin["TS_USL"] = TS_USL
+            summary_bin["YS_LSL"] = YS_LSL
+            summary_bin["YS_USL"] = YS_USL
+            summary_bin["EL_LSL"] = EL_LSL
+            summary_bin["EL_USL"] = EL_USL
+            
             with st.expander(f"📋 Mechanical Properties Table (HRB {hrb})", expanded=False):
-                st.dataframe(summary_bin.style.format("{:.1f}", subset=["TS","YS","EL"]), use_container_width=True)
+                st.dataframe(
+                    summary_bin.style.format("{:.1f}", subset=["TS","YS","EL","TS_LSL","TS_USL","YS_LSL","YS_USL","EL_LSL","EL_USL"]),
+                    use_container_width=True
+                )
+
     
             # --- Kết luận tự động ---
             conclusion = []
