@@ -509,38 +509,45 @@ for _, g in valid.iterrows():
             a,b = np.polyfit(sub_fit["Hardness_LAB"], sub_fit[prop],1)
             pred_values[prop] = a*sub_fit["Hardness_LAB"] + b
     
-        # ----- Tách subplot
-        fig, axes = plt.subplots(2,2, figsize=(16,8), gridspec_kw={'height_ratios':[1,1]})
-        ax_ts, ax_ys = axes[0,0], axes[0,1]
-        ax_el = axes[1,0]
-        axes[1,1].axis('off')  # ô trống
+        # ----- Kiểm tra ngoài spec (±5% band dự báo)
+        band = 0.05
+        out_of_spec = {}
+        for prop in ["TS","YS","EL"]:
+            upper = pred_values[prop]*(1+band)
+            lower = pred_values[prop]*(1-band)
+            out_of_spec[prop] = (sub_fit[prop] < lower) | (sub_fit[prop] > upper)
     
-        # ---- TS
-        ax_ts.plot(coils, sub_fit["TS"], linestyle="-", marker="o", color="#003f5c", label="Observed TS")
-        ax_ts.plot(coils, pred_values["TS"], linestyle="--", marker="o", color="#ffa600", label="Predicted TS")
-        ax_ts.set_title("TS: Predicted vs Observed per Coil")
-        ax_ts.set_xlabel("Coil Sequence")
-        ax_ts.set_ylabel("MPa")
-        ax_ts.grid(True, linestyle="--", alpha=0.3)
-        ax_ts.legend()
-    
-        # ---- YS
-        ax_ys.plot(coils, sub_fit["YS"], linestyle="-", marker="s", color="#2f4b7c", label="Observed YS")
-        ax_ys.plot(coils, pred_values["YS"], linestyle="--", marker="s", color="#ffa600", label="Predicted YS")
-        ax_ys.set_title("YS: Predicted vs Observed per Coil")
-        ax_ys.set_xlabel("Coil Sequence")
-        ax_ys.set_ylabel("MPa")
-        ax_ys.grid(True, linestyle="--", alpha=0.3)
-        ax_ys.legend()
-    
-        # ---- EL
-        ax_el.plot(coils, sub_fit["EL"], linestyle="-", marker="^", color="#665191", label="Observed EL")
-        ax_el.plot(coils, pred_values["EL"], linestyle="--", marker="^", color="#ffa600", label="Predicted EL")
-        ax_el.set_title("EL: Predicted vs Observed per Coil")
-        ax_el.set_xlabel("Coil Sequence")
-        ax_el.set_ylabel("%")
-        ax_el.grid(True, linestyle="--", alpha=0.3)
-        ax_el.legend()
-    
-        plt.tight_layout()
+        # ----- Chart TS & YS cùng nhau
+        fig, ax = plt.subplots(figsize=(14,4))
+        for prop, color_obs, color_pred in [("TS","#003f5c","#ffa600"), ("YS","#2f4b7c","#ffa600")]:
+            ax.plot(coils, sub_fit[prop], linestyle="-", marker="o", color=color_obs, label=f"{prop} Observed")
+            ax.plot(coils, pred_values[prop], linestyle="--", marker="s", color=color_pred, label=f"{prop} Predicted")
+            # Mark ngoài band đỏ
+            ax.scatter(coils[out_of_spec[prop]], sub_fit.loc[out_of_spec[prop], prop], color="red", s=50, zorder=5)
+        ax.set_title("TS & YS: Observed vs Predicted per Coil")
+        ax.set_xlabel("Coil Sequence")
+        ax.set_ylabel("MPa")
+        ax.grid(True, linestyle="--", alpha=0.3)
+        ax.legend()
         st.pyplot(fig)
+    
+        # ----- Chart EL riêng
+        fig, ax = plt.subplots(figsize=(14,4))
+        ax.plot(coils, sub_fit["EL"], linestyle="-", marker="^", color="#665191", label="Observed EL")
+        ax.plot(coils, pred_values["EL"], linestyle="--", marker="^", color="#ffa600", label="Predicted EL")
+        ax.scatter(coils[out_of_spec["EL"]], sub_fit.loc[out_of_spec["EL"], "EL"], color="red", s=50, zorder=5)
+        ax.set_title("EL: Observed vs Predicted per Coil")
+        ax.set_xlabel("Coil Sequence")
+        ax.set_ylabel("%")
+        ax.grid(True, linestyle="--", alpha=0.3)
+        ax.legend()
+        st.pyplot(fig)
+    
+        # ----- Collapsible table Observed vs Predicted
+        df_display = sub_fit[["COIL_NO","Hardness_LAB","TS","YS","EL"]].copy()
+        for prop in ["TS","YS","EL"]:
+            df_display[f"{prop}_Pred"] = pred_values[prop].round(1)
+            df_display[f"{prop}_Δ"] = (df_display[prop]-df_display[f"{prop}_Pred"]).round(1)
+    
+        with st.expander("📋 Observed vs Predicted Table", expanded=True):
+            st.dataframe(df_display.style.format("{:.1f}", subset=df_display.columns[1:]), use_container_width=True)
