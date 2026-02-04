@@ -495,66 +495,84 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
-        # ---- Lọc dữ liệu hợp lệ
+        # 1️⃣ Lọc dữ liệu hợp lệ
         sub_fit = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
         if len(sub_fit) < 5:
-            st.warning("⚠️ Not enough data to fit model for TS/YS/EL prediction.")
+            st.warning("⚠️ Không đủ dữ liệu để tạo mô hình dự đoán cho nhóm này.")
             continue
     
         lsl, usl = sub_fit["Std_Min"].iloc[0], sub_fit["Std_Max"].iloc[0]
     
-        # ---- Dự đoán TS/YS/EL dùng numpy.polyfit
+        # 2️⃣ Dự đoán TS/YS/EL dùng hồi quy tuyến tính (numpy.polyfit)
         predictions = {}
         for prop in ["TS","YS","EL"]:
             X = sub_fit["Hardness_LAB"].values
             y = sub_fit[prop].values
-            a, b = np.polyfit(X, y, 1)  # hồi quy tuyến tính
-            y_min = a*lsl + b
-            y_max = a*usl + b
-            y_mean = a*(lsl+usl)/2 + b
+            a, b = np.polyfit(X, y, 1)  
+            y_min = a * lsl + b
+            y_max = a * usl + b
+            y_mean = a * (lsl + usl) / 2 + b
             predictions[prop] = (y_min, y_mean, y_max)
     
-        # ---- Vẽ biểu đồ
-        fig, ax = plt.subplots(figsize=(12,6)) # Tăng chiều cao để không gian rộng hơn
+        # 3️⃣ Vẽ biểu đồ tối ưu hiển thị
+        fig, ax = plt.subplots(figsize=(12, 7)) # Tăng chiều cao để có không gian cho nhãn
         
         for prop, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
             y_min, y_mean, y_max = predictions[prop]
             
-            # Vẽ đường Mean và vùng Min-Max
+            # Vẽ đường xu hướng và vùng dao động
             ax.plot([lsl, usl], [y_mean, y_mean], color=color, linewidth=2, label=f"{prop} Mean")
             ax.fill_between([lsl, usl], [y_min, y_min], [y_max, y_max], color=color, alpha=0.15)
-            ax.scatter([lsl, usl], [y_min, y_max], color=color, marker=marker, s=60, zorder=3)
+            ax.scatter([lsl, usl], [y_min, y_max], color=color, marker=marker, s=80, zorder=5)
             
-            # ---- XỬ LÝ GHI CHÚ (ANNOTATIONS) ĐỂ KHÔNG TRÙNG NHAU ----
-            # TS: Căn lề cực biên (Top/Bottom xa nhất)
+            # --- XỬ LÝ NHÃN (ANNOTATIONS) CHỐNG TRÙNG ---
             if prop == "TS":
-                ax.text(lsl, y_min, f"{y_min:.1f}", ha='center', va='bottom', fontsize=9, color=color, fontweight='bold')
-                ax.text(usl, y_max, f"{y_max:.1f}", ha='center', va='bottom', fontsize=9, color=color, fontweight='bold')
-                ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=10, fontweight='bold', color=color)
+                # TS: Luôn đẩy LÊN TRÊN (va='bottom') với khoảng cách 12 points
+                ax.annotate(f"{y_min:.1f}", (lsl, y_min), textcoords="offset points", xytext=(0, 12), 
+                            ha='center', va='bottom', color=color, fontsize=10, fontweight='bold')
+                ax.annotate(f"{y_max:.1f}", (usl, y_max), textcoords="offset points", xytext=(0, 12), 
+                            ha='center', va='bottom', color=color, fontsize=10, fontweight='bold')
+                ax.annotate(f"{y_mean:.1f}", ((lsl+usl)/2, y_mean), textcoords="offset points", xytext=(0, 12), 
+                            ha='center', va='bottom', color=color, fontsize=11, fontweight='bold')
             
-            # YS: Căn lề ngược lại với TS để tách chữ
             elif prop == "YS":
-                ax.text(lsl, y_min, f"{y_min:.1f}", ha='center', va='top', fontsize=9, color=color, fontweight='bold')
-                ax.text(usl, y_max, f"{y_max:.1f}", ha='center', va='top', fontsize=9, color=color, fontweight='bold')
-                ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='top', fontsize=10, fontweight='bold', color=color)
+                # YS: Luôn kéo XUỐNG DƯỚI (va='top') với khoảng cách -18 points
+                ax.annotate(f"{y_min:.1f}", (lsl, y_min), textcoords="offset points", xytext=(0, -18), 
+                            ha='center', va='top', color=color, fontsize=10, fontweight='bold')
+                ax.annotate(f"{y_max:.1f}", (usl, y_max), textcoords="offset points", xytext=(0, -18), 
+                            ha='center', va='top', color=color, fontsize=10, fontweight='bold')
+                ax.annotate(f"{y_mean:.1f}", ((lsl+usl)/2, y_mean), textcoords="offset points", xytext=(0, -18), 
+                            ha='center', va='top', color=color, fontsize=11, fontweight='bold')
             
-            # EL: Giữ nguyên mặc định hoặc căn chỉnh nhẹ
-            else:
-                ax.text(lsl, y_min, f"{y_min:.1f}", ha='center', va='top', fontsize=9, color=color)
-                ax.text(usl, y_max, f"{y_max:.1f}", ha='center', va='bottom', fontsize=9, color=color)
-                ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=9, color=color)
+            else: # EL (Thường nằm ở dải thấp hơn hẳn nên không lo trùng với TS/YS)
+                ax.annotate(f"{y_min:.1f}", (lsl, y_min), textcoords="offset points", xytext=(0, 10), 
+                            ha='center', va='bottom', color=color, fontsize=9)
+                ax.annotate(f"{y_max:.1f}", (usl, y_max), textcoords="offset points", xytext=(0, 10), 
+                            ha='center', va='bottom', color=color, fontsize=9)
+                ax.annotate(f"{y_mean:.1f}", ((lsl+usl)/2, y_mean), textcoords="offset points", xytext=(0, -15), 
+                            ha='center', va='top', color=color, fontsize=9)
     
-        # Tự động điều chỉnh trục Y sát dữ liệu để các đường tách nhau ra
+        # Tối ưu hóa trục Y để giãn khoảng cách giữa các đường
         all_vals = [v for p in predictions.values() for v in p]
-        ax.set_ylim(min(all_vals)*0.95, max(all_vals)*1.05)
-
-        ax.set_xlabel("Hardness (HRB)")
-        ax.set_ylabel("Mechanical Properties (MPa / %)")
-        ax.set_title(f"Predicted TS/YS/EL for Std Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight='bold')
+        ax.set_ylim(min(all_vals) * 0.9, max(all_vals) * 1.1)
+    
+        ax.set_xlabel("Hardness (HRB)", fontweight='bold')
+        ax.set_ylabel("Mechanical Properties (MPa / %)", fontweight='bold')
+        ax.set_title(f"Predicted Mechanical Properties for Hardness {lsl:.1f} - {usl:.1f}", fontsize=14, fontweight='bold', pad=20)
         ax.grid(True, linestyle="--", alpha=0.5)
         
-        # Đưa Legend ra ngoài để tránh che dữ liệu
-        ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1), frameon=False)
+        # Legend đặt ngoài biểu đồ để tránh đè dữ liệu
+        ax.legend(loc="upper left", bbox_to_anchor=(1.02, 1), borderaxespad=0., frameon=False)
         
         plt.tight_layout()
         st.pyplot(fig)
+    
+        # 4️⃣ Bảng Quick Prediction
+        st.markdown("### 🔹 Quick Prediction Table")
+        df_pred = pd.DataFrame({
+            "Property": ["TS", "YS", "EL"],
+            "Predicted Min": [predictions[p][0] for p in ["TS", "YS", "EL"]],
+            "Predicted Mean": [predictions[p][1] for p in ["TS", "YS", "EL"]],
+            "Predicted Max": [predictions[p][2] for p in ["TS", "YS", "EL"]]
+        })
+        st.dataframe(df_pred.style.format("{:.1f}", subset=["Predicted Min","Predicted Mean","Predicted Max"]), use_container_width=True)
