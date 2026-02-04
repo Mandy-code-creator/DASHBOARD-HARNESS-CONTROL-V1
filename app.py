@@ -208,7 +208,7 @@ for _, g in valid.iterrows():
     if view_mode == "📋 Data Table":
         st.dataframe(sub, use_container_width=True)
 
-        else:
+    else:
         x = np.arange(1, len(sub) + 1)
 
         fig, ax = plt.subplots(figsize=(8,4))
