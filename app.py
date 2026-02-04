@@ -302,78 +302,81 @@ for _, g in valid.iterrows():
            mime="image/png"
         )
     elif view_mode == "🛠 Hardness → TS/YS/EL":
-        # 1️⃣ groups hardness bins
-        bins = [0, 56, 58, 60, 62, 100]
-        labels = ["<56", "56-58", "58-60", "60-62", ">62"]
-        sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels)
-    
-        # 2️⃣ Lấy spec cơ tính trực tiếp từ sheet
-        sub["TS_LSL"] = sub["Standard TS min"]
-        sub["TS_USL"] = sub["Standard TS max"]
-        sub["YS_LSL"] = sub["Standard YS min"]
-        sub["YS_USL"] = sub["Standard YS max"]
-        sub["EL_LSL"] = sub["Standard EL min"]
-        sub["EL_USL"] = sub["Standard EL max"]
-    
-        # Fix NaN spec nếu có
-        sub = sub.dropna(subset=["TS_LSL","TS_USL","YS_LSL","YS_USL","EL_LSL","EL_USL"])
-    
-        # 3️⃣ Xác định NG theo từng thông số
-        sub["TS_NG"] = (sub["TS"] < sub["TS_LSL"]) | (sub["TS"] > sub["TS_USL"])
-        sub["YS_NG"] = (sub["YS"] < sub["YS_LSL"]) | (sub["YS"] > sub["YS_USL"])
-        sub["EL_NG"] = (sub["EL"] < sub["EL_LSL"]) | (sub["EL"] > sub["EL_USL"])
-        sub["Mechanical_NG"] = sub["TS_NG"] | sub["YS_NG"] | sub["EL_NG"]
-    
-        # 4️⃣ Bảng summary theo HRB bin
-        summary = sub.groupby("HRB_bin").agg(
-            N_coils=("COIL_NO","count"),
-            N_TS_NG=("TS_NG","sum"),
-            N_YS_NG=("YS_NG","sum"),
-            N_EL_NG=("EL_NG","sum"),
-            N_Mech_NG=("Mechanical_NG","sum"),
-            Mean_TS=("TS","mean"),
-            Min_TS=("TS","min"),
-            Max_TS=("TS","max"),
-            Mean_YS=("YS","mean"),
-            Min_YS=("YS","min"),
-            Max_YS=("YS","max"),
-            Mean_EL=("EL","mean"),
-            Min_EL=("EL","min"),
-            Max_EL=("EL","max"),
-        ).reset_index()
-    
-        st.markdown("### 🔹 Mechanical Properties per Hardness Range")
-        st.dataframe(summary, use_container_width=True)
-    
-        # 5️⃣ Scatter chart highlight NG coils
-        fig, ax = plt.subplots(figsize=(8,4))
-        ax.scatter(sub["Hardness_LAB"], sub["TS"], label="TS", color="blue")
-        ax.scatter(sub["Hardness_LAB"], sub["YS"], label="YS", color="green")
-        ax.scatter(sub["Hardness_LAB"], sub["EL"], label="EL", color="orange")
-    
-        ax.scatter(sub.loc[sub["TS_NG"], "Hardness_LAB"],
-                   sub.loc[sub["TS_NG"], "TS"],
-                   color="red", marker="x", s=80, label="TS NG")
-        ax.scatter(sub.loc[sub["YS_NG"], "Hardness_LAB"],
-                   sub.loc[sub["YS_NG"], "YS"],
-                   color="magenta", marker="^", s=80, label="YS NG")
-        ax.scatter(sub.loc[sub["EL_NG"], "Hardness_LAB"],
-                   sub.loc[sub["EL_NG"], "EL"],
-                   color="cyan", marker="s", s=80, label="EL NG")
-    
-        ax.set_xlabel("Hardness (HRB)")
-        ax.set_ylabel("Mechanical Properties")
-        ax.set_title("Hardness vs TS/YS/EL with Spec Limits")
-        ax.grid(True, alpha=0.3)
-        ax.legend(loc="best")
-        st.pyplot(fig)
-    
-        # 6️⃣ Download chart
-        buf = fig_to_png(fig)
-        st.download_button(
-            label="📥 Download Hardness → TS/YS/EL Chart",
-            data=buf,
-            file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
-            mime="image/png"
-        )
-    
+    # =========================
+    # 1️⃣ Binning Hardness
+    # =========================
+    bins = [0, 56, 58, 60, 62, 100]  # điều chỉnh theo nhu cầu
+    labels = ["<56","56-58","58-60","60-62",">62"]
+    sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels)
+
+    # =========================
+    # 2️⃣ Lấy giới hạn cơ tính từ sheet
+    # =========================
+    sub["TS_LSL"] = sub["Standard TS min"]
+    sub["TS_USL"] = sub["Standard TS max"]
+    sub["YS_LSL"] = sub["Standard YS min"]
+    sub["YS_USL"] = sub["Standard YS max"]
+    sub["EL_LSL"] = sub["Standard EL min"]
+    sub["EL_USL"] = sub["Standard EL max"]
+
+    # Loại bỏ coil có NaN spec
+    sub = sub.dropna(subset=["TS_LSL","TS_USL","YS_LSL","YS_USL","EL_LSL","EL_USL"])
+
+    # =========================
+    # 3️⃣ Summary min/mean/max TS/YS/EL theo Hardness bin
+    # =========================
+    summary = sub.groupby("HRB_bin").agg(
+        N_coils=("COIL_NO","count"),
+        TS_mean=("TS","mean"),
+        TS_min=("TS","min"),
+        TS_max=("TS","max"),
+        YS_mean=("YS","mean"),
+        YS_min=("YS","min"),
+        YS_max=("YS","max"),
+        EL_mean=("EL","mean"),
+        EL_min=("EL","min"),
+        EL_max=("EL","max")
+    ).reset_index()
+
+    st.markdown("### 🔹 Mechanical Properties per Hardness Range (Current Distribution)")
+    st.dataframe(summary, use_container_width=True)
+
+    # =========================
+    # 4️⃣ Line plot với vùng min-max
+    # =========================
+    fig, ax = plt.subplots(figsize=(8,4))
+
+    x = np.arange(len(summary))
+
+    # TS
+    ax.plot(x, summary["TS_mean"], marker="o", color="blue", label="TS Mean")
+    ax.fill_between(x, summary["TS_min"], summary["TS_max"], color="blue", alpha=0.2, label="TS Min-Max")
+
+    # YS
+    ax.plot(x, summary["YS_mean"], marker="s", color="green", label="YS Mean")
+    ax.fill_between(x, summary["YS_min"], summary["YS_max"], color="green", alpha=0.2, label="YS Min-Max")
+
+    # EL
+    ax.plot(x, summary["EL_mean"], marker="^", color="orange", label="EL Mean")
+    ax.fill_between(x, summary["EL_min"], summary["EL_max"], color="orange", alpha=0.2, label="EL Min-Max")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels(summary["HRB_bin"])
+    ax.set_xlabel("Hardness (HRB bin)")
+    ax.set_ylabel("Mechanical Properties")
+    ax.set_title("Hardness vs TS/YS/EL Range (Current)")
+    ax.grid(alpha=0.3)
+    ax.legend(loc="best")
+    plt.tight_layout()
+    st.pyplot(fig)
+
+    # =========================
+    # 5️⃣ Download chart
+    # =========================
+    buf = fig_to_png(fig)
+    st.download_button(
+        label="📥 Download Hardness → TS/YS/EL Chart",
+        data=buf,
+        file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
+        mime="image/png"
+    )
