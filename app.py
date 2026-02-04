@@ -166,7 +166,17 @@ view_mode = st.sidebar.radio(
         "🧮 Predict TS/YS/EL"  # <-- view mới thêm ở đây
     ]
 )
-
+# ----- Sidebar note: CI explanation (once)
+        with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
+            st.markdown(
+                """
+    - The shaded area around the predicted line represents the **95% Confidence Interval (CI)**.
+    - It means that **approximately 95% of future observations are expected to fall within this range** if the linear model is valid.
+    - Narrow CI → high precision; wide CI → higher uncertainty.
+    - This note is **shown once** for clarity and can be collapsed.
+    """
+            )
+    
 # ================================
 # GROUP CONDITION
 # ================================
@@ -495,17 +505,7 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL":
-        # ----- Sidebar note: CI explanation (once)
-        with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
-            st.markdown(
-                """
-    - The shaded area around the predicted line represents the **95% Confidence Interval (CI)**.
-    - It means that **approximately 95% of future observations are expected to fall within this range** if the linear model is valid.
-    - Narrow CI → high precision; wide CI → higher uncertainty.
-    - This note is **shown once** for clarity and can be collapsed.
-    """
-            )
-    
+        
         # ----- Use LINE hardness as predictor
         sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         N_coils = len(sub_fit)
