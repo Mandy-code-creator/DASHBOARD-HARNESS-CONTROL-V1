@@ -10,7 +10,6 @@ import numpy as np
 import requests, re
 from io import StringIO, BytesIO
 import matplotlib.pyplot as plt
-from scipy.stats import norm
 import math
 
 # ================================
@@ -38,6 +37,8 @@ def spc_stats(data, lsl, usl):
     data = data.dropna()
     if len(data) < 2:
         return None
+def normal_pdf(x, mean, std):
+    return (1 / (std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x - mean) / std) ** 2)
 
     mean = data.mean()
     std = data.std(ddof=1)
@@ -162,8 +163,13 @@ df = df[
 
 view_mode = st.sidebar.radio(
     "📊 View Mode",
-    ["📋 Data Table", "📈 Trend (LAB / LINE)"]
+    [
+        "📋 Data Table",
+        "📈 Trend (LAB / LINE)",
+        "📊 Distribution + Normal"
+    ]
 )
+
 
 # ================================
 # GROUP CONDITION (NO PRODUCT SPEC)
@@ -267,7 +273,7 @@ for label, col in [("LAB", "Hardness_LAB"), ("LINE", "Hardness_LINE")]:
     ax.hist(data, bins=10, density=True, alpha=0.35, edgecolor="black")
 
     x = np.linspace(min(data), max(data), 200)
-    ax.plot(x, norm.pdf(x, mean, std), linewidth=2)
+   ax.plot(x, normal_pdf(x, mean, std), linewidth=2)
 
     ax.axvline(lo, linestyle="--", linewidth=1.5, label=f"LSL = {lo}")
     ax.axvline(hi, linestyle="--", linewidth=1.5, label=f"USL = {hi}")
