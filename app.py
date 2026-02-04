@@ -294,4 +294,48 @@ for _, g in valid.iterrows():
            data=buf,
            file_name=f"distribution_{g['Material']}_{g['Gauge_Range']}.png",
            mime="image/png"
-   )
+        )
+    elif view_mode == "🛠 Hardness → TS/YS/EL":
+        # 1️⃣ Nhóm theo bins Hardness LAB
+        bins = [0, 56, 58, 60, 62, 100]  # bạn có thể điều chỉnh
+        labels = ["<56", "56-58", "58-60", "60-62", ">62"]
+        sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels)
+    
+        # 2️⃣ Tổng hợp TS, YS, EL
+        summary = sub.groupby("HRB_bin").agg(
+            N_coils = ("COIL_NO", "count"),
+            Mean_TS = ("TS", "mean"),
+            Min_TS  = ("TS", "min"),
+            Max_TS  = ("TS", "max"),
+            Mean_YS = ("YS", "mean"),
+            Min_YS  = ("YS", "min"),
+            Max_YS  = ("YS", "max"),
+            Mean_EL = ("EL", "mean"),
+            Min_EL  = ("EL", "min"),
+            Max_EL  = ("EL", "max"),
+        ).reset_index()
+    
+        st.markdown("### 🔹 Mechanical Properties per Hardness Range")
+        st.dataframe(summary, use_container_width=True)
+    
+        # 3️⃣ Scatter chart Hardness vs TS/YS/EL
+        fig, ax = plt.subplots(figsize=(8,4))
+        ax.scatter(sub["Hardness_LAB"], sub["TS"], label="TS", color="blue")
+        ax.scatter(sub["Hardness_LAB"], sub["YS"], label="YS", color="green")
+        ax.scatter(sub["Hardness_LAB"], sub["EL"], label="EL", color="orange")
+        ax.set_xlabel("Hardness (HRB)")
+        ax.set_ylabel("Mechanical Properties")
+        ax.set_title("Hardness vs TS/YS/EL")
+        ax.grid(True, alpha=0.3)
+        ax.legend()
+        plt.tight_layout()
+        st.pyplot(fig)
+    
+        # 4️⃣ Download chart (giống các view trước)
+        buf = fig_to_png(fig)
+        st.download_button(
+            label="📥 Download Hardness → TS/YS/EL Chart",
+            data=buf,
+            file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
+            mime="image/png"
+        )
