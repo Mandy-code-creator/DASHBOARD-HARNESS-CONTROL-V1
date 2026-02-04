@@ -495,52 +495,30 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL":
-        sub_fit = sub.dropna(subset=["Hardness_LAB", "TS", "YS", "EL"]).copy()
-        N_coils = len(sub_fit)
-        if N_coils < 5:
-            st.warning(f"⚠️ Not enough data to predict TS/YS/EL (N={N_coils})")
+        sub_fit = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
+        if len(sub_fit) < 5:
+            st.warning(f"⚠️ Not enough data (N={len(sub_fit)})")
             continue
     
-        lsl, usl = sub_fit["Std_Min"].iloc[0], sub_fit["Std_Max"].iloc[0]
-    
-        # Dự báo tuyến tính
-        predictions = {}
-        for prop in ["TS","YS","EL"]:
-            X = sub_fit["Hardness_LAB"].values
-            y = sub_fit[prop].values
-            a,b = np.polyfit(X,y,1)
-            y_min = a*lsl + b
-            y_max = a*usl + b
-            y_mean = a*(lsl+usl)/2 + b
-            predictions[prop] = (y_min,y_mean,y_max)
-    
-        # ----- Biểu đồ 2 đường
-        fig, ax = plt.subplots(figsize=(8,5))
+        coils = np.arange(1, len(sub_fit)+1)
         props = ["TS","YS","EL"]
         colors = ["#1f77b4","#2ca02c","#ff7f0e"]
+        markers = ["o","s","^"]
     
-        # Tạo list mean observed
-        observed_mean = [sub_fit[prop].mean() for prop in props]
-        predicted_mean = [predictions[prop][1] for prop in props]
-        predicted_min = [predictions[prop][0] for prop in props]
-        predicted_max = [predictions[prop][2] for prop in props]
+        fig, ax = plt.subplots(figsize=(12,5))
     
-        x = np.arange(len(props))
+        for prop, color, marker in zip(props, colors, markers):
+            # Dự báo tuyến tính từng coil
+            a,b = np.polyfit(sub_fit["Hardness_LAB"], sub_fit[prop],1)
+            pred = a*sub_fit["Hardness_LAB"] + b
+            obs = sub_fit[prop].values
     
-        # Dải dự báo nhạt
-        ax.fill_between(x, predicted_min, predicted_max, color="gray", alpha=0.2, label="Predicted Range")
+            ax.plot(coils, pred, color=color, linestyle="--", marker=marker, label=f"{prop} Predicted")
+            ax.plot(coils, obs, color=color, linestyle="-", marker=marker, label=f"{prop} Observed")
     
-        # Đường Predicted Mean
-        ax.plot(x, predicted_mean, color="red", linewidth=3, marker='o', label="Predicted Mean")
-    
-        # Đường Observed Mean
-        ax.plot(x, observed_mean, color="blue", linewidth=3, marker='s', label="Observed Mean")
-    
-        ax.set_xticks(x)
-        ax.set_xticklabels(props, fontsize=12, fontweight="bold")
-        ax.set_ylabel("Mechanical Properties (MPa / %)", fontsize=12, fontweight="bold")
-        ax.set_title(f"Predicted vs Observed Mean TS/YS/EL | Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight="bold")
+        ax.set_xlabel("Coil Sequence")
+        ax.set_ylabel("Value (MPa / %)")
+        ax.set_title("Predicted vs Observed per Coil")
         ax.grid(True, linestyle="--", alpha=0.3)
         ax.legend(loc="upper left", bbox_to_anchor=(1.02,1))
-        plt.tight_layout()
         st.pyplot(fig)
