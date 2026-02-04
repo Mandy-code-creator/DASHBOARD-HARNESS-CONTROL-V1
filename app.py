@@ -325,41 +325,37 @@ for _, g in valid.iterrows():
         st.dataframe(summary.style.format("{:.1f}", subset=summary.columns[2:]), use_container_width=True)
     
         # 5️⃣ Line plot tối ưu hiển thị
-        fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(14,8), sharex=True)
-
+        fig, ax = plt.subplots(figsize=(16,6))  # rộng + cao hơn
         x = np.arange(len(summary))
         
-        # ==== Subplot 1: TS + YS
-        ax1.plot(x, summary["TS_mean"], marker="o", color="#1f77b4", linewidth=2, markersize=8, label="TS Mean")
-        ax1.fill_between(x, summary["TS_min"], summary["TS_max"], color="#1f77b4", alpha=0.15)
-        ax1.plot(x, summary["YS_mean"], marker="s", color="#2ca02c", linewidth=2, markersize=8, label="YS Mean")
-        ax1.fill_between(x, summary["YS_min"], summary["YS_max"], color="#2ca02c", alpha=0.15)
+        # ---- TS
+        ax.plot(x, summary["TS_mean"], marker="o", color="#1f77b4", linewidth=2, markersize=8, label="TS Mean")
+        ax.fill_between(x, summary["TS_min"], summary["TS_max"], color="#1f77b4", alpha=0.15)
         
-        # Annotations TS/YS
+        # ---- YS
+        ax.plot(x, summary["YS_mean"], marker="s", color="#2ca02c", linewidth=2, markersize=8, label="YS Mean")
+        ax.fill_between(x, summary["YS_min"], summary["YS_max"], color="#2ca02c", alpha=0.15)
+        
+        # ---- EL
+        ax.plot(x, summary["EL_mean"], marker="^", color="#ff7f0e", linewidth=2, markersize=8, label="EL Mean (%)")
+        ax.fill_between(x, summary["EL_min"], summary["EL_max"], color="#ff7f0e", alpha=0.15)
+        
+        # ---- Annotation trực tiếp trên line
         for i, row in summary.iterrows():
-            ax1.annotate(f"{row['TS_mean']:.1f}", (x[i], row['TS_mean']), xytext=(0,10), textcoords="offset points", ha='center', color="#1f77b4", fontsize=10)
-            ax1.annotate(f"{row['YS_mean']:.1f}", (x[i], row['YS_mean']), xytext=(0,-15), textcoords="offset points", ha='center', color="#2ca02c", fontsize=10)
+            ax.annotate(f"{row['TS_mean']:.1f}", (x[i], row['TS_mean']), xytext=(0,12), textcoords="offset points", ha='center', va='bottom', fontsize=10, fontweight='bold', color="#1f77b4")
+            ax.annotate(f"{row['YS_mean']:.1f}", (x[i], row['YS_mean']), xytext=(0,-18), textcoords="offset points", ha='center', va='top', fontsize=10, fontweight='bold', color="#2ca02c")
+            ax.annotate(f"{row['EL_mean']:.1f}%", (x[i], row['EL_mean']), xytext=(0,20), textcoords="offset points", ha='center', va='bottom', fontsize=10, fontweight='bold', color="#ff7f0e")
         
-        ax1.set_ylabel("Strength (MPa)", fontsize=12, fontweight='bold')
-        ax1.set_title("TS / YS vs Hardness Range", fontsize=14, fontweight='bold')
-        ax1.grid(True, linestyle='--', alpha=0.5)
-        ax1.legend(loc='upper left', bbox_to_anchor=(1.02,1), fontsize=10)
+        # ---- Legend ngoài chart
+        ax.legend(loc='upper left', bbox_to_anchor=(1.02,1), fontsize=10)
         
-        # ==== Subplot 2: EL
-        ax2.plot(x, summary["EL_mean"], marker="^", color="#ff7f0e", linewidth=2, markersize=8, label="EL Mean (%)")
-        ax2.fill_between(x, summary["EL_min"], summary["EL_max"], color="#ff7f0e", alpha=0.15)
-        
-        # Annotations EL
-        for i, row in summary.iterrows():
-            ax2.annotate(f"{row['EL_mean']:.1f}%", (x[i], row['EL_mean']), xytext=(0,10), textcoords="offset points", ha='center', color="#ff7f0e", fontsize=10)
-        
-        ax2.set_ylabel("Elongation (%)", fontsize=12, fontweight='bold')
-        ax2.set_xlabel("Hardness Range (HRB)", fontsize=12, fontweight='bold')
-        ax2.set_xticks(x)
-        ax2.set_xticklabels(summary["HRB_bin"], fontweight='bold', fontsize=10)
-        ax2.set_title("Elongation vs Hardness Range", fontsize=14, fontweight='bold')
-        ax2.grid(True, linestyle='--', alpha=0.5)
-        ax2.legend(loc='upper left', bbox_to_anchor=(1.02,1), fontsize=10)
+        # ---- Style chart
+        ax.set_xticks(x)
+        ax.set_xticklabels(summary["HRB_bin"], fontweight='bold', fontsize=12)
+        ax.set_xlabel("Hardness Range (HRB)", fontsize=12, fontweight='bold')
+        ax.set_ylabel("Mechanical Properties", fontsize=12, fontweight='bold')
+        ax.set_title("Correlation: Hardness vs TS/YS/EL", fontsize=14, fontweight='bold')
+        ax.grid(True, linestyle='--', alpha=0.5)
         
         plt.tight_layout()
         st.pyplot(fig)
