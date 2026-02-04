@@ -163,6 +163,7 @@ view_mode = st.sidebar.radio(
         "📈 Trend (LAB / LINE)",
         "📊 Distribution (LAB + LINE)",
         "🛠 Hardness → TS/YS/EL"   # <-- mới
+        "📊 TS/YS/EL Trend & Distribution"
     ]
 )
 
@@ -373,3 +374,73 @@ for _, g in valid.iterrows():
             file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
             mime="image/png"
         )
+    elif view_mode == "📊 TS/YS/EL Trend & Distribution":
+        # Group theo HRB_bin
+        bins = [0, 56, 58, 60, 62, 100]
+        labels = ["<56", "56-58", "58-60", "60-62", "≥62"]
+        sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
+    
+        mech_cols = ["Standard TS min", "Standard TS max", 
+                     "Standard YS min", "Standard YS max", 
+                     "Standard EL min", "Standard EL max"]
+        sub = sub.dropna(subset=mech_cols)
+    
+        hrb_bins = sub["HRB_bin"].unique()
+        hrb_bins = [b for b in labels if b in hrb_bins]
+    
+        for hrb in hrb_bins:
+            df_bin = sub[sub["HRB_bin"] == hrb].sort_values("COIL_NO")
+            N = len(df_bin)
+            if N == 0:
+                continue
+    
+            TS_LSL = df_bin["Standard TS min"].iloc[0]
+            TS_USL = df_bin["Standard TS max"].iloc[0]
+            YS_LSL = df_bin["Standard YS min"].iloc[0]
+            YS_USL = df_bin["Standard YS max"].iloc[0]
+            EL_LSL = df_bin["Standard EL min"].iloc[0]
+            EL_USL = df_bin["Standard EL max"].iloc[0]
+    
+            st.markdown(f"### HRB bin: {hrb} | N_coils={N}")
+    
+            # ---- Trend chart
+            fig, ax = plt.subplots(figsize=(14,4))
+            x = np.arange(1, N+1)
+    
+            ax.plot(x, df_bin["TS"], marker="o", label="TS", color="#1f77b4")
+            ax.plot(x, df_bin["YS"], marker="s", label="YS", color="#2ca02c")
+            ax.plot(x, df_bin["EL"], marker="^", label="EL", color="#ff7f0e")
+    
+            # Spec limit lines
+            ax.axhline(TS_LSL, color="#1f77b4", linestyle="--", alpha=0.5)
+            ax.axhline(TS_USL, color="#1f77b4", linestyle="--", alpha=0.5)
+            ax.axhline(YS_LSL, color="#2ca02c", linestyle="--", alpha=0.5)
+            ax.axhline(YS_USL, color="#2ca02c", linestyle="--", alpha=0.5)
+            ax.axhline(EL_LSL, color="#ff7f0e", linestyle="--", alpha=0.5)
+            ax.axhline(EL_USL, color="#ff7f0e", linestyle="--", alpha=0.5)
+    
+            ax.set_xlabel("Coil Sequence")
+            ax.set_ylabel("Mechanical Properties")
+            ax.set_title(f"Trend: TS/YS/EL for HRB {hrb}")
+            ax.grid(True, linestyle="--", alpha=0.5)
+            ax.legend(loc="best")
+            plt.tight_layout()
+            st.pyplot(fig)
+            buf = fig_to_png(fig)
+            st.download_button(f"📥 Download Trend HRB {hrb}", data=buf, file_name=f"trend_{hrb}.png", mime="image/png")
+    
+            # ---- Distribution histogram
+            fig, ax = plt.subplots(figsize=(10,4))
+            ax.hist(df_bin["TS"], bins=10, alpha=0.4, label="TS", color="#1f77b4", edgecolor="black")
+            ax.hist(df_bin["YS"], bins=10, alpha=0.4, label="YS", color="#2ca02c", edgecolor="black")
+            ax.hist(df_bin["EL"], bins=10, alpha=0.4, label="EL", color="#ff7f0e", edgecolor="black")
+    
+            ax.set_title(f"Distribution: TS/YS/EL for HRB {hrb}")
+            ax.set_xlabel("Value")
+            ax.set_ylabel("Count")
+            ax.grid(alpha=0.3, linestyle="--")
+            ax.legend()
+            plt.tight_layout()
+            st.pyplot(fig)
+            buf = fig_to_png(fig)
+            st.download_button(f"📥 Download Distribution HRB {hrb}", data=buf, file_name=f"dist_{hrb}.png", mime="image/png")
