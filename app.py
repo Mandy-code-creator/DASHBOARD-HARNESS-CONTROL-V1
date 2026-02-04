@@ -199,14 +199,15 @@ for _, g in valid.iterrows():
     specs = ", ".join(sorted(sub["Product_Spec"].unique()))
 
     st.markdown(
-        f"""
+    f"""
 ### 🧱 Quality Group: {g['Quality_Group']}
 **Material:** {g['Material']}  
 **Gauge Range:** {g['Gauge_Range']}  
 **Product Specs:** {specs}  
-**Coils:** {sub['COIL_NO'].nunique()} | **QA:** 🧪 **{qa}**
+**Coils:** {sub['COIL_NO'].nunique()} | **QA:** 🧪 **{qa}**  
+**Hardness Limit (HRB):** {lo:.1f} ~ {hi:.1f}
 """
-    )
+)
 
     # ================================
     # VIEW MODE SWITCH
