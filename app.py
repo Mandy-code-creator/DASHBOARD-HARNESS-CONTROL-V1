@@ -538,10 +538,35 @@ for _, g in valid.iterrows():
         fig.suptitle("Predicted vs Observed Mechanical Properties based on LINE Hardness", fontsize=14, fontweight="bold")
         plt.tight_layout(rect=[0,0,1,0.97])
         st.pyplot(fig)
+        # ----- Automatic conclusion
+        conclusion = []
+        for prop in ["TS", "YS", "EL"]:
+            observed = sub_fit[prop].values
+            predicted = pred_values[prop]
+            upper = ci_upper[prop]
+            lower = ci_lower[prop]
+        
+            n_outside = np.sum((observed < lower) | (observed > upper))
+            bias = observed.mean() - predicted.mean()
+            ci_width = np.mean(upper - lower)
+        
+            if n_outside == 0:
+                status = "✅ All observed values within 95% CI"
+            else:
+                status = f"⚠️ {n_outside}/{N_coils} coils outside 95% CI"
+        
+            conclusion.append(
+                f"**{prop}:** Observed mean={observed.mean():.1f}, Predicted mean={predicted.mean():.1f}, "
+                f"Avg CI width={ci_width:.1f} | Bias={bias:.1f} | {status}"
+            )
+        
+        st.markdown("### 📌 Prediction Summary")
+        for line in conclusion:
+            st.markdown(line)
     
-        # ----- CI Explanation in English
-        st.markdown(
-            """
+            # ----- CI Explanation in English
+            st.markdown(
+                """
     💡 **95% Confidence Interval (CI):**  
     - The shaded area around the predicted line represents the **95% Confidence Interval**.  
     - It means that **there is approximately a 95% probability that the actual value will fall within this range** if the linear model is valid.  
