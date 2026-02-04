@@ -494,7 +494,7 @@ for _, g in valid.iterrows():
                     f"**📌 Quick Conclusion:** HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | " +
                     " | ".join(conclusion)
                 )
-    elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
+    elif view_mode == "🧮 Predict TS/YS/EL":
         # ---- Lọc dữ liệu hợp lệ
         sub_fit = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
         if len(sub_fit) < 5:
@@ -503,42 +503,56 @@ for _, g in valid.iterrows():
     
         lsl, usl = sub_fit["Std_Min"].iloc[0], sub_fit["Std_Max"].iloc[0]
     
-        # ---- Dự đoán TS/YS/EL dùng numpy.polyfit
+        # ---- Dự đoán TS/YS/EL tuyến tính
         predictions = {}
         for prop in ["TS","YS","EL"]:
             X = sub_fit["Hardness_LAB"].values
             y = sub_fit[prop].values
-            a, b = np.polyfit(X, y, 1)  # tuyến tính
+            a, b = np.polyfit(X, y, 1)
             y_min = a*lsl + b
             y_max = a*usl + b
             y_mean = a*(lsl+usl)/2 + b
             predictions[prop] = (y_min, y_mean, y_max)
     
-        # ---- Biểu đồ
+        # ---- Biểu đồ Predicted vs Observed
         fig, ax = plt.subplots(figsize=(12,5))
         for prop, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
             y_min, y_mean, y_max = predictions[prop]
-            ax.plot([lsl, usl],[y_mean, y_mean], color=color, linewidth=2, label=f"{prop} Predicted Mean")
+            obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
+    
+            # Thanh Min-Max
             ax.fill_between([lsl, usl],[y_min,y_min],[y_max,y_max], color=color, alpha=0.15, label=f"{prop} Predicted Min-Max")
+            # Mean line
+            ax.plot([lsl, usl],[y_mean, y_mean], color=color, linewidth=2, label=f"{prop} Predicted Mean")
+            # Scatter min/max
             ax.scatter([lsl, usl],[y_min, y_max], color=color, marker=marker, s=50)
+            # Text
             ax.text(lsl, y_min, f"{y_min:.1f}", ha='center', va='top', fontsize=10, color=color)
             ax.text(usl, y_max, f"{y_max:.1f}", ha='center', va='bottom', fontsize=10, color=color)
             ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=10, fontweight='bold', color=color)
     
         ax.set_xlabel("Hardness (HRB)")
         ax.set_ylabel("Mechanical Properties (MPa / %)")
-        ax.set_title(f"Predicted vs Observed TS/YS/EL for Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight='bold')
+        ax.set_title(f"Predicted vs Observed TS/YS/EL | Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight='bold')
         ax.grid(True, linestyle="--", alpha=0.5)
         ax.legend(loc="upper left", bbox_to_anchor=(1.02,1))
         plt.tight_layout()
         st.pyplot(fig)
     
-        # ---- Bảng so sánh dự báo vs thực tế
+        # ---- Bảng gọn so sánh Predicted vs Observed
         df_summary = pd.DataFrame(columns=["Property","Predicted Min","Predicted Mean","Predicted Max",
-                                           "Observed Min","Observed Mean","Observed Max"])
+                                           "Observed Min","Observed Mean","Observed Max","Deviation %","Overlap %"])
         for prop in ["TS","YS","EL"]:
             y_min, y_mean, y_max = predictions[prop]
             obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
+    
+            # Deviation %
+            dev = (y_mean - obs_mean)/obs_mean * 100
+            # Overlap %
+            overlap_len = max(0, min(y_max, obs_max) - max(y_min, obs_min))
+            pred_len = y_max - y_min
+            overlap_pct = (overlap_len / pred_len * 100) if pred_len>0 else 0
+    
             df_summary = pd.concat([df_summary, pd.DataFrame({
                 "Property":[prop],
                 "Predicted Min":[y_min],
@@ -546,7 +560,9 @@ for _, g in valid.iterrows():
                 "Predicted Max":[y_max],
                 "Observed Min":[obs_min],
                 "Observed Mean":[obs_mean],
-                "Observed Max":[obs_max]
+                "Observed Max":[obs_max],
+                "Deviation %":[dev],
+                "Overlap %":[overlap_pct]
             })], ignore_index=True)
     
         st.markdown("### 🔹 Prediction vs Observed Table")
@@ -555,13 +571,11 @@ for _, g in valid.iterrows():
         # ---- Quick Conclusion
         conclusion = []
         for prop in ["TS","YS","EL"]:
-            y_min, y_mean, y_max = predictions[prop]
+            y_min, y_max = predictions[prop][0], predictions[prop][2]
             obs_min, obs_max = sub_fit[prop].min(), sub_fit[prop].max()
-            # so sánh dự báo có nằm trong giới hạn thực tế
-            status = "✅ Prediction within observed range" if y_min >= obs_min and y_max <= obs_max else "⚠️ Prediction out of observed range"
-            conclusion.append(f"{prop}: {status} | Predicted {y_min:.1f}-{y_max:.1f} vs Observed {obs_min:.1f}-{obs_max:.1f}")
-    
-        st.markdown("**📌 Quick Conclusion:**\n" + " | ".join(conclusion))
+            status = "✅ Prediction within observed range" if y_min >= obs_min and y_max <= obs_max else "⚠️ Prediction out of range"
+            conclusion.append(f"{prop}: {status}")
+        st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
     
         # ---- Download chart
         buf = fig_to_png(fig)
