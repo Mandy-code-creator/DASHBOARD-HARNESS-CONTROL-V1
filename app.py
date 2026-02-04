@@ -155,15 +155,14 @@ df = df[
     (df["Metallic_Type"] == metal) &
     (df["Quality_Group"] == qgroup)
 ]
-
 view_mode = st.sidebar.radio(
     "📊 View Mode",
     [
         "📋 Data Table",
         "📈 Trend (LAB / LINE)",
         "📊 Distribution (LAB + LINE)",
-        "🛠 Hardness → TS/YS/EL"   # <-- mới
-        "📊 TS/YS/EL Trend & Distribution"
+        "🛠 Hardness → TS/YS/EL",
+        "📊 TS/YS/EL Trend & Distribution"  # <-- THÊM VÀO ĐÂY
     ]
 )
 
