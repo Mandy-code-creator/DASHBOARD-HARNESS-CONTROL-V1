@@ -474,40 +474,24 @@ for _, g in valid.iterrows():
                 st.dataframe(summary_bin.style.format("{:.1f}", subset=["TS","YS","EL"]),
                              use_container_width=True)
     
-            # ===== Quick Conclusion Full Safe
+            # ===== Quick Conclusion Safe Full
             conclusion = []
-            for prop in ["TS","YS","EL"]:
+            for prop, ng_col in [("TS","NG_TS"), ("YS","NG_YS"), ("EL","NG_EL")]:
                 series = df_bin[prop].dropna()
                 N = len(series)
-                
-                # Nếu không có dữ liệu, hiển thị "-"
                 if N == 0:
                     conclusion.append(f"{prop}: ⚠️ No data")
                     continue
-                
-                mean = series.mean()
-                minv, maxv = series.min(), series.max()
-                std = series.std(ddof=1) if N>1 else np.nan
-                
-                # Lấy giới hạn safe, nếu không có, mặc định np.nan
-                lsl = df_bin.get(f"{prop}_LSL", pd.Series([np.nan]*len(df_bin))).iloc[0]
-                usl = df_bin.get(f"{prop}_USL", pd.Series([np.nan]*len(df_bin))).iloc[0]
-                
-                # Cp / Cpk safe
-                cp = (usl-lsl)/(6*std) if std>0 and pd.notna(lsl) and pd.notna(usl) else np.nan
-                cpk = min(usl-mean, mean-lsl)/(3*std) if std>0 and pd.notna(lsl) and pd.notna(usl) else np.nan
-                
-                # NG count safe
-                n_ng = df_bin.get(f"NG_{prop}", pd.Series([False]*len(df_bin))).sum()
-                status = "✅ OK" if n_ng==0 else f"⚠️ {int(n_ng)}/{N} out of spec"
-                
-                # Build conclusion string
-                conclusion.append(
-                    f"{prop}: {status} | N={N} | Mean={mean:.1f} | Range={minv:.1f}-{maxv:.1f} | ±σ={std:.1f if not np.isnan(std) else '-'} | Cp/Cpk={cp:.2f if not np.isnan(cp) else '-'}/{cpk:.2f if not np.isnan(cpk) else '-'}"
-                )
             
-            # Show Quick Conclusion
-            st.markdown("**📌 Quick Conclusion (Full Safe):**")
-            for line in conclusion:
-                st.markdown(line)
-
+                val_min = series.min()
+                val_max = series.max()
+                n_ng = df_bin.get(ng_col, pd.Series([False]*len(df_bin))).fillna(False).sum()
+                status = "✅ OK" if n_ng==0 else f"⚠️ {int(n_ng)}/{N} out of spec"
+            
+                # Format an toàn
+                val_min_s = f"{val_min:.1f}" if pd.notna(val_min) else "-"
+                val_max_s = f"{val_max:.1f}" if pd.notna(val_max) else "-"
+            
+                conclusion.append(f"{prop}: {status} | {val_min_s} – {val_max_s}")
+            
+            st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
