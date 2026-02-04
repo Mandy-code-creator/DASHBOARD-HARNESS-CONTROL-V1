@@ -10,6 +10,8 @@ import numpy as np
 import requests, re
 from io import StringIO, BytesIO
 import matplotlib.pyplot as plt
+from scipy.stats import norm
+import math
 
 # ================================
 # PAGE CONFIG
@@ -32,6 +34,19 @@ def fig_to_png(fig):
     fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
     buf.seek(0)
     return buf
+def spc_stats(data, lsl, usl):
+    data = data.dropna()
+    if len(data) < 2:
+        return None
+
+    mean = data.mean()
+    std = data.std(ddof=1)
+
+    cp = (usl - lsl) / (6 * std) if std > 0 else np.nan
+    ca = (mean - (usl + lsl) / 2) / ((usl - lsl) / 2) * 100 if usl > lsl else np.nan
+    cpk = min((usl - mean), (mean - lsl)) / (3 * std) if std > 0 else np.nan
+
+    return mean, std, cp, ca, cpk
 
 # ================================
 # LOAD MAIN DATA
@@ -236,3 +251,56 @@ for _, g in valid.iterrows():
 
         plt.tight_layout()
         st.pyplot(fig)
+# ================================
+# DISTRIBUTION + NORMAL CURVE
+# ================================
+for label, col in [("LAB", "Hardness_LAB"), ("LINE", "Hardness_LINE")]:
+
+    data = sub[col].dropna()
+    if len(data) < 10:
+        continue
+
+    mean, std, cp, ca, cpk = spc_stats(data, lo, hi)
+
+    fig, ax = plt.subplots(figsize=(7,4))
+
+    ax.hist(data, bins=10, density=True, alpha=0.35, edgecolor="black")
+
+    x = np.linspace(min(data), max(data), 200)
+    ax.plot(x, norm.pdf(x, mean, std), linewidth=2)
+
+    ax.axvline(lo, linestyle="--", linewidth=1.5, label=f"LSL = {lo}")
+    ax.axvline(hi, linestyle="--", linewidth=1.5, label=f"USL = {hi}")
+    ax.axvline(mean, linestyle=":", linewidth=1.5, label=f"Mean = {mean:.2f}")
+
+    ax.set_title(f"{label} Hardness Distribution", weight="bold")
+    ax.set_xlabel("Hardness (HRB)")
+    ax.set_ylabel("Density")
+    ax.grid(alpha=0.25)
+
+    note = (
+        f"N = {len(data)}\n"
+        f"Mean = {mean:.2f}\n"
+        f"Std = {std:.2f}\n"
+        f"Cp = {cp:.2f}\n"
+        f"Ca = {ca:.1f}%\n"
+        f"Cpk = {cpk:.2f}"
+    )
+
+    ax.text(
+        1.02, 0.5,
+        note,
+        transform=ax.transAxes,
+        va="center",
+        fontsize=10,
+        bbox=dict(boxstyle="round,pad=0.4", alpha=0.15)
+    )
+
+    ax.legend(
+        loc="center left",
+        bbox_to_anchor=(1.02, 0.9),
+        frameon=False
+    )
+
+    plt.tight_layout()
+    st.pyplot(fig)
