@@ -495,59 +495,48 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL":
-        sub_fit = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
+        sub_fit = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"]).copy()
         N_coils = len(sub_fit)
         if N_coils < 5:
             st.warning(f"⚠️ Not enough data (N={N_coils})")
             continue
     
+        import statsmodels.api as sm
+    
         coils = np.arange(1, N_coils+1)
     
-        # ----- Tính dự báo dựa trên Hardness_LAB tuyến tính
-        pred_values = {}
-        for prop in ["TS","YS","EL"]:
-            a,b = np.polyfit(sub_fit["Hardness_LAB"], sub_fit[prop],1)
-            pred_values[prop] = a*sub_fit["Hardness_LAB"] + b
+        fig, axes = plt.subplots(1, 3, figsize=(18,5))  # TS | YS | EL
+        props = ["TS", "YS", "EL"]
+        colors_obs = ["#003f5c", "#2f4b7c", "#665191"]
+        colors_pred = "#ffa600"
     
-        # ----- Kiểm tra ngoài spec (±5% band dự báo)
-        band = 0.05
-        out_of_spec = {}
-        for prop in ["TS","YS","EL"]:
-            upper = pred_values[prop]*(1+band)
-            lower = pred_values[prop]*(1-band)
-            out_of_spec[prop] = (sub_fit[prop] < lower) | (sub_fit[prop] > upper)
+        for ax, prop, color_obs in zip(axes, props, colors_obs):
+            X = sub_fit["Hardness_LINE"].values
+            y = sub_fit[prop].values
+            X_sm = sm.add_constant(X)  # statsmodels intercept
     
-        # ----- Chart TS & YS cùng nhau
-        fig, ax = plt.subplots(figsize=(14,4))
-        for prop, color_obs, color_pred in [("TS","#003f5c","#ffa600"), ("YS","#2f4b7c","#ffa600")]:
-            ax.plot(coils, sub_fit[prop], linestyle="-", marker="o", color=color_obs, label=f"{prop} Observed")
-            ax.plot(coils, pred_values[prop], linestyle="--", marker="s", color=color_pred, label=f"{prop} Predicted")
-            # Mark ngoài band đỏ
-            ax.scatter(coils[out_of_spec[prop]], sub_fit.loc[out_of_spec[prop], prop], color="red", s=50, zorder=5)
-        ax.set_title("TS & YS: Observed vs Predicted per Coil")
-        ax.set_xlabel("Coil Sequence")
-        ax.set_ylabel("MPa")
-        ax.grid(True, linestyle="--", alpha=0.3)
-        ax.legend()
+            model = sm.OLS(y, X_sm).fit()
+            pred = model.get_prediction(X_sm)
+            pred_mean = pred.predicted_mean
+            pred_ci = pred.conf_int(alpha=0.05)  # 95% confidence interval
+    
+            lower = pred_ci[:,0]
+            upper = pred_ci[:,1]
+    
+            # ---- Plot observed
+            ax.plot(coils, y, marker="o", linestyle="-", color=color_obs, label=f"Observed {prop}")
+    
+            # ---- Plot predicted
+            ax.plot(coils, pred_mean, marker="o", linestyle="--", color=colors_pred, label=f"Predicted {prop}")
+    
+            # ---- Confidence interval
+            ax.fill_between(coils, lower, upper, color=colors_pred, alpha=0.2, label="95% CI")
+    
+            ax.set_title(f"{prop}: Predicted vs Observed")
+            ax.set_xlabel("Coil Sequence")
+            ax.set_ylabel("MPa" if prop != "EL" else "%")
+            ax.grid(True, linestyle="--", alpha=0.3)
+            ax.legend()
+    
+        plt.tight_layout()
         st.pyplot(fig)
-    
-        # ----- Chart EL riêng
-        fig, ax = plt.subplots(figsize=(14,4))
-        ax.plot(coils, sub_fit["EL"], linestyle="-", marker="^", color="#665191", label="Observed EL")
-        ax.plot(coils, pred_values["EL"], linestyle="--", marker="^", color="#ffa600", label="Predicted EL")
-        ax.scatter(coils[out_of_spec["EL"]], sub_fit.loc[out_of_spec["EL"], "EL"], color="red", s=50, zorder=5)
-        ax.set_title("EL: Observed vs Predicted per Coil")
-        ax.set_xlabel("Coil Sequence")
-        ax.set_ylabel("%")
-        ax.grid(True, linestyle="--", alpha=0.3)
-        ax.legend()
-        st.pyplot(fig)
-    
-        # ----- Collapsible table Observed vs Predicted
-        df_display = sub_fit[["COIL_NO","Hardness_LAB","TS","YS","EL"]].copy()
-        for prop in ["TS","YS","EL"]:
-            df_display[f"{prop}_Pred"] = pred_values[prop].round(1)
-            df_display[f"{prop}_Δ"] = (df_display[prop]-df_display[f"{prop}_Pred"]).round(1)
-    
-        with st.expander("📋 Observed vs Predicted Table", expanded=True):
-            st.dataframe(df_display.style.format("{:.1f}", subset=df_display.columns[1:]), use_container_width=True)
