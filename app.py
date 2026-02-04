@@ -325,41 +325,41 @@ for _, g in valid.iterrows():
         st.dataframe(summary.style.format("{:.1f}", subset=summary.columns[2:]), use_container_width=True)
     
         # 5️⃣ Line plot tối ưu hiển thị
-        fig, ax = plt.subplots(figsize=(10, 5))
+        fig, ax = plt.subplots(figsize=(14, 6))  # → rộng hơn, cao hơn
         x = np.arange(len(summary))
         
-        # Vẽ TS
-        ax.plot(x, summary["TS_mean"], marker="o", color="#1f77b4", linewidth=2, label="TS Mean")
+        # ---- Vẽ TS
+        ax.plot(x, summary["TS_mean"], marker="o", color="#1f77b4", linewidth=2, markersize=8, label="TS Mean")
         ax.fill_between(x, summary["TS_min"], summary["TS_max"], color="#1f77b4", alpha=0.15)
         
-        # Vẽ YS
-        ax.plot(x, summary["YS_mean"], marker="s", color="#2ca02c", linewidth=2, label="YS Mean")
+        # ---- Vẽ YS
+        ax.plot(x, summary["YS_mean"], marker="s", color="#2ca02c", linewidth=2, markersize=8, label="YS Mean")
         ax.fill_between(x, summary["YS_min"], summary["YS_max"], color="#2ca02c", alpha=0.15)
-    
-        # Tạo trục tung thứ 2 cho EL (vì EL thường có đơn vị khác/nhỏ hơn TS/YS)
+        
+        # ---- Trục thứ 2 cho EL
         ax2 = ax.twinx()
-        ax2.plot(x, summary["EL_mean"], marker="^", color="#ff7f0e", linewidth=2, label="EL Mean (%)")
+        ax2.plot(x, summary["EL_mean"], marker="^", color="#ff7f0e", linewidth=2, markersize=8, label="EL Mean (%)")
         ax2.fill_between(x, summary["EL_min"], summary["EL_max"], color="#ff7f0e", alpha=0.15)
         
-        # ---- Tối ưu Annotations (Ghi số trên đường)
+        # ---- Annotations lớn hơn, offset hợp lý
         for i, row in summary.iterrows():
-            ax.annotate(f"{row['TS_mean']:.1f}", (x[i], row['TS_mean']), textcoords="offset points", xytext=(0,10), ha='center', color="#1f77b4", fontsize=8, fontweight='bold')
-            ax.annotate(f"{row['YS_mean']:.1f}", (x[i], row['YS_mean']), textcoords="offset points", xytext=(0,-15), ha='center', color="#2ca02c", fontsize=8, fontweight='bold')
-            ax2.annotate(f"{row['EL_mean']:.1f}%", (x[i], row['EL_mean']), textcoords="offset points", xytext=(0,10), ha='center', color="#ff7f0e", fontsize=8)
-    
-        # ---- Đưa Legend ra ngoài biểu đồ để tránh che dữ liệu
+            ax.annotate(f"{row['TS_mean']:.1f}", (x[i], row['TS_mean']), textcoords="offset points", xytext=(0,12), ha='center', color="#1f77b4", fontsize=10, fontweight='bold')
+            ax.annotate(f"{row['YS_mean']:.1f}", (x[i], row['YS_mean']), textcoords="offset points", xytext=(0,-18), ha='center', color="#2ca02c", fontsize=10, fontweight='bold')
+            ax2.annotate(f"{row['EL_mean']:.1f}%", (x[i], row['EL_mean']), textcoords="offset points", xytext=(0,12), ha='center', color="#ff7f0e", fontsize=10, fontweight='bold')
+        
+        # ---- Legend gọn bên ngoài
         lines, labels = ax.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
-        ax.legend(lines + lines2, labels + labels2, loc='upper left', bbox_to_anchor=(1.15, 1), borderaxespad=0.)
-    
+        ax.legend(lines + lines2, labels + labels2, loc='upper left', bbox_to_anchor=(1.02, 1), borderaxespad=0., fontsize=10)
+        
         # ---- Style biểu đồ
         ax.set_xticks(x)
-        ax.set_xticklabels(summary["HRB_bin"], fontweight='bold')
-        ax.set_xlabel("Hardness Range (HRB)")
-        ax.set_ylabel("Strength (MPa)")
-        ax2.set_ylabel("Elongation (%)")
-        ax.set_title("Correlation: Hardness vs Mechanical Properties", pad=20, fontweight='bold')
-        ax.grid(True, linestyle='--', alpha=0.6)
+        ax.set_xticklabels(summary["HRB_bin"], fontweight='bold', fontsize=10)
+        ax.set_xlabel("Hardness Range (HRB)", fontsize=12, fontweight='bold')
+        ax.set_ylabel("Strength (MPa)", fontsize=12, fontweight='bold')
+        ax2.set_ylabel("Elongation (%)", fontsize=12, fontweight='bold')
+        ax.set_title("Correlation: Hardness vs Mechanical Properties", pad=20, fontsize=14, fontweight='bold')
+        ax.grid(True, linestyle='--', alpha=0.5)
         
         plt.tight_layout()
         st.pyplot(fig)
