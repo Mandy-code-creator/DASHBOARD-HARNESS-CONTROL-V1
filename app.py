@@ -4,32 +4,17 @@ import numpy as np
 import re
 
 # ===============================
-# PAGE CONFIG – Power BI style
+# PAGE CONFIG
 # ===============================
-st.set_page_config(
-    page_title="PC Analysis Dashboard",
-    layout="wide"
-)
-
-st.markdown("""
-<style>
-    .block-container { padding-top: 1rem; }
-    h1, h2, h3 { font-weight: 600; }
-    .metric-box {
-        background-color: #f5f6fa;
-        padding: 16px;
-        border-radius: 8px;
-        text-align: center;
-    }
-</style>
-""", unsafe_allow_html=True)
+st.set_page_config(page_title="PC Analysis Dashboard", layout="wide")
 
 # ===============================
-# LOAD DATA
+# LOAD DATA (FIXED)
 # ===============================
 @st.cache_data
 def load_main_data():
-    return pd.read_csv("data.csv")
+    url = "https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
+    return pd.read_csv(url)
 
 @st.cache_data
 def load_gauge_table():
@@ -42,15 +27,12 @@ gauge_df = load_gauge_table()
 # ===============================
 # QUALITY GROUP
 # ===============================
-def quality_group(q):
-    if q in ["CQ00", "CQ06"]:
-        return "CQ00/06"
-    return q
-
-df["QUALITY_GROUP"] = df["QUALITY_CODE"].apply(quality_group)
+df["QUALITY_GROUP"] = df["QUALITY_CODE"].apply(
+    lambda x: "CQ00/06" if x in ["CQ00", "CQ06"] else x
+)
 
 # ===============================
-# PARSE RANGE – FIX 100%
+# PARSE GAUGE RANGE
 # ===============================
 def parse_range(text):
     nums = re.findall(r"\d+\.\d+|\d+", str(text))
@@ -64,7 +46,7 @@ for _, r in gauge_df.iterrows():
     if lo is not None:
         ranges.append((lo, hi, r["RANGE_NAME"]))
 
-def map_gauge_range(val):
+def map_gauge(val):
     try:
         v = float(val)
     except:
@@ -74,99 +56,55 @@ def map_gauge_range(val):
             return name
     return "OUT OF RANGE"
 
-df["GAUGE_RANGE"] = df["ORDER_GAUGE"].apply(map_gauge_range)
+df["GAUGE_RANGE"] = df["ORDER_GAUGE"].apply(map_gauge)
 
 # ===============================
-# SIDEBAR FILTERS
+# SIDEBAR
 # ===============================
-st.sidebar.header("🔎 Filters")
+st.sidebar.header("Filters")
 
-mat = st.sidebar.multiselect(
-    "Classify Material",
-    sorted(df["Classify material"].dropna().unique())
-)
-
-coat = st.sidebar.multiselect(
-    "Metallic Coating Type",
-    sorted(df["METALLIC COATING TYPE"].dropna().unique())
-)
-
-qual = st.sidebar.multiselect(
-    "Quality Group",
-    sorted(df["QUALITY_GROUP"].unique())
-)
-
-gauge = st.sidebar.multiselect(
-    "Gauge Range",
-    sorted(df["GAUGE_RANGE"].unique())
-)
-
-steel = st.sidebar.multiselect(
-    "HR Steel Grade",
-    sorted(df["HR STEEL GRADE"].dropna().unique())
-)
-
-# ===============================
-# APPLY FILTER
-# ===============================
 f = df.copy()
 
-if mat:
-    f = f[f["Classify material"].isin(mat)]
-if coat:
-    f = f[f["METALLIC COATING TYPE"].isin(coat)]
-if qual:
-    f = f[f["QUALITY_GROUP"].isin(qual)]
-if gauge:
-    f = f[f["GAUGE_RANGE"].isin(gauge)]
-if steel:
-    f = f[f["HR STEEL GRADE"].isin(steel)]
-
-# ===============================
-# HEADER
-# ===============================
-st.title("PC Analysis Dashboard")
-st.caption("Power BI–style SPC & QA Summary")
+for col, label in [
+    ("Classify material", "Classify Material"),
+    ("METALLIC COATING TYPE", "Metallic Coating Type"),
+    ("QUALITY_GROUP", "Quality Group"),
+    ("GAUGE_RANGE", "Gauge Range"),
+    ("HR STEEL GRADE", "HR Steel Grade"),
+]:
+    sel = st.sidebar.multiselect(label, sorted(f[col].dropna().unique()))
+    if sel:
+        f = f[f[col].isin(sel)]
 
 # ===============================
 # KPI
 # ===============================
-col1, col2, col3, col4 = st.columns(4)
+st.title("PC Analysis Dashboard")
 
-with col1:
-    st.markdown("<div class='metric-box'><h3>Total Coils</h3><h2>{}</h2></div>".format(len(f)), unsafe_allow_html=True)
-
-with col2:
-    st.markdown("<div class='metric-box'><h3>Groups</h3><h2>{}</h2></div>".format(
-        f.groupby(["Classify material","METALLIC COATING TYPE","QUALITY_GROUP","GAUGE_RANGE","HR STEEL GRADE"]).ngroups
-    ), unsafe_allow_html=True)
-
-with col3:
-    st.markdown("<div class='metric-box'><h3>SPC Valid</h3><h2>{}</h2></div>".format(
-        (f.groupby(["GAUGE_RANGE"]).size() >= 30).sum()
-    ), unsafe_allow_html=True)
-
-with col4:
-    st.markdown("<div class='metric-box'><h3>QA Rule</h3><h2>STRICT</h2></div>", unsafe_allow_html=True)
+c1, c2, c3 = st.columns(3)
+c1.metric("Total Coils", len(f))
+c2.metric("Groups", f.groupby([
+    "Classify material",
+    "METALLIC COATING TYPE",
+    "QUALITY_GROUP",
+    "GAUGE_RANGE",
+    "HR STEEL GRADE"
+]).ngroups)
+c3.metric("SPC Valid (≥30)", (f.groupby("GAUGE_RANGE").size() >= 30).sum())
 
 # ===============================
-# DATA TABLE
+# TABLE
 # ===============================
-st.subheader("📊 Filtered Data")
-st.dataframe(
-    f,
-    use_container_width=True,
-    height=520
-)
+st.dataframe(f, use_container_width=True, height=520)
 
 # ===============================
-# MANAGEMENT NOTE
+# NOTE
 # ===============================
 st.markdown("""
-### 📌 PC Analysis Logic – Management Note
-- Data is grouped by **Classify material, Metallic Coating Type, Quality Group, Gauge Range, HR Steel Grade**
-- **CQ00 and CQ06** are merged due to equivalent quality behavior
-- Thickness is analyzed by **predefined gauge ranges**
-- SPC condition is valid only when **≥ 30 coils**
-- QA logic is **strict: 1 NG → FAIL**
+### PC Analysis Logic – Management Note
+- Group by **Classify material, Metallic Coating Type, Quality Group, Gauge Range, HR Steel Grade**
+- **CQ00 + CQ06 merged**
+- Thickness analyzed by **range**
+- SPC valid only when **≥ 30 coils**
+- QA rule: **1 NG → FAIL**
 """)
