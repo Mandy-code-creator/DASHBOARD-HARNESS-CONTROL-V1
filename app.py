@@ -496,29 +496,51 @@ for _, g in valid.iterrows():
                 )
     elif view_mode == "🧮 Predict TS/YS/EL":
         sub_fit = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
-        if len(sub_fit) < 5:
-            st.warning(f"⚠️ Not enough data (N={len(sub_fit)})")
+        N_coils = len(sub_fit)
+        if N_coils < 5:
+            st.warning(f"⚠️ Not enough data (N={N_coils})")
             continue
     
-        coils = np.arange(1, len(sub_fit)+1)
-        props = ["TS","YS","EL"]
-        colors = ["#1f77b4","#2ca02c","#ff7f0e"]
-        markers = ["o","s","^"]
+        coils = np.arange(1, N_coils+1)
     
-        fig, ax = plt.subplots(figsize=(12,5))
-    
-        for prop, color, marker in zip(props, colors, markers):
-            # Dự báo tuyến tính từng coil
+        # ----- Tính dự báo dựa trên Hardness_LAB tuyến tính
+        pred_values = {}
+        for prop in ["TS","YS","EL"]:
             a,b = np.polyfit(sub_fit["Hardness_LAB"], sub_fit[prop],1)
-            pred = a*sub_fit["Hardness_LAB"] + b
-            obs = sub_fit[prop].values
+            pred_values[prop] = a*sub_fit["Hardness_LAB"] + b
     
-            ax.plot(coils, pred, color=color, linestyle="--", marker=marker, label=f"{prop} Predicted")
-            ax.plot(coils, obs, color=color, linestyle="-", marker=marker, label=f"{prop} Observed")
+        # ----- Tách subplot
+        fig, axes = plt.subplots(2,2, figsize=(16,8), gridspec_kw={'height_ratios':[1,1]})
+        ax_ts, ax_ys = axes[0,0], axes[0,1]
+        ax_el = axes[1,0]
+        axes[1,1].axis('off')  # ô trống
     
-        ax.set_xlabel("Coil Sequence")
-        ax.set_ylabel("Value (MPa / %)")
-        ax.set_title("Predicted vs Observed per Coil")
-        ax.grid(True, linestyle="--", alpha=0.3)
-        ax.legend(loc="upper left", bbox_to_anchor=(1.02,1))
+        # ---- TS
+        ax_ts.plot(coils, sub_fit["TS"], linestyle="-", marker="o", color="#1f77b4", label="Observed TS")
+        ax_ts.plot(coils, pred_values["TS"], linestyle="--", marker="o", color="#1f77b4", label="Predicted TS")
+        ax_ts.set_title("TS: Predicted vs Observed per Coil")
+        ax_ts.set_xlabel("Coil Sequence")
+        ax_ts.set_ylabel("MPa")
+        ax_ts.grid(True, linestyle="--", alpha=0.3)
+        ax_ts.legend()
+    
+        # ---- YS
+        ax_ys.plot(coils, sub_fit["YS"], linestyle="-", marker="s", color="#2ca02c", label="Observed YS")
+        ax_ys.plot(coils, pred_values["YS"], linestyle="--", marker="s", color="#2ca02c", label="Predicted YS")
+        ax_ys.set_title("YS: Predicted vs Observed per Coil")
+        ax_ys.set_xlabel("Coil Sequence")
+        ax_ys.set_ylabel("MPa")
+        ax_ys.grid(True, linestyle="--", alpha=0.3)
+        ax_ys.legend()
+    
+        # ---- EL
+        ax_el.plot(coils, sub_fit["EL"], linestyle="-", marker="^", color="#ff7f0e", label="Observed EL")
+        ax_el.plot(coils, pred_values["EL"], linestyle="--", marker="^", color="#ff7f0e", label="Predicted EL")
+        ax_el.set_title("EL: Predicted vs Observed per Coil")
+        ax_el.set_xlabel("Coil Sequence")
+        ax_el.set_ylabel("%")
+        ax_el.grid(True, linestyle="--", alpha=0.3)
+        ax_el.legend()
+    
+        plt.tight_layout()
         st.pyplot(fig)
