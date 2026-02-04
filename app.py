@@ -469,13 +469,26 @@ for _, g in valid.iterrows():
             st.pyplot(fig)
     
             buf = fig_to_png(fig)
+            import uuid
+
+            # Trend download
+            st.download_button(
+                label=f"📥 Download Trend HRB {hrb}",
+                data=buf,
+                file_name=f"trend_{safe_hrb}.png",
+                mime="image/png",
+                key=str(uuid.uuid4())   # ✅ 100% unique mỗi lần render
+            )
+            
+            # Distribution download
             st.download_button(
                 label=f"📥 Download Distribution HRB {hrb}",
-                data=buf,
+                data=buf_dist,
                 file_name=f"dist_{safe_hrb}.png",
                 mime="image/png",
-                key=f"download_dist_{safe_hrb}_{i}"   # ✅ index i để unique key
+                key=str(uuid.uuid4())   # ✅ 100% unique
             )
+
     
             # ===== 6️⃣ Mechanical Properties Table
             summary_bin = df_bin[["COIL_NO","TS","YS","EL","HRB_bin","NG_TS","NG_YS","NG_EL"]].copy()
