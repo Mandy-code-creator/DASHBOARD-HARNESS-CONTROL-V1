@@ -419,74 +419,32 @@ for _, g in valid.iterrows():
     
             st.markdown(f"### HRB bin: {hrb} | N_coils={N}")
     
-            # ===== 4️⃣ Trend Chart
-            fig, ax = plt.subplots(figsize=(14,4))
-            x = np.arange(1, N+1)
-    
-            for col, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
-                ax.plot(x, df_bin[col], marker=marker, label=col, color=color)
-                ax.fill_between(x, df_bin[col].min(), df_bin[col].max(), color=color, alpha=0.1)
-                ng_idx = df_bin.index[df_bin[f"NG_{col}"].fillna(False)].to_list()
-                ax.scatter([x[j] for j in range(N) if df_bin.index[j] in ng_idx],
-                           df_bin.loc[ng_idx, col], color="red", s=50, zorder=5)
-    
-            # Spec lines
-            for val, col in [(TS_LSL, "#1f77b4"), (TS_USL, "#1f77b4"),
-                             (YS_LSL, "#2ca02c"), (YS_USL, "#2ca02c"),
-                             (EL_LSL, "#ff7f0e"), (EL_USL, "#ff7f0e")]:
-                if val != 0:
-                    ax.axhline(val, color=col, linestyle="--", alpha=0.5)
-    
-            ax.set_xlabel("Coil Sequence")
-            ax.set_ylabel("Mechanical Properties (MPa / %)")
-            ax.set_title(f"Trend: TS/YS/EL for HRB {hrb}")
-            ax.grid(True, linestyle="--", alpha=0.5)
-            ax.legend(loc="best")
-            plt.tight_layout()
-            st.pyplot(fig)
-    
-            # Safe key download
-            safe_hrb = re.sub(r"[<≥]", "", str(hrb))
-            buf = fig_to_png(fig)
+            # ===== Trend Chart
+            fig_trend, ax_trend = plt.subplots(figsize=(14,4))
+            # ... vẽ chart ...
+            st.pyplot(fig_trend)
+            buf_trend = fig_to_png(fig_trend)
+            
             st.download_button(
                 label=f"📥 Download Trend HRB {hrb}",
-                data=buf,
+                data=buf_trend,
                 file_name=f"trend_{safe_hrb}.png",
                 mime="image/png",
-                key=f"download_trend_{safe_hrb}_{i}"   # ✅ index i để unique key
-            )
-    
-           # ===== 5️⃣ Distribution Chart
-            fig, ax = plt.subplots(figsize=(14,4))
-            for col, color in [("TS","#1f77b4"), ("YS","#2ca02c"), ("EL","#ff7f0e")]:
-                ax.hist(df_bin[col], bins=10, alpha=0.4, label=col, color=color, edgecolor="black")
-            ax.set_title(f"Distribution: TS/YS/EL for HRB {hrb}")
-            ax.set_xlabel("Value")
-            ax.set_ylabel("Count")
-            ax.grid(alpha=0.3, linestyle="--")
-            ax.legend()
-            plt.tight_layout()
-            st.pyplot(fig)
-            
-            buf_dist = fig_to_png(fig)  # <-- thêm dòng này
-            
-            import uuid
-            # Trend download
-            st.download_button(
-                label=f"📥 Download Trend HRB {hrb}",
-                data=buf,
-                file_name=f"trend_{safe_hrb}.png",
-                mime="image/png",
-                key=str(uuid.uuid4())   # 100% unique mỗi lần render
+                key=f"trend_{safe_hrb}_{uuid.uuid4()}"
             )
             
-            # Distribution download
+            # ===== Distribution Chart
+            fig_dist, ax_dist = plt.subplots(figsize=(14,4))
+            # ... vẽ chart ...
+            st.pyplot(fig_dist)
+            buf_dist = fig_to_png(fig_dist)
+            
             st.download_button(
                 label=f"📥 Download Distribution HRB {hrb}",
-                data=buf_dist,  # ✅ dùng buf_dist đã tạo
+                data=buf_dist,
                 file_name=f"dist_{safe_hrb}.png",
                 mime="image/png",
-                key=str(uuid.uuid4())   # 100% unique
+                key=f"dist_{safe_hrb}_{uuid.uuid4()}"
             )
 
             # ===== 6️⃣ Mechanical Properties Table
