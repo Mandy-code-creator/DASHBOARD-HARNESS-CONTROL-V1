@@ -176,7 +176,7 @@ view_mode = st.sidebar.radio(
     - This note is **shown once** for clarity and can be collapsed.
     """
             )
-    
+
 # ================================
 # GROUP CONDITION
 # ================================
