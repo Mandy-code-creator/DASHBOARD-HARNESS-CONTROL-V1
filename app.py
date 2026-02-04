@@ -323,7 +323,7 @@ for _, g in valid.iterrows():
     
         # 4️⃣ Vẽ biểu đồ lớn
         x = np.arange(len(summary))
-        fig, ax = plt.subplots(figsize=(16,6))
+        fig, ax = plt.subplots(figsize=(16,6))  # rộng + cao
     
         # ---- TS
         ax.plot(x, summary["TS_mean"], marker="o", color="#1f77b4", linewidth=2, markersize=8, label="TS Mean")
@@ -350,13 +350,22 @@ for _, g in valid.iterrows():
         ax.set_xticks(x)
         ax.set_xticklabels(summary["HRB_bin"].astype(str), fontweight='bold', fontsize=12)
         ax.set_xlabel("Hardness Range (HRB)", fontsize=12, fontweight='bold')
-        ax.set_ylabel("Mechanical Properties", fontsize=12, fontweight='bold')
+        ax.set_ylabel("Mechanical Properties (MPa)", fontsize=12, fontweight='bold')
         ax.set_title("Correlation: Hardness vs TS/YS/EL", fontsize=14, fontweight='bold')
         ax.grid(True, linestyle='--', alpha=0.5)
     
         plt.tight_layout()
         st.pyplot(fig)
     
-        # 5️⃣ Hiển thị bảng DƯỚI biểu đồ
-        st.markdown("### 🔹 Mechanical Properties per Hardness Range")
-        st.dataframe(summary.style.format("{:.1f}", subset=summary.columns[2:]), use_container_width=True)
+        # 5️⃣ Bảng Mechanical Properties collapsible dưới chart
+        with st.expander("🔹 Mechanical Properties per Hardness Range", expanded=False):
+            st.dataframe(summary.style.format("{:.1f}", subset=summary.columns[2:]), use_container_width=True)
+    
+        # 6️⃣ Download chart
+        buf = fig_to_png(fig)
+        st.download_button(
+            label="📥 Download Hardness → TS/YS/EL Chart",
+            data=buf,
+            file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
+            mime="image/png"
+        )
