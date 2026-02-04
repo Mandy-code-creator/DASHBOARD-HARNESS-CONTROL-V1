@@ -496,8 +496,8 @@ for _, g in valid.iterrows():
                 )
     elif view_mode == "🧮 Predict TS/YS/EL":
         st.write("DEBUG: entered Predict view")
-st.write("DEBUG sub shape:", sub.shape)
-st.write("DEBUG columns:", list(sub.columns))
+    st.write("DEBUG sub shape:", sub.shape)
+    st.write("DEBUG columns:", list(sub.columns))
 
 
         st.subheader("🧮 Mechanical Property Prediction based on Hardness")
