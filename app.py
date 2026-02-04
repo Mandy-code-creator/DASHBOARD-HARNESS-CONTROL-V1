@@ -302,120 +302,120 @@ for _, g in valid.iterrows():
            mime="image/png"
         )
    elif view_mode == "🛠 Hardness → TS/YS/EL":
-    import plotly.graph_objects as go
-
-    # =========================
-    # 1️⃣ Binning Hardness
-    # =========================
-    bins = [0, 56, 58, 60, 62, 100]  # điều chỉnh theo nhu cầu
-    labels = ["<56","56-58","58-60","60-62",">62"]
-    sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels)
-
-    # =========================
-    # 2️⃣ Lấy giới hạn cơ tính từ sheet
-    # =========================
-    sub["TS_LSL"] = sub["Standard TS min"]
-    sub["TS_USL"] = sub["Standard TS max"]
-    sub["YS_LSL"] = sub["Standard YS min"]
-    sub["YS_USL"] = sub["Standard YS max"]
-    sub["EL_LSL"] = sub["Standard EL min"]
-    sub["EL_USL"] = sub["Standard EL max"]
-
-    # Loại bỏ coil có NaN spec
-    sub = sub.dropna(subset=["TS_LSL","TS_USL","YS_LSL","YS_USL","EL_LSL","EL_USL"])
-
-    # =========================
-    # 3️⃣ Summary min/mean/max
-    # =========================
-    summary = sub.groupby("HRB_bin").agg(
-        N_coils=("COIL_NO","count"),
-        TS_mean=("TS","mean"),
-        TS_min=("TS","min"),
-        TS_max=("TS","max"),
-        YS_mean=("YS","mean"),
-        YS_min=("YS","min"),
-        YS_max=("YS","max"),
-        EL_mean=("EL","mean"),
-        EL_min=("EL","min"),
-        EL_max=("EL","max")
-    ).reset_index()
-
-    # =========================
-    # 4️⃣ Interactive Plotly chart
-    # =========================
-    x = summary["HRB_bin"]
-
-    fig = go.Figure()
-
-    # ---- TS
-    fig.add_trace(go.Scatter(
-        x=x, y=summary["TS_mean"], mode="lines+markers", name="TS Mean",
-        hovertemplate="TS Mean: %{y:.2f}<extra></extra>"
-    ))
-    fig.add_trace(go.Scatter(
-        x=list(x)+list(x[::-1]),
-        y=list(summary["TS_max"])+list(summary["TS_min"][::-1]),
-        fill="toself", fillcolor="rgba(0,0,255,0.2)",
-        line=dict(color="rgba(255,255,255,0)"),
-        hoverinfo="skip", name="TS Min-Max"
-    ))
-
-    # ---- YS
-    fig.add_trace(go.Scatter(
-        x=x, y=summary["YS_mean"], mode="lines+markers", name="YS Mean",
-        hovertemplate="YS Mean: %{y:.2f}<extra></extra>"
-    ))
-    fig.add_trace(go.Scatter(
-        x=list(x)+list(x[::-1]),
-        y=list(summary["YS_max"])+list(summary["YS_min"][::-1]),
-        fill="toself", fillcolor="rgba(0,255,0,0.2)",
-        line=dict(color="rgba(255,255,255,0)"),
-        hoverinfo="skip", name="YS Min-Max"
-    ))
-
-    # ---- EL
-    fig.add_trace(go.Scatter(
-        x=x, y=summary["EL_mean"], mode="lines+markers", name="EL Mean",
-        hovertemplate="EL Mean: %{y:.2f}<extra></extra>"
-    ))
-    fig.add_trace(go.Scatter(
-        x=list(x)+list(x[::-1]),
-        y=list(summary["EL_max"])+list(summary["EL_min"][::-1]),
-        fill="toself", fillcolor="rgba(255,165,0,0.2)",
-        line=dict(color="rgba(255,255,255,0)"),
-        hoverinfo="skip", name="EL Min-Max"
-    ))
-
-    fig.update_layout(
-        title="Hardness vs TS/YS/EL Range (Current)",
-        xaxis_title="Hardness (HRB bin)",
-        yaxis_title="Mechanical Properties",
-        hovermode="x unified",
-        margin=dict(l=50, r=300, t=50, b=50)  # tạo khoảng trống bên phải cho ghi chú
-    )
-
-    st.plotly_chart(fig, use_container_width=True)
-
-    # =========================
-    # 5️⃣ Ghi chú ngoài biểu đồ
-    # =========================
-    with st.expander("🔹 Summary Mechanical Properties"):
-        for i, row in summary.iterrows():
-            st.markdown(
-                f"**Hardness {row['HRB_bin']}:** "
-                f"TS: {row['TS_min']:.2f}-{row['TS_max']:.2f} (mean {row['TS_mean']:.2f}) | "
-                f"YS: {row['YS_min']:.2f}-{row['YS_max']:.2f} (mean {row['YS_mean']:.2f}) | "
-                f"EL: {row['EL_min']:.2f}-{row['EL_max']:.2f} (mean {row['EL_mean']:.2f})"
-            )
-
-    # =========================
-    # 6️⃣ Download chart PNG
-    # =========================
-    buf = fig.to_image(format="png", scale=2)
-    st.download_button(
-        label="📥 Download Hardness → TS/YS/EL Chart",
-        data=buf,
-        file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
-        mime="image/png"
-    )
-
+        import plotly.graph_objects as go
+    
+        # =========================
+        # 1️⃣ Binning Hardness
+        # =========================
+        bins = [0, 56, 58, 60, 62, 100]  # điều chỉnh theo nhu cầu
+        labels = ["<56","56-58","58-60","60-62",">62"]
+        sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels)
+    
+        # =========================
+        # 2️⃣ Lấy giới hạn cơ tính từ sheet
+        # =========================
+        sub["TS_LSL"] = sub["Standard TS min"]
+        sub["TS_USL"] = sub["Standard TS max"]
+        sub["YS_LSL"] = sub["Standard YS min"]
+        sub["YS_USL"] = sub["Standard YS max"]
+        sub["EL_LSL"] = sub["Standard EL min"]
+        sub["EL_USL"] = sub["Standard EL max"]
+    
+        # Loại bỏ coil có NaN spec
+        sub = sub.dropna(subset=["TS_LSL","TS_USL","YS_LSL","YS_USL","EL_LSL","EL_USL"])
+    
+        # =========================
+        # 3️⃣ Summary min/mean/max
+        # =========================
+        summary = sub.groupby("HRB_bin").agg(
+            N_coils=("COIL_NO","count"),
+            TS_mean=("TS","mean"),
+            TS_min=("TS","min"),
+            TS_max=("TS","max"),
+            YS_mean=("YS","mean"),
+            YS_min=("YS","min"),
+            YS_max=("YS","max"),
+            EL_mean=("EL","mean"),
+            EL_min=("EL","min"),
+            EL_max=("EL","max")
+        ).reset_index()
+    
+        # =========================
+        # 4️⃣ Interactive Plotly chart
+        # =========================
+        x = summary["HRB_bin"]
+    
+        fig = go.Figure()
+    
+        # ---- TS
+        fig.add_trace(go.Scatter(
+            x=x, y=summary["TS_mean"], mode="lines+markers", name="TS Mean",
+            hovertemplate="TS Mean: %{y:.2f}<extra></extra>"
+        ))
+        fig.add_trace(go.Scatter(
+            x=list(x)+list(x[::-1]),
+            y=list(summary["TS_max"])+list(summary["TS_min"][::-1]),
+            fill="toself", fillcolor="rgba(0,0,255,0.2)",
+            line=dict(color="rgba(255,255,255,0)"),
+            hoverinfo="skip", name="TS Min-Max"
+        ))
+    
+        # ---- YS
+        fig.add_trace(go.Scatter(
+            x=x, y=summary["YS_mean"], mode="lines+markers", name="YS Mean",
+            hovertemplate="YS Mean: %{y:.2f}<extra></extra>"
+        ))
+        fig.add_trace(go.Scatter(
+            x=list(x)+list(x[::-1]),
+            y=list(summary["YS_max"])+list(summary["YS_min"][::-1]),
+            fill="toself", fillcolor="rgba(0,255,0,0.2)",
+            line=dict(color="rgba(255,255,255,0)"),
+            hoverinfo="skip", name="YS Min-Max"
+        ))
+    
+        # ---- EL
+        fig.add_trace(go.Scatter(
+            x=x, y=summary["EL_mean"], mode="lines+markers", name="EL Mean",
+            hovertemplate="EL Mean: %{y:.2f}<extra></extra>"
+        ))
+        fig.add_trace(go.Scatter(
+            x=list(x)+list(x[::-1]),
+            y=list(summary["EL_max"])+list(summary["EL_min"][::-1]),
+            fill="toself", fillcolor="rgba(255,165,0,0.2)",
+            line=dict(color="rgba(255,255,255,0)"),
+            hoverinfo="skip", name="EL Min-Max"
+        ))
+    
+        fig.update_layout(
+            title="Hardness vs TS/YS/EL Range (Current)",
+            xaxis_title="Hardness (HRB bin)",
+            yaxis_title="Mechanical Properties",
+            hovermode="x unified",
+            margin=dict(l=50, r=300, t=50, b=50)  # tạo khoảng trống bên phải cho ghi chú
+        )
+    
+        st.plotly_chart(fig, use_container_width=True)
+    
+        # =========================
+        # 5️⃣ Ghi chú ngoài biểu đồ
+        # =========================
+        with st.expander("🔹 Summary Mechanical Properties"):
+            for i, row in summary.iterrows():
+                st.markdown(
+                    f"**Hardness {row['HRB_bin']}:** "
+                    f"TS: {row['TS_min']:.2f}-{row['TS_max']:.2f} (mean {row['TS_mean']:.2f}) | "
+                    f"YS: {row['YS_min']:.2f}-{row['YS_max']:.2f} (mean {row['YS_mean']:.2f}) | "
+                    f"EL: {row['EL_min']:.2f}-{row['EL_max']:.2f} (mean {row['EL_mean']:.2f})"
+                )
+    
+        # =========================
+        # 6️⃣ Download chart PNG
+        # =========================
+        buf = fig.to_image(format="png", scale=2)
+        st.download_button(
+            label="📥 Download Hardness → TS/YS/EL Chart",
+            data=buf,
+            file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
+            mime="image/png"
+        )
+    
