@@ -358,8 +358,16 @@ for _, g in valid.iterrows():
         st.pyplot(fig)
     
         # 5️⃣ Bảng Mechanical Properties collapsible dưới chart
+        plt.tight_layout()
+        st.pyplot(fig)
+        
+        # 5️⃣ Bảng collapsible dưới biểu đồ
         with st.expander("🔹 Mechanical Properties per Hardness Range", expanded=False):
-            st.dataframe(summary.style.format("{:.1f}", subset=summary.columns[2:]), use_container_width=True)
+            st.dataframe(
+                summary.style.format("{:.1f}", subset=summary.columns[2:]),
+                use_container_width=True,
+                height=300  # scroll nếu bảng dài
+            )
     
         # 6️⃣ Download chart
         buf = fig_to_png(fig)
