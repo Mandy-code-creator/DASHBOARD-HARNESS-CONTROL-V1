@@ -494,45 +494,4 @@ for _, g in valid.iterrows():
                     f"**📌 Quick Conclusion:** HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | " +
                     " | ".join(conclusion)
                 )
-    elif view_mode == "🧮 Predict TS/YS/EL":
-        sub_fit = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
-        if len(sub_fit) < 3:
-            st.warning("⚠️ Not enough data to fit model for TS/YS/EL prediction. Showing available data.")
-        
-        # Hardness limit
-        lsl, usl = sub["Std_Min"].iloc[0], sub["Std_Max"].iloc[0]
-        if lsl==usl:
-            usl += 0.1  # tránh trục x bị zero
     
-        predictions = {}
-        for prop in ["TS","YS","EL"]:
-            X = sub_fit["Hardness_LAB"].values
-            y = sub_fit[prop].values
-            if len(X) >= 2:
-                a, b = np.polyfit(X, y, 1)
-                y_min = a*lsl + b
-                y_max = a*usl + b
-                y_mean = a*(lsl+usl)/2 + b
-            else:
-                y_min = y_max = y_mean = y.mean()
-            predictions[prop] = (y_min, y_mean, y_max)
-    
-        # Vẽ biểu đồ
-        fig, ax = plt.subplots(figsize=(10,5))
-        for prop, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
-            y_min, y_mean, y_max = predictions[prop]
-            obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
-            # Fill predicted
-            ax.fill_between([lsl, usl],[y_min,y_min],[y_max,y_max], color=color, alpha=0.2)
-            # Mean line
-            ax.plot([lsl, usl],[y_mean,y_mean], color=color, linewidth=2)
-            # Observed points
-            ax.scatter([lsl, usl],[obs_min, obs_max], color=color, marker=marker, s=60, edgecolor="black")
-            ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=10, color=color)
-    
-        ax.set_xlabel("Hardness (HRB)")
-        ax.set_ylabel("Mechanical Properties (MPa / %)")
-        ax.set_title(f"Predicted vs Observed TS/YS/EL | Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight='bold')
-        ax.grid(True, linestyle="--", alpha=0.4)
-        plt.tight_layout()
-        st.pyplot(fig)
