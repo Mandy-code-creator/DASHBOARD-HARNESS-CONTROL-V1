@@ -495,92 +495,51 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL":
-        st.markdown("### 🧮 Mechanical Property Prediction based on Hardness")
-        
-        # ---- Lọc dữ liệu hợp lệ
         sub_fit = sub.dropna(subset=["Hardness_LAB", "TS", "YS", "EL"]).copy()
         N_coils = len(sub_fit)
         if N_coils < 5:
-            st.warning(f"⚠️ Not enough data to predict TS/YS/EL for this group (N={N_coils})")
+            st.warning(f"⚠️ Not enough data to predict TS/YS/EL (N={N_coils})")
             continue
     
-        # ---- Hardness limits trực tiếp từ sub
-        lsl = sub_fit["Std_Min"].iloc[0]
-        usl = sub_fit["Std_Max"].iloc[0]
+        lsl, usl = sub_fit["Std_Min"].iloc[0], sub_fit["Std_Max"].iloc[0]
     
-        # ---- Predict TS/YS/EL bằng tuyến tính
+        # Dự báo tuyến tính
         predictions = {}
-        for prop in ["TS", "YS", "EL"]:
+        for prop in ["TS","YS","EL"]:
             X = sub_fit["Hardness_LAB"].values
             y = sub_fit[prop].values
-            a, b = np.polyfit(X, y, 1)  # linear fit
-            y_min = a * lsl + b
-            y_max = a * usl + b
-            y_mean = a * (lsl + usl)/2 + b
-            predictions[prop] = (y_min, y_mean, y_max)
+            a,b = np.polyfit(X,y,1)
+            y_min = a*lsl + b
+            y_max = a*usl + b
+            y_mean = a*(lsl+usl)/2 + b
+            predictions[prop] = (y_min,y_mean,y_max)
     
-        # ---- Biểu đồ Prediction vs Observed
-        fig, ax = plt.subplots(figsize=(12,5))
-        for prop, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
+        # ----- Biểu đồ so sánh trực quan
+        fig, ax = plt.subplots(figsize=(8,5))
+        props = ["TS","YS","EL"]
+        colors = ["#1f77b4","#2ca02c","#ff7f0e"]
+    
+        for i, prop in enumerate(props):
             y_min, y_mean, y_max = predictions[prop]
             obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
     
-            # Fill predicted range
-            ax.fill_between([lsl, usl], [y_min,y_min], [y_max,y_max], color=color, alpha=0.15)
-            # Mean line
-            ax.plot([lsl, usl], [y_mean, y_mean], color=color, linewidth=2, label=f"{prop} Predicted Mean")
-            # Observed min/max markers
-            ax.scatter([lsl, usl], [obs_min, obs_max], color=color, marker=marker, s=60, zorder=5)
-            # Annotate values
-            ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=10, fontweight='bold', color=color)
-            ax.text(lsl, obs_min, f"{obs_min:.1f}", ha='center', va='top', fontsize=10, color=color)
-            ax.text(usl, obs_max, f"{obs_max:.1f}", ha='center', va='bottom', fontsize=10, color=color)
+            # Dải dự báo (fill nhạt)
+            ax.fill_between([i-0.2, i+0.2], [y_min,y_min], [y_max,y_max], color=colors[i], alpha=0.2)
     
-        # ---- Style
-        ax.set_xlabel("Hardness (HRB)", fontsize=12, fontweight='bold')
-        ax.set_ylabel("Mechanical Properties (MPa / %)", fontsize=12, fontweight='bold')
-        ax.set_title(f"Predicted vs Observed TS/YS/EL | Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight='bold')
-        ax.grid(True, linestyle='--', alpha=0.5)
+            # Đường Predicted Mean
+            ax.plot([i-0.2, i+0.2], [y_mean,y_mean], color=colors[i], linewidth=3, label=f"{prop} Predicted Mean")
+    
+            # Thanh quan sát Min → Max
+            ax.bar(i, obs_max-obs_min, bottom=obs_min, width=0.1, color=colors[i], alpha=0.8, label=f"{prop} Observed Range")
+    
+            # Marker mean quan sát
+            ax.scatter(i, obs_mean, color="black", zorder=5, s=50, label=f"{prop} Observed Mean" if i==0 else "")
+    
+        ax.set_xticks(range(len(props)))
+        ax.set_xticklabels(props, fontsize=12, fontweight="bold")
+        ax.set_ylabel("Mechanical Properties (MPa / %)", fontsize=12, fontweight="bold")
+        ax.set_title(f"Predicted vs Observed TS/YS/EL | Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight="bold")
+        ax.grid(True, linestyle="--", alpha=0.3)
         ax.legend(loc="upper left", bbox_to_anchor=(1.02,1))
         plt.tight_layout()
         st.pyplot(fig)
-    
-        # ---- Tạo bảng collapsible
-        df_summary = pd.DataFrame(columns=[
-            "Property","Predicted Min","Predicted Mean","Predicted Max",
-            "Observed Min","Observed Mean","Observed Max"
-        ])
-        for prop in ["TS","YS","EL"]:
-            y_min, y_mean, y_max = predictions[prop]
-            obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
-            df_summary = pd.concat([df_summary, pd.DataFrame({
-                "Property":[prop],
-                "Predicted Min":[y_min],
-                "Predicted Mean":[y_mean],
-                "Predicted Max":[y_max],
-                "Observed Min":[obs_min],
-                "Observed Mean":[obs_mean],
-                "Observed Max":[obs_max]
-            })], ignore_index=True)
-    
-        with st.expander(f"📋 Prediction vs Observed Table (N={N_coils})", expanded=False):
-            st.dataframe(df_summary.style.format("{:.1f}", subset=df_summary.columns[1:]), use_container_width=True)
-    
-        # ---- Quick Conclusion
-        conclusion = []
-        for prop in ["TS","YS","EL"]:
-            y_min, y_max = predictions[prop][0], predictions[prop][2]
-            obs_min, obs_max = sub_fit[prop].min(), sub_fit[prop].max()
-            status = "✅ Prediction within observed range" if y_min >= obs_min and y_max <= obs_max else "⚠️ Prediction out of observed range"
-            conclusion.append(f"{prop}: {status} | Predicted {y_min:.1f}-{y_max:.1f} vs Observed {obs_min:.1f}-{obs_max:.1f}")
-    
-        st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
-    
-        # ---- Download chart
-        buf = fig_to_png(fig)
-        st.download_button(
-            label="📥 Download Predicted TS/YS/EL Chart",
-            data=buf,
-            file_name=f"Predicted_vs_Observed_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
-            mime="image/png"
-        )
