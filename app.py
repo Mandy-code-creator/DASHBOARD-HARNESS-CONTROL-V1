@@ -11,7 +11,6 @@ import numpy as np
 import requests, re
 from io import StringIO, BytesIO
 import matplotlib.pyplot as plt
-from sklearn.linear_model import LinearRegression
 
 # ================================
 # PAGE CONFIG
@@ -495,34 +494,32 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
-        from sklearn.linear_model import LinearRegression
-    
+        # ---- Lọc dữ liệu hợp lệ
         sub_fit = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
         if len(sub_fit) < 5:
             st.warning("⚠️ Not enough data to fit model for TS/YS/EL prediction.")
             continue
     
-        X = sub_fit["Hardness_LAB"].values.reshape(-1,1)
+        lsl, usl = sub_fit["Std_Min"].iloc[0], sub_fit["Std_Max"].iloc[0]
     
+        # ---- Dự đoán TS/YS/EL dùng numpy.polyfit
         predictions = {}
         for prop in ["TS","YS","EL"]:
+            X = sub_fit["Hardness_LAB"].values
             y = sub_fit[prop].values
-            model = LinearRegression().fit(X,y)
-            lsl, usl = sub_fit["Std_Min"].iloc[0], sub_fit["Std_Max"].iloc[0]
-            y_pred_min = model.predict(np.array([[lsl]]))[0]
-            y_pred_max = model.predict(np.array([[usl]]))[0]
-            y_pred_mean = model.predict(np.array([[ (lsl+usl)/2 ]]))[0]
-            predictions[prop] = (y_pred_min, y_pred_mean, y_pred_max)
+            a, b = np.polyfit(X, y, 1)  # hồi quy tuyến tính
+            y_min = a*lsl + b
+            y_max = a*usl + b
+            y_mean = a*(lsl+usl)/2 + b
+            predictions[prop] = (y_min, y_mean, y_max)
     
-        # ==== Plot
+        # ---- Vẽ biểu đồ
         fig, ax = plt.subplots(figsize=(12,5))
         for prop, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
             y_min, y_mean, y_max = predictions[prop]
-            ax.plot([lsl, usl], [y_mean, y_mean], color=color, linewidth=2, label=f"{prop} Mean")
-            ax.fill_between([lsl, usl], [y_min,y_min],[y_max,y_max], color=color, alpha=0.15, label=f"{prop} Min-Max")
-            ax.scatter([lsl, usl], [y_min, y_max], color=color, marker=marker, s=50)
-    
-            # annotate
+            ax.plot([lsl, usl],[y_mean, y_mean], color=color, linewidth=2, label=f"{prop} Mean")
+            ax.fill_between([lsl, usl],[y_min,y_min],[y_max,y_max], color=color, alpha=0.15, label=f"{prop} Min-Max")
+            ax.scatter([lsl, usl],[y_min, y_max], color=color, marker=marker, s=50)
             ax.text(lsl, y_min, f"{y_min:.1f}", ha='center', va='top', fontsize=10, color=color)
             ax.text(usl, y_max, f"{y_max:.1f}", ha='center', va='bottom', fontsize=10, color=color)
             ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=10, fontweight='bold', color=color)
@@ -535,7 +532,7 @@ for _, g in valid.iterrows():
         plt.tight_layout()
         st.pyplot(fig)
     
-        # ==== Table
+        # ---- Bảng Quick Prediction
         df_pred = pd.DataFrame({
             "Property":["TS","YS","EL"],
             "Predicted Min":[predictions[p][0] for p in ["TS","YS","EL"]],
@@ -546,7 +543,7 @@ for _, g in valid.iterrows():
         st.dataframe(df_pred.style.format("{:.1f}", subset=["Predicted Min","Predicted Mean","Predicted Max"]),
                      use_container_width=True)
     
-        # ==== Download Chart
+        # ---- Download Chart
         buf = fig_to_png(fig)
         st.download_button(
             label="📥 Download Predicted TS/YS/EL Chart",
@@ -554,4 +551,3 @@ for _, g in valid.iterrows():
             file_name=f"Predicted_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
             mime="image/png"
         )
-    
