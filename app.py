@@ -495,58 +495,56 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL":
-        # Lấy dữ liệu dự báo từ Hardness_LINE
-        sub_fit = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"]).copy()
+        # ----- Use LINE hardness as predictor
+        sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         N_coils = len(sub_fit)
+        
         if N_coils < 5:
-            st.warning(f"⚠️ Not enough data (N={N_coils})")
+            st.warning(f"⚠️ Not enough data to perform prediction (N={N_coils})")
             continue
     
+        # ----- Coil sequence
         coils = np.arange(1, N_coils+1)
     
-        fig, axes = plt.subplots(3,1, figsize=(14,10), sharex=True)
-        props = ["TS","YS","EL"]
-        colors_obs = ["#003f5c","#2f4b7c","#665191"]
-        colors_pred = ["#ffa600","#ffa600","#ffa600"]
-    
-        for i, prop in enumerate(props):
-            X = sub_fit["Hardness_LINE"].values
+        # ----- Linear regression: y = a*x + b
+        pred_values = {}
+        ci_upper = {}
+        ci_lower = {}
+        for prop in ["TS", "YS", "EL"]:
+            x = sub_fit["Hardness_LINE"].values
             y = sub_fit[prop].values
+            # Fit linear regression
+            a, b = np.polyfit(x, y, 1)
+            y_pred = a*x + b
+            pred_values[prop] = y_pred
     
-            # Hồi quy tuyến tính
-            a, b = np.polyfit(X, y, 1)
-            y_pred = a*X + b
+            # ----- 95% CI approximation (mean ± 1.96*std of residuals)
+            resid = y - y_pred
+            resid_std = np.std(resid, ddof=1)
+            ci_upper[prop] = y_pred + 1.96*resid_std
+            ci_lower[prop] = y_pred - 1.96*resid_std
     
-            # ---- Dải tin cậy 95% (approx) ----
-            n = len(X)
-            mean_x = np.mean(X)
-            residuals = y - y_pred
-            s_err = np.sqrt(np.sum(residuals**2)/(n-2))
-            # t_value ~ 2 cho 95% khi n lớn
-            t_val = 2.0
-            conf = t_val * s_err * np.sqrt(1/n + (X - mean_x)**2 / np.sum((X - mean_x)**2))
-            lower = y_pred - conf
-            upper = y_pred + conf
-    
-            ax = axes[i]
-            ax.plot(coils, y, marker="o", linestyle="-", color=colors_obs[i], label=f"Observed {prop}")
-            ax.plot(coils, y_pred, marker="o", linestyle="--", color=colors_pred[i], label=f"Predicted {prop}")
-            ax.fill_between(coils, lower, upper, color=colors_pred[i], alpha=0.2, label="95% CI")
-            ax.set_ylabel(prop if prop!="EL" else "%")
+        # ----- Plot observed vs predicted with CI
+        fig, axes = plt.subplots(3,1, figsize=(14,10), sharex=True)
+        for ax, prop, color_obs, marker in zip(axes, ["TS","YS","EL"], ["#003f5c","#2f4b7c","#665191"], ["o","s","^"]):
+            ax.plot(coils, sub_fit[prop], linestyle="-", marker=marker, color=color_obs, label=f"Observed {prop}")
+            ax.plot(coils, pred_values[prop], linestyle="--", marker=marker, color="#ffa600", label=f"Predicted {prop}")
+            ax.fill_between(coils, ci_lower[prop], ci_upper[prop], color="#ffa600", alpha=0.2, label="95% CI")
+            ax.set_ylabel(prop)
             ax.grid(True, linestyle="--", alpha=0.3)
-            ax.legend(loc="upper left")
-            ax.set_title(f"{prop}: Predicted vs Observed with 95% CI")
-    
+            ax.legend()
+        
         axes[-1].set_xlabel("Coil Sequence")
-        plt.tight_layout()
+        fig.suptitle("Predicted vs Observed Mechanical Properties based on LINE Hardness", fontsize=14, fontweight="bold")
+        plt.tight_layout(rect=[0,0,1,0.97])
         st.pyplot(fig)
     
-        # Download chart
-        buf = fig_to_png(fig)
-        st.download_button(
-            label=f"📥 Download Prediction Chart",
-            data=buf,
-            file_name=f"prediction_{g['Material']}_{g['Gauge_Range']}.png",
-            mime="image/png"
+        # ----- CI Explanation in English
+        st.markdown(
+            """
+    💡 **95% Confidence Interval (CI):**  
+    - The shaded area around the predicted line represents the **95% Confidence Interval**.  
+    - It means that **there is approximately a 95% probability that the actual value will fall within this range** if the linear model is valid.  
+    - The narrower the CI, the more precise the prediction; the wider the CI, the more uncertainty exists.
+    """
         )
-    
