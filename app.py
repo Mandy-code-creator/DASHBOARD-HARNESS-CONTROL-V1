@@ -11,6 +11,7 @@ import numpy as np
 import requests, re
 from io import StringIO, BytesIO
 import matplotlib.pyplot as plt
+from sklearn.linear_model import LinearRegression
 
 # ================================
 # PAGE CONFIG
