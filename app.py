@@ -495,48 +495,58 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL":
+        from scipy import stats
+    
+        # Chỉ lấy dữ liệu có Hardness_LINE và TS/YS/EL
         sub_fit = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"]).copy()
         N_coils = len(sub_fit)
         if N_coils < 5:
             st.warning(f"⚠️ Not enough data (N={N_coils})")
             continue
     
-        import statsmodels.api as sm
-    
         coils = np.arange(1, N_coils+1)
     
-        fig, axes = plt.subplots(1, 3, figsize=(18,5))  # TS | YS | EL
-        props = ["TS", "YS", "EL"]
-        colors_obs = ["#003f5c", "#2f4b7c", "#665191"]
-        colors_pred = "#ffa600"
+        fig, axes = plt.subplots(3,1, figsize=(14,10), sharex=True)
+        props = ["TS","YS","EL"]
+        colors_obs = ["#003f5c","#2f4b7c","#665191"]
+        colors_pred = ["#ffa600","#ffa600","#ffa600"]
     
-        for ax, prop, color_obs in zip(axes, props, colors_obs):
+        for i, prop in enumerate(props):
             X = sub_fit["Hardness_LINE"].values
             y = sub_fit[prop].values
-            X_sm = sm.add_constant(X)  # statsmodels intercept
     
-            model = sm.OLS(y, X_sm).fit()
-            pred = model.get_prediction(X_sm)
-            pred_mean = pred.predicted_mean
-            pred_ci = pred.conf_int(alpha=0.05)  # 95% confidence interval
+            # Fit tuyến tính
+            a, b = np.polyfit(X, y, 1)
+            y_pred = a*X + b
     
-            lower = pred_ci[:,0]
-            upper = pred_ci[:,1]
+            # Dải tin cậy 95%
+            alpha = 0.05
+            n = len(X)
+            mean_x = np.mean(X)
+            t_val = stats.t.ppf(1-alpha/2, n-2)
+            s_err = np.sqrt(np.sum((y - y_pred)**2)/(n-2))
+            conf = t_val * s_err * np.sqrt(1/n + (X - mean_x)**2/np.sum((X - mean_x)**2))
+            lower = y_pred - conf
+            upper = y_pred + conf
     
-            # ---- Plot observed
-            ax.plot(coils, y, marker="o", linestyle="-", color=color_obs, label=f"Observed {prop}")
-    
-            # ---- Plot predicted
-            ax.plot(coils, pred_mean, marker="o", linestyle="--", color=colors_pred, label=f"Predicted {prop}")
-    
-            # ---- Confidence interval
-            ax.fill_between(coils, lower, upper, color=colors_pred, alpha=0.2, label="95% CI")
-    
-            ax.set_title(f"{prop}: Predicted vs Observed")
-            ax.set_xlabel("Coil Sequence")
-            ax.set_ylabel("MPa" if prop != "EL" else "%")
+            ax = axes[i]
+            ax.plot(coils, y, marker="o", linestyle="-", color=colors_obs[i], label=f"Observed {prop}")
+            ax.plot(coils, y_pred, marker="o", linestyle="--", color=colors_pred[i], label=f"Predicted {prop}")
+            ax.fill_between(coils, lower, upper, color=colors_pred[i], alpha=0.2, label="95% CI")
+            ax.set_ylabel(prop if prop!="EL" else "%")
             ax.grid(True, linestyle="--", alpha=0.3)
-            ax.legend()
+            ax.legend(loc="upper left")
+            ax.set_title(f"{prop}: Predicted vs Observed with 95% CI")
     
+        axes[-1].set_xlabel("Coil Sequence")
         plt.tight_layout()
         st.pyplot(fig)
+    
+        # Download chart
+        buf = fig_to_png(fig)
+        st.download_button(
+            label=f"📥 Download Prediction Chart",
+            data=buf,
+            file_name=f"prediction_{g['Material']}_{g['Gauge_Range']}.png",
+            mime="image/png"
+        )
