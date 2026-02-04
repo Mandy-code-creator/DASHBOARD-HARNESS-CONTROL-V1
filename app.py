@@ -495,9 +495,7 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL":
-        from scipy import stats
-    
-        # Chỉ lấy dữ liệu có Hardness_LINE và TS/YS/EL
+        # Lấy dữ liệu dự báo từ Hardness_LINE
         sub_fit = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"]).copy()
         N_coils = len(sub_fit)
         if N_coils < 5:
@@ -515,17 +513,18 @@ for _, g in valid.iterrows():
             X = sub_fit["Hardness_LINE"].values
             y = sub_fit[prop].values
     
-            # Fit tuyến tính
+            # Hồi quy tuyến tính
             a, b = np.polyfit(X, y, 1)
             y_pred = a*X + b
     
-            # Dải tin cậy 95%
-            alpha = 0.05
+            # ---- Dải tin cậy 95% (approx) ----
             n = len(X)
             mean_x = np.mean(X)
-            t_val = stats.t.ppf(1-alpha/2, n-2)
-            s_err = np.sqrt(np.sum((y - y_pred)**2)/(n-2))
-            conf = t_val * s_err * np.sqrt(1/n + (X - mean_x)**2/np.sum((X - mean_x)**2))
+            residuals = y - y_pred
+            s_err = np.sqrt(np.sum(residuals**2)/(n-2))
+            # t_value ~ 2 cho 95% khi n lớn
+            t_val = 2.0
+            conf = t_val * s_err * np.sqrt(1/n + (X - mean_x)**2 / np.sum((X - mean_x)**2))
             lower = y_pred - conf
             upper = y_pred + conf
     
@@ -550,3 +549,4 @@ for _, g in valid.iterrows():
             file_name=f"prediction_{g['Material']}_{g['Gauge_Range']}.png",
             mime="image/png"
         )
+    
