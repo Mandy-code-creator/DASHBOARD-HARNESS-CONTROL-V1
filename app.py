@@ -316,17 +316,7 @@ for _, g in valid.iterrows():
         sub["EL_USL"] = sub["Standard EL max"]
     
         sub = sub.dropna(subset=["TS_LSL","TS_USL","YS_LSL","YS_USL","EL_LSL","EL_USL"])
-                note_text = "\n".join(note_lines)
-        st.text_area("📌 Summary Note (per HRB bin)", value=note_text, height=180)
-        # ==== Note box outside chart ====
-        note_lines = []
-        for _, row in summary.iterrows():
-            note_lines.append(
-                f"HRB {row['HRB_bin']}: N={row['N_coils']}, "
-                f"TS({row['TS_min']:.1f}-{row['TS_max']:.1f}), "
-                f"YS({row['YS_min']:.1f}-{row['YS_max']:.1f}), "
-                f"EL({row['EL_min']:.1f}-{row['EL_max']:.1f})"
-            )
+    
         # 3️⃣ Summary min/mean/max
         summary = sub.groupby("HRB_bin").agg(
             N_coils=("COIL_NO","count"),
@@ -340,10 +330,24 @@ for _, g in valid.iterrows():
             EL_min=("EL","min"),
             EL_max=("EL","max")
         ).reset_index()
+    
+        # 4️⃣ Hiển thị bảng
         st.markdown("### 🔹 Mechanical Properties per Hardness Range (Current Distribution)")
         st.dataframe(summary, use_container_width=True)
     
-        # 4️⃣ Line plot
+        # 5️⃣ Note box ngoài chart
+        note_lines = []
+        for _, row in summary.iterrows():
+            note_lines.append(
+                f"HRB {row['HRB_bin']}: N={row['N_coils']}, "
+                f"TS({row['TS_min']:.1f}-{row['TS_max']:.1f}), "
+                f"YS({row['YS_min']:.1f}-{row['YS_max']:.1f}), "
+                f"EL({row['EL_min']:.1f}-{row['EL_max']:.1f})"
+            )
+        note_text = "\n".join(note_lines)
+        st.text_area("📌 Summary Note (per HRB bin)", value=note_text, height=180)
+    
+        # 6️⃣ Line plot
         fig, ax = plt.subplots(figsize=(8,4))
         x = np.arange(len(summary))
     
@@ -366,7 +370,7 @@ for _, g in valid.iterrows():
         plt.tight_layout()
         st.pyplot(fig)
     
-        # 5️⃣ Download chart
+        # 7️⃣ Download chart
         buf = fig_to_png(fig)
         st.download_button(
             label="📥 Download Hardness → TS/YS/EL Chart",
