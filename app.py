@@ -494,94 +494,45 @@ for _, g in valid.iterrows():
                     f"**📌 Quick Conclusion:** HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | " +
                     " | ".join(conclusion)
                 )
-    elif view_mode == "🧮 Predict TS/YS/EL":
-        # ---- Lọc dữ liệu hợp lệ
-        sub_fit = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
-        if len(sub_fit) < 5:
-            st.warning("⚠️ Not enough data to fit model for TS/YS/EL prediction.")
-            continue
+   elif view_mode == "🧮 Predict TS/YS/EL":
+    sub_fit = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
+    if len(sub_fit) < 3:
+        st.warning("⚠️ Not enough data to fit model for TS/YS/EL prediction. Showing available data.")
     
-        lsl, usl = sub_fit["Std_Min"].iloc[0], sub_fit["Std_Max"].iloc[0]
-    
-        # ---- Dự đoán TS/YS/EL tuyến tính
-        predictions = {}
-        for prop in ["TS","YS","EL"]:
-            X = sub_fit["Hardness_LAB"].values
-            y = sub_fit[prop].values
+    # Hardness limit
+    lsl, usl = sub["Std_Min"].iloc[0], sub["Std_Max"].iloc[0]
+    if lsl==usl:
+        usl += 0.1  # tránh trục x bị zero
+
+    predictions = {}
+    for prop in ["TS","YS","EL"]:
+        X = sub_fit["Hardness_LAB"].values
+        y = sub_fit[prop].values
+        if len(X) >= 2:
             a, b = np.polyfit(X, y, 1)
             y_min = a*lsl + b
             y_max = a*usl + b
             y_mean = a*(lsl+usl)/2 + b
-            predictions[prop] = (y_min, y_mean, y_max)
-    
-        # ---- Biểu đồ Predicted vs Observed
-        fig, ax = plt.subplots(figsize=(12,5))
-        for prop, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
-            y_min, y_mean, y_max = predictions[prop]
-            obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
-    
-            # Thanh Min-Max
-            ax.fill_between([lsl, usl],[y_min,y_min],[y_max,y_max], color=color, alpha=0.15, label=f"{prop} Predicted Min-Max")
-            # Mean line
-            ax.plot([lsl, usl],[y_mean, y_mean], color=color, linewidth=2, label=f"{prop} Predicted Mean")
-            # Scatter min/max
-            ax.scatter([lsl, usl],[y_min, y_max], color=color, marker=marker, s=50)
-            # Text
-            ax.text(lsl, y_min, f"{y_min:.1f}", ha='center', va='top', fontsize=10, color=color)
-            ax.text(usl, y_max, f"{y_max:.1f}", ha='center', va='bottom', fontsize=10, color=color)
-            ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=10, fontweight='bold', color=color)
-    
-        ax.set_xlabel("Hardness (HRB)")
-        ax.set_ylabel("Mechanical Properties (MPa / %)")
-        ax.set_title(f"Predicted vs Observed TS/YS/EL | Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight='bold')
-        ax.grid(True, linestyle="--", alpha=0.5)
-        ax.legend(loc="upper left", bbox_to_anchor=(1.02,1))
-        plt.tight_layout()
-        st.pyplot(fig)
-    
-        # ---- Bảng gọn so sánh Predicted vs Observed
-        df_summary = pd.DataFrame(columns=["Property","Predicted Min","Predicted Mean","Predicted Max",
-                                           "Observed Min","Observed Mean","Observed Max","Deviation %","Overlap %"])
-        for prop in ["TS","YS","EL"]:
-            y_min, y_mean, y_max = predictions[prop]
-            obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
-    
-            # Deviation %
-            dev = (y_mean - obs_mean)/obs_mean * 100
-            # Overlap %
-            overlap_len = max(0, min(y_max, obs_max) - max(y_min, obs_min))
-            pred_len = y_max - y_min
-            overlap_pct = (overlap_len / pred_len * 100) if pred_len>0 else 0
-    
-            df_summary = pd.concat([df_summary, pd.DataFrame({
-                "Property":[prop],
-                "Predicted Min":[y_min],
-                "Predicted Mean":[y_mean],
-                "Predicted Max":[y_max],
-                "Observed Min":[obs_min],
-                "Observed Mean":[obs_mean],
-                "Observed Max":[obs_max],
-                "Deviation %":[dev],
-                "Overlap %":[overlap_pct]
-            })], ignore_index=True)
-    
-        st.markdown("### 🔹 Prediction vs Observed Table")
-        st.dataframe(df_summary.style.format("{:.1f}", subset=df_summary.columns[1:]), use_container_width=True)
-    
-        # ---- Quick Conclusion
-        conclusion = []
-        for prop in ["TS","YS","EL"]:
-            y_min, y_max = predictions[prop][0], predictions[prop][2]
-            obs_min, obs_max = sub_fit[prop].min(), sub_fit[prop].max()
-            status = "✅ Prediction within observed range" if y_min >= obs_min and y_max <= obs_max else "⚠️ Prediction out of range"
-            conclusion.append(f"{prop}: {status}")
-        st.markdown("**📌 Quick Conclusion:** " + " | ".join(conclusion))
-    
-        # ---- Download chart
-        buf = fig_to_png(fig)
-        st.download_button(
-            label="📥 Download Predicted TS/YS/EL Chart",
-            data=buf,
-            file_name=f"Predicted_vs_Observed_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
-            mime="image/png"
-        )
+        else:
+            y_min = y_max = y_mean = y.mean()
+        predictions[prop] = (y_min, y_mean, y_max)
+
+    # Vẽ biểu đồ
+    fig, ax = plt.subplots(figsize=(10,5))
+    for prop, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
+        y_min, y_mean, y_max = predictions[prop]
+        obs_min, obs_mean, obs_max = sub_fit[prop].min(), sub_fit[prop].mean(), sub_fit[prop].max()
+        # Fill predicted
+        ax.fill_between([lsl, usl],[y_min,y_min],[y_max,y_max], color=color, alpha=0.2)
+        # Mean line
+        ax.plot([lsl, usl],[y_mean,y_mean], color=color, linewidth=2)
+        # Observed points
+        ax.scatter([lsl, usl],[obs_min, obs_max], color=color, marker=marker, s=60, edgecolor="black")
+        ax.text((lsl+usl)/2, y_mean, f"{y_mean:.1f}", ha='center', va='bottom', fontsize=10, color=color)
+
+    ax.set_xlabel("Hardness (HRB)")
+    ax.set_ylabel("Mechanical Properties (MPa / %)")
+    ax.set_title(f"Predicted vs Observed TS/YS/EL | Hardness {lsl:.1f}-{usl:.1f}", fontsize=14, fontweight='bold')
+    ax.grid(True, linestyle="--", alpha=0.4)
+    plt.tight_layout()
+    st.pyplot(fig)
