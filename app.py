@@ -576,3 +576,13 @@ for _, g in valid.iterrows():
             "Predicted Max": [predictions[p][2] for p in ["TS", "YS", "EL"]]
         })
         st.dataframe(df_pred.style.format("{:.1f}", subset=["Predicted Min","Predicted Mean","Predicted Max"]), use_container_width=True)
+        # ===== Quick Conclusion
+        conclusion = []
+        for prop in ["TS","YS","EL"]:
+            y_min, y_mean, y_max = predictions[prop]
+            status = "✅ OK" if (y_min >= sub[prop].min()) and (y_max <= sub[prop].max()) else "⚠️ Check"
+            conclusion.append(f"{prop}: {status} | Predicted {y_min:.1f}-{y_max:.1f}")
+        
+        st.markdown(
+            f"**📌 Quick Conclusion for Hardness {lsl:.1f}-{usl:.1f}:** " + " | ".join(conclusion)
+        )
