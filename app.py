@@ -667,53 +667,47 @@ for _, g in valid.iterrows():
             "- EL unit is **%**, TS/YS units are **MPa**.\n"
             "- Table shows predicted values for selected LINE Hardness range."
         )
-import streamlit as st
-import pandas as pd
+# ================================
+# 📊 Hard Bin Mapping → Mechanical Properties Summary
+# ================================
+st.markdown("## 📊 Hard Bin Mapping → Mechanical Properties Summary")
 
-st.title("📊 Hard Bin Mapping → Mechanical Properties Summary")
+# Chọn các cột chính
+group_cols = ["Quality_Code", "Product_Spec", "Gauge_Range", "Material"]
 
-# --- Load data ---
-DATA_URL = "https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
-GAUGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
+# Lấy sub data đã lọc từ các view trước (df hiện tại)
+df_summary = df.dropna(subset=["Hardness_LAB","Hardness_LINE","TS","YS","EL","Std_Min","Std_Max"])
 
+def agg_mech(group):
+    return pd.Series({
+        "Std_Min": group["Std_Min"].min(),
+        "Std_Max": group["Std_Max"].max(),
+        "TS_min": group["TS"].min(),
+        "TS_max": group["TS"].max(),
+        "YS_min": group["YS"].min(),
+        "YS_max": group["YS"].max(),
+        "EL_min": group["EL"].min(),
+        "EL_max": group["EL"].max(),
+        "N_coils": group["COIL_NO"].nunique()
+    })
 
-@st.cache_data
-def load_csv(url):
-    return pd.read_csv(url)
+summary_hard = df_summary.groupby(group_cols).apply(agg_mech).reset_index()
 
-df = load_csv(DATA_URL)
-gauge_df = load_csv(GAUGE_URL)
-spec_sheet = load_csv(SPEC_URL)
-
-# --- Map gauge range ---
-def map_gauge(val):
-    for _, row in gauge_df.iterrows():
-        parts = str(row['GAUGE_RANGE']).split("≤")
-        if len(parts) == 2:
-            low = float(parts[0])
-            high = float(parts[1])
-            if low <= val < high:
-                return row['GAUGE_RANGE']
-    return None
-
-df['Gauge_Range'] = df['ORDER GAUGE'].apply(map_gauge)
-df = df.dropna(subset=['Gauge_Range'])
-
-# --- Extract Standard Hardness Min/Max ---
-df[['Std_Min','Std_Max']] = df['Standard Hardness'].str.split("~", expand=True).astype(float)
-
-# --- Group by Product Spec + Gauge Range ---
-summary = df.groupby(['PRODUCT SPECIFICATION CODE','Gauge_Range']).agg(
-    Std_Min=('Std_Min','min'),
-    Std_Max=('Std_Max','max')
-).reset_index()
-
-# --- Merge với Spec Sheet để lấy TS/YS/EL ---
-summary = summary.merge(
-    spec_sheet[['PRODUCT SPECIFICATION CODE','TS_MIN','TS_MAX','YS_MIN','YS_MAX','EL_MIN','EL_MAX']],
-    on='PRODUCT SPECIFICATION CODE',
-    how='left'
+# Hiển thị bảng duy nhất
+st.dataframe(
+    summary_hard.style.format({
+        "Std_Min":"{:.1f}", "Std_Max":"{:.1f}",
+        "TS_min":"{:.1f}", "TS_max":"{:.1f}",
+        "YS_min":"{:.1f}", "YS_max":"{:.1f}",
+        "EL_min":"{:.1f}", "EL_max":"{:.1f}"
+    }),
+    use_container_width=True,
+    height=400
 )
 
-# --- Display ---
-st.dataframe(summary, use_container_width=True)
+st.markdown(
+    "- HRB = Standard Hardness\n"
+    "- TS/YS in MPa, EL in %\n"
+    "- N_coils = số lượng coil trong mỗi nhóm\n"
+    "- Bảng gộp tất cả các Product Spec + Gauge Range + Material + Quality Code"
+)
