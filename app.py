@@ -167,8 +167,8 @@ view_mode = st.sidebar.radio(
     ]
 )
 # ----- Sidebar note: CI explanation (once)
-        with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
-            st.markdown(
+with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
+    st.markdown(
                 """
     - The shaded area around the predicted line represents the **95% Confidence Interval (CI)**.
     - It means that **approximately 95% of future observations are expected to fall within this range** if the linear model is valid.
