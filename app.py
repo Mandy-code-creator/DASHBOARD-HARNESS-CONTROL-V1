@@ -313,16 +313,16 @@ for _, g in valid.iterrows():
            mime="image/png"
         )
     elif view_mode == "🛠 Hardness → TS/YS/EL":
-        
+
         # ================================
         # 1️⃣ Chuẩn bị dữ liệu
         # ================================
         sub = sub.dropna(subset=["Hardness_LAB","Hardness_LINE","TS","YS","EL"])
     
-        # Loại bỏ coil GE* <88 nếu cột QUALITY_CODE tồn tại
-        if "QUALITY_CODE" in sub.columns:
+        # Loại bỏ hoàn toàn coil GE* <88
+        if "Quality_Code" in sub.columns:
             sub = sub[~(
-                sub["QUALITY_CODE"].astype(str).str.startswith("GE") &
+                sub["Quality_Code"].astype(str).str.startswith("GE") &
                 ((sub["Hardness_LAB"] < 88) | (sub["Hardness_LINE"] < 88))
             )]
     
@@ -425,7 +425,6 @@ for _, g in valid.iterrows():
                            data=buf,
                            file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
                            mime="image/png")
-
 
     elif view_mode == "📊 TS/YS/EL Trend & Distribution":
         import re, uuid
