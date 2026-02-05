@@ -572,66 +572,61 @@ for _, g in valid.iterrows():
                 )
    # ================================
     elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
-        import plotly.graph_objects as go
     
         st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
     
-        # ====== 1️⃣ Tạo key cố định trong session ======
-        if "predict_inputs" not in st.session_state:
-            st.session_state.predict_inputs = {
-                "type": "Single Value",
-                "hrb_single": 90.0,
-                "hrb_min": 88.0,
-                "hrb_max": 92.0,
-                "hrb_step": 1.0
-            }
+        # ====== 1️⃣ Tạo namespace cho session_state ======
+        if "predict" not in st.session_state:
+            st.session_state.predict = {}
+    
+        prefix = "predict"  # dùng làm tiền tố key để tránh trùng
     
         # ====== 2️⃣ Chọn kiểu dự báo ======
         pred_type = st.radio(
             "Select input type for prediction:",
             ["Single Value", "Range"],
-            index=0 if st.session_state.predict_inputs["type"]=="Single Value" else 1,
-            key="predict_type_radio"
+            index=0 if st.session_state.predict.get("type", "Single Value")=="Single Value" else 1,
+            key=f"{prefix}_type"
         )
-        st.session_state.predict_inputs["type"] = pred_type
+        st.session_state.predict["type"] = pred_type
     
         # ====== 3️⃣ Nhập HRB ======
         if pred_type == "Single Value":
             user_hrb = st.number_input(
                 "Enter desired LINE Hardness (HRB):",
                 min_value=0.0, max_value=120.0,
-                value=st.session_state.predict_inputs["hrb_single"],
+                value=st.session_state.predict.get("hrb_single", 90.0),
                 step=0.1,
-                key="predict_hrb_single_input"
+                key=f"{prefix}_hrb_single"
             )
-            st.session_state.predict_inputs["hrb_single"] = user_hrb
+            st.session_state.predict["hrb_single"] = user_hrb
             hrb_values = [user_hrb]
         else:
             hrb_min = st.number_input(
                 "Enter minimum LINE Hardness (HRB):",
                 min_value=0.0, max_value=120.0,
-                value=st.session_state.predict_inputs["hrb_min"],
+                value=st.session_state.predict.get("hrb_min", 88.0),
                 step=0.1,
-                key="predict_hrb_min_input"
+                key=f"{prefix}_hrb_min"
             )
             hrb_max = st.number_input(
                 "Enter maximum LINE Hardness (HRB):",
                 min_value=0.0, max_value=120.0,
-                value=st.session_state.predict_inputs["hrb_max"],
+                value=st.session_state.predict.get("hrb_max", 92.0),
                 step=0.1,
-                key="predict_hrb_max_input"
+                key=f"{prefix}_hrb_max"
             )
             step = st.number_input(
                 "Step for prediction:",
                 min_value=0.1, max_value=10.0,
-                value=st.session_state.predict_inputs["hrb_step"],
+                value=st.session_state.predict.get("hrb_step", 1.0),
                 step=0.1,
-                key="predict_hrb_step_input"
+                key=f"{prefix}_hrb_step"
             )
-            st.session_state.predict_inputs["hrb_min"] = hrb_min
-            st.session_state.predict_inputs["hrb_max"] = hrb_max
-            st.session_state.predict_inputs["hrb_step"] = step
-            hrb_values = list(np.arange(hrb_min, hrb_max + 0.01, step))
+            st.session_state.predict["hrb_min"] = hrb_min
+            st.session_state.predict["hrb_max"] = hrb_max
+            st.session_state.predict["hrb_step"] = step
+            hrb_values = list(np.arange(hrb_min, hrb_max+0.01, step))
 
     elif view_mode == "📊 Hardness → Mechanical Range":
         st.markdown("## 📊 Hardness → Mechanical Properties Range")
