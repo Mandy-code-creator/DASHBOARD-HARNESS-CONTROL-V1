@@ -630,7 +630,7 @@ for _, g in valid.iterrows():
             pred_values[prop] = a * np.array(hrb_values) + b
     
         # ====== 5️⃣ Vẽ trend + marker dự báo ======
-       import plotly.graph_objects as go
+        import plotly.graph_objects as go
 
         coils = np.arange(1, N_coils+1)
         fig = go.Figure()
