@@ -153,28 +153,12 @@ df["Gauge_Range"] = df["Order_Gauge"].apply(map_gauge)
 df = df.dropna(subset=["Gauge_Range"])
 
 # ================================
-# ================================
-# SIDEBAR FILTER (FIXED – NO DUPLICATE ID)
+# SIDEBAR FILTER
 # ================================
 st.sidebar.header("🎛 FILTER")
-
-rolling = st.sidebar.radio(
-    "Rolling Type",
-    sorted(df["Rolling_Type"].unique()),
-    key="filter_rolling_type"
-)
-
-metal = st.sidebar.radio(
-    "Metallic Type",
-    sorted(df["Metallic_Type"].unique()),
-    key="filter_metallic_type"
-)
-
-qgroup = st.sidebar.radio(
-    "Quality Group",
-    sorted(df["Quality_Group"].unique()),
-    key="filter_quality_group"
-)
+rolling = st.sidebar.radio("Rolling Type", sorted(df["Rolling_Type"].unique()))
+metal   = st.sidebar.radio("Metallic Type", sorted(df["Metallic_Type"].unique()))
+qgroup  = st.sidebar.radio("Quality Group", sorted(df["Quality_Group"].unique()))
 
 df = df[
     (df["Rolling_Type"] == rolling) &
@@ -191,16 +175,11 @@ view_mode = st.sidebar.radio(
         "🛠 Hardness → TS/YS/EL",
         "📊 TS/YS/EL Trend & Distribution",
         "🧮 Predict TS/YS/EL (Custom Hardness)",
-        "📊 Hardness → Mechanical Range",
-        "📊 Hardness → Mechanical Range & Risk"
-    ],
-    key="view_mode_main"
+        "📊 Hardness → Mechanical Range"
+    ]
 )
 
-with st.sidebar.expander(
-    "💡 About 95% Confidence Interval (CI)",
-    expanded=False
-):
+with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
     st.markdown(
         """
         - The shaded area around the predicted line represents the **95% Confidence Interval (CI)**.
@@ -731,131 +710,3 @@ for _, g in valid.iterrows():
                 "- TS/YS in MPa, EL in %.\n"
                 "- N_coils = số lượng coil trong mỗi Hardness."
             )
-    elif view_mode == "📊 Hardness → Mechanical Range & Risk":
-        st.markdown("## 📊 Hardness → Mechanical Range & Risk Assessment")
-    
-        # =========================
-        # INPUT (PHẢI CÓ KEY)
-        # =========================
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            hrb_min = st.number_input(
-                "Min Hardness (HRB)",
-                min_value=0, max_value=120, value=60, step=1,
-                key="risk_hrb_min"
-            )
-        with c2:
-            hrb_max = st.number_input(
-                "Max Hardness (HRB)",
-                min_value=0, max_value=120, value=95, step=1,
-                key="risk_hrb_max"
-            )
-        with c3:
-            hrb_step = st.number_input(
-                "Step (HRB)",
-                min_value=1, max_value=10, value=1, step=1,
-                key="risk_hrb_step"
-            )
-    
-        # =========================
-        # DATA PREP
-        # =========================
-        import numpy as np
-        import pandas as pd
-        import matplotlib.pyplot as plt
-    
-        required_cols = [
-            "Hardness_LINE", "TS", "YS", "EL",
-            "Standard TS min", "Standard TS max",
-            "Standard YS min", "Standard YS max",
-            "Standard EL min", "Standard EL max",
-            "Quality_Code"
-        ]
-    
-        sub = df.dropna(subset=required_cols).copy()
-    
-        if sub.empty:
-            st.warning("⚠️ No valid data for Mechanical Range & Risk analysis.")
-            st.stop()
-    
-        # =========================
-        # MAIN CALC
-        # =========================
-        rows = []
-    
-        for hrb in range(hrb_min, hrb_max + 1, hrb_step):
-            subset = sub[
-                (sub["Hardness_LINE"] >= hrb - 1) &
-                (sub["Hardness_LINE"] <= hrb + 1)
-            ]
-    
-            if subset.empty:
-                continue
-    
-            TS_min, TS_max = subset["TS"].min(), subset["TS"].max()
-            YS_min, YS_max = subset["YS"].min(), subset["YS"].max()
-            EL_min, EL_max = subset["EL"].min(), subset["EL"].max()
-    
-            # NG rate
-            ts_ng = ((subset["TS"] < subset["Standard TS min"]) |
-                     (subset["TS"] > subset["Standard TS max"])).mean()
-            ys_ng = ((subset["YS"] < subset["Standard YS min"]) |
-                     (subset["YS"] > subset["Standard YS max"])).mean()
-            el_ng = ((subset["EL"] < subset["Standard EL min"]) |
-                     (subset["EL"] > subset["Standard EL max"])).mean()
-    
-            # Quality adjustment
-            qc_factor = 0.7 if subset["Quality_Code"].astype(str).str.contains("CQ|FULL", case=False).any() else 1.0
-    
-            risk_score = qc_factor * np.mean([ts_ng, ys_ng, el_ng])
-    
-            if risk_score < 0.05:
-                risk_level = "Low"
-            elif risk_score < 0.2:
-                risk_level = "Medium"
-            else:
-                risk_level = "High"
-    
-            rows.append({
-                "HRB": hrb,
-                "TS_min": TS_min, "TS_max": TS_max,
-                "YS_min": YS_min, "YS_max": YS_max,
-                "EL_min": EL_min, "EL_max": EL_max,
-                "Risk Score": risk_score,
-                "Risk Level": risk_level
-            })
-    
-        if not rows:
-            st.warning("⚠️ No data found in selected Hardness range.")
-            st.stop()
-    
-        result_df = pd.DataFrame(rows)
-    
-        # =========================
-        # SHOW TABLE
-        # =========================
-        st.dataframe(
-            result_df.style.format({
-                "TS_min": "{:.1f}", "TS_max": "{:.1f}",
-                "YS_min": "{:.1f}", "YS_max": "{:.1f}",
-                "EL_min": "{:.1f}", "EL_max": "{:.1f}",
-                "Risk Score": "{:.2f}"
-            }),
-            use_container_width=True
-        )
-    
-        # =========================
-        # PLOT
-        # =========================
-        fig, ax = plt.subplots(figsize=(14, 5))
-        ax.plot(result_df["HRB"], result_df["TS_max"], label="TS max")
-        ax.plot(result_df["HRB"], result_df["YS_max"], label="YS max")
-        ax.plot(result_df["HRB"], result_df["EL_max"], label="EL max")
-    
-        ax.set_xlabel("Hardness (HRB)")
-        ax.set_ylabel("Mechanical Properties")
-        ax.set_title("Hardness → Mechanical Range & Risk")
-        ax.grid(True, alpha=0.3)
-        ax.legend()
-    
-        st.pyplot(fig)
