@@ -711,147 +711,114 @@ for _, g in valid.iterrows():
                 "- N_coils = số lượng coil trong mỗi Hardness."
             )
 # ================================
+
 import streamlit as st
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from io import BytesIO
+import uuid
 
-st.set_page_config(page_title="Control Limits - GRG+TOPSIS", layout="wide")
+# ================================
+# CONFIG
+st.set_page_config(page_title="Dynamic Hardness Analysis", layout="wide")
 
-# -------------------------------
-# Helper functions
-# -------------------------------
-def grey_relation_grade(matrix):
-    # Chuẩn hóa dữ liệu
-    min_vals = matrix.min()
-    max_vals = matrix.max()
-    norm_matrix = (max_vals - matrix) / (max_vals - min_vals + 1e-9)
-    ref = np.zeros_like(norm_matrix.iloc[0])
-    grg = (np.min(np.abs(ref - norm_matrix), axis=0) + 0.5 * np.max(np.abs(ref - norm_matrix), axis=0)) / \
-          (np.abs(ref - norm_matrix) + 0.5 * np.max(np.abs(ref - norm_matrix), axis=0))
-    return grg.mean(axis=1)
+# ================================
+# HELPERS
+def generate_uid():
+    return str(uuid.uuid4())
 
-def topsis(matrix, weights=None):
-    # Chuẩn hóa dữ liệu
-    norm = matrix / np.sqrt((matrix**2).sum())
-    if weights is None:
-        weights = np.ones(matrix.shape[1])
-    weighted = norm * weights
-    ideal_best = weighted.max()
-    ideal_worst = weighted.min()
-    distance_best = np.sqrt(((weighted - ideal_best)**2).sum(axis=1))
-    distance_worst = np.sqrt(((weighted - ideal_worst)**2).sum(axis=1))
-    score = distance_worst / (distance_best + distance_worst)
+def load_google_sheet(sheet_url):
+    # Google Sheet chia sẻ public dưới dạng CSV
+    csv_url = sheet_url.replace("/edit#gid=", "/export?format=csv&gid=")
+    df = pd.read_csv(csv_url)
+    return df
+
+# ================================
+# DATA LOAD
+SHEET_URL = st.secrets.get("SHEET_URL", "YOUR_GOOGLE_SHEET_URL_HERE")
+df = load_google_sheet(SHEET_URL)
+
+# ================================
+# AUTO UID
+uid = generate_uid()
+
+# ================================
+# SIDEBAR FILTERS
+st.sidebar.header("Filters")
+
+rolling_type = st.sidebar.selectbox("Rolling Type", options=sorted(df["LINE"].unique()), key=f"rolling_{uid}")
+metal_type   = st.sidebar.selectbox("Metallic Type", options=sorted(df["METALLIC COATING TYPE"].dropna().unique()), key=f"metal_{uid}")
+quality_group= st.sidebar.selectbox("Quality Group", options=sorted(df["QUALITY_CODE"].dropna().unique()), key=f"quality_{uid}")
+
+# Order Gauge Range Filter
+min_gauge = int(df["ORDER GAUGE"].min())
+max_gauge = int(df["ORDER GAUGE"].max())
+gauge_range = st.sidebar.slider("ORDER GAUGE Range", min_value=min_gauge, max_value=max_gauge,
+                                value=(min_gauge, max_gauge), key=f"gauge_{uid}")
+
+# ================================
+# DATA FILTERING
+sub = df.copy()
+sub = sub[sub["LINE"] == rolling_type]
+sub = sub[sub["METALLIC COATING TYPE"] == metal_type]
+sub = sub[sub["QUALITY_CODE"] == quality_group]
+sub = sub[(sub["ORDER GAUGE"] >= gauge_range[0]) & (sub["ORDER GAUGE"] <= gauge_range[1])]
+
+# Loại bỏ GE + HR < 88
+sub = sub[~((sub["HR STEEL GRADE"]=="GE") & (sub["HARDNESS 冶金"] < 88))]
+
+# ================================
+# GRG + TOPSIS Calculation
+def calculate_grg(df, columns):
+    # Grey Relational Grade
+    # Normalization 0-1
+    norm_df = df[columns].apply(lambda x: (x - x.min()) / (x.max() - x.min()) if x.max()!=x.min() else 0)
+    # Deviation sequence
+    dev_seq = 1 - abs(norm_df - 1)
+    grg = dev_seq.mean(axis=1)
+    return grg
+
+def calculate_topsis(df, columns):
+    # TOPSIS
+    norm = df[columns] / np.sqrt((df[columns]**2).sum())
+    ideal_best = norm.max()
+    ideal_worst = norm.min()
+    d_pos = np.sqrt(((norm - ideal_best)**2).sum(axis=1))
+    d_neg = np.sqrt(((norm - ideal_worst)**2).sum(axis=1))
+    score = d_neg / (d_pos + d_neg)
     return score
 
-# -------------------------------
-# Load data
-# -------------------------------
-st.sidebar.title("Data Input")
-uploaded_file = st.sidebar.file_uploader("Upload CSV or Excel", type=["csv","xlsx"])
-if uploaded_file:
-    if uploaded_file.name.endswith("csv"):
-        df = pd.read_csv(uploaded_file)
-    else:
-        df = pd.read_excel(uploaded_file)
-    st.success(f"Loaded {df.shape[0]} rows, {df.shape[1]} columns.")
-else:
-    st.info("Please upload a CSV or Excel file.")
-    st.stop()
+cols_to_use = ["HARDNESS 冶金", "TENSILE_YIELD", "TENSILE_TENSILE", "TENSILE_ELONG"]
+sub = sub.reset_index(drop=True)
+sub["GRG"] = calculate_grg(sub, cols_to_use)
+sub["TOPSIS"] = calculate_topsis(sub, cols_to_use)
 
-# -------------------------------
-# Filters
-# -------------------------------
-st.sidebar.header("Filters")
-uid = st.session_state.get("uid", 0) + 1
-st.session_state["uid"] = uid
+# ================================
+# MAIN PAGE
+st.title("Dynamic Hardness Analysis (GRG + TOPSIS)")
 
-# Rolling Type
-rolling_options = sorted(df["Rolling_Type"].dropna().unique())
-rolling_type = st.sidebar.selectbox("Rolling Type", rolling_options, key=f"rolling_{uid}")
+st.subheader("Filtered Data")
+st.dataframe(sub)
 
-# Metallic Type
-metal_options = sorted(df["METALLIC COATING TYPE"].dropna().unique())
-metallic_type = st.sidebar.selectbox("Metallic Type", metal_options, key=f"metal_{uid}")
+# ================================
+# DOWNLOAD BUTTON
+csv_bytes = sub.to_csv(index=False).encode("utf-8")
+st.download_button("Download Result CSV", csv_bytes, "result.csv", "text/csv", key=f"download_{uid}")
 
-# Quality Group
-quality_options = sorted(df["QUALITY_CODE"].dropna().unique())
-quality_group = st.sidebar.selectbox("Quality Group", quality_options, key=f"quality_{uid}")
-
-# ORDER GAUGE range
-gauge_min = int(df["ORDER GAUGE"].min())
-gauge_max = int(df["ORDER GAUGE"].max())
-order_gauge = st.sidebar.slider("ORDER GAUGE range", gauge_min, gauge_max, (gauge_min, gauge_max), key=f"gauge_{uid}")
-
-# -------------------------------
-# Apply filters
-# -------------------------------
-df_filtered = df[
-    (df["Rolling_Type"]==rolling_type) &
-    (df["METALLIC COATING TYPE"]==metallic_type) &
-    (df["QUALITY_CODE"]==quality_group) &
-    (df["ORDER GAUGE"]>=order_gauge[0]) &
-    (df["ORDER GAUGE"]<=order_gauge[1])
-].copy()
-
-# Remove GE with hardness < 88
-df_filtered = df_filtered[~((df_filtered["HR STEEL GRADE"]=="GE") & (df_filtered["HARDNESS 冶金"]<88))]
-
-if df_filtered.empty:
-    st.warning("No data after filtering.")
-    st.stop()
-
-# -------------------------------
-# Compute GRG + TOPSIS
-# -------------------------------
-properties = ["HARDNESS 冶金","HARDNESS 鍍鋅線 N","HARDNESS 鍍鋅線 C","HARDNESS 鍍鋅線 S",
-              "TENSILE_YIELD","TENSILE_TENSILE","TENSILE_ELONG"]
-
-# Keep only numeric columns for computation
-matrix = df_filtered[properties].apply(pd.to_numeric, errors='coerce').fillna(0)
-
-df_filtered["GRG"] = grey_relation_grade(matrix)
-df_filtered["TOPSIS_Score"] = topsis(matrix)
-df_filtered["Rank"] = df_filtered["TOPSIS_Score"].rank(ascending=False)
-
-result = df_filtered[["COIL_NO"] + properties + ["GRG","TOPSIS_Score","Rank"]]
-
-# -------------------------------
-# Display table
-# -------------------------------
-st.header("GRG + TOPSIS Result Table")
-st.dataframe(result.style.highlight_max(subset=["TOPSIS_Score"], color="#a1d99b"))
-
-# -------------------------------
-# Plot chart
-# -------------------------------
-st.header("Mechanical Properties Chart")
-
+# ================================
+# PLOT
+st.subheader("Plots")
 fig, ax = plt.subplots(figsize=(12,5))
-colors = ["#1f77b4","#ff7f0e","#2ca02c","#d62728","#9467bd","#8c564b","#e377c2"]
-for col, color in zip(properties, colors):
-    ax.plot(result["COIL_NO"], result[col], marker="o", color=color, label=col)
+
+for i, col in enumerate(cols_to_use + ["GRG", "TOPSIS"]):
+    if col in sub.columns:
+        color = plt.cm.tab10(i)
+        ax.plot(sub["COIL_NO"], sub[col], marker="o", label=col)
 
 ax.set_xlabel("COIL_NO")
 ax.set_ylabel("Value")
-ax.set_title("TS/YS/EL and Hardness by Coil")
-ax.grid(alpha=0.3, linestyle="--")
-ax.legend(bbox_to_anchor=(1.05,1), loc="upper left")
+ax.set_title("GRG + TOPSIS and Properties")
+ax.legend()
 plt.xticks(rotation=45)
-plt.tight_layout()
 st.pyplot(fig)
-
-# -------------------------------
-# Download result
-# -------------------------------
-st.header("Download Result")
-output = BytesIO()
-result.to_excel(output, index=False)
-st.download_button(
-    label="Download Excel",
-    data=output.getvalue(),
-    file_name="GRG_TOPSIS_result.xlsx",
-    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    key=f"download_{uid}"
-)
