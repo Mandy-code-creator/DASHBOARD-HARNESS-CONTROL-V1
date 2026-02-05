@@ -175,7 +175,7 @@ view_mode = st.sidebar.radio(
         "🛠 Hardness → TS/YS/EL",
         "📊 TS/YS/EL Trend & Distribution",
         "🧮 Predict TS/YS/EL (Custom Hardness)",
-        "🧮 Hardness → Predicted TS/YS/EL"
+        "Hardness → Mechanical Range"
     ]
 )
 
