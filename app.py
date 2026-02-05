@@ -176,8 +176,9 @@ view_mode = st.sidebar.radio(
         "📊 TS/YS/EL Trend & Distribution",
         "🧮 Predict TS/YS/EL (Custom Hardness)",
         "📊 Hardness → Mechanical Range",
-        "📊 Hardness → Mechanical Range & Risk Assessment"
+        "📊 Hardness → Mechanical Range & Risk"
     ]
+     key="view_mode_main"
 )
 
 with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
@@ -712,6 +713,7 @@ for _, g in valid.iterrows():
                 "- N_coils = số lượng coil trong mỗi Hardness."
             )
     elif view_mode == "📊 Hardness → Mechanical Range & Risk":
+        st.error("🔥 VIEW ĐÃ ĐƯỢC TRIGGER")
         st.markdown("## 📊 Hardness → Mechanical Range & Risk Assessment")
     
         import io
