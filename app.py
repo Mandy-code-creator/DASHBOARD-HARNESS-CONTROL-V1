@@ -313,28 +313,33 @@ for _, g in valid.iterrows():
            mime="image/png"
         )
     elif view_mode == "🛠 Hardness → TS/YS/EL":
-        # Chuẩn bị dữ liệu
+    
+        # ================================
+        # 1️⃣ Chuẩn bị dữ liệu
+        # ================================
         sub = sub.dropna(subset=["Hardness_LAB","Hardness_LINE","TS","YS","EL"])
     
-        # Loại bỏ GE* <88 nếu có
+        # Loại bỏ coil GE* <88 nếu cột QUALITY_CODE tồn tại
         if "QUALITY_CODE" in sub.columns:
             sub = sub[~(
                 sub["QUALITY_CODE"].astype(str).str.startswith("GE") &
                 ((sub["Hardness_LAB"] < 88) | (sub["Hardness_LINE"] < 88))
             )]
     
-        # Binning Hardness
+        # ================================
+        # 2️⃣ Binning Hardness
+        # ================================
         bins = [0,56,58,60,62,88,92,97,100]
         labels = ["<56","56-58","58-60","60-62","62-88","88-92","92-97","≥97"]
         sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
     
-            # ================================
-            # 3️⃣ Lấy giới hạn cơ tính
-            # ================================
-            mech_cols = ["Standard TS min","Standard TS max",
-                         "Standard YS min","Standard YS max",
-                         "Standard EL min","Standard EL max"]
-            sub = sub.dropna(subset=mech_cols)
+        # ================================
+        # 3️⃣ Lấy giới hạn cơ tính
+        # ================================
+        mech_cols = ["Standard TS min","Standard TS max",
+                     "Standard YS min","Standard YS max",
+                     "Standard EL min","Standard EL max"]
+        sub = sub.dropna(subset=mech_cols)
     
         # ================================
         # 4️⃣ Summary thống kê
@@ -420,8 +425,7 @@ for _, g in valid.iterrows():
                            data=buf,
                            file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
                            mime="image/png")
-    
-        
+     
 
     elif view_mode == "📊 TS/YS/EL Trend & Distribution":
         import re, uuid
