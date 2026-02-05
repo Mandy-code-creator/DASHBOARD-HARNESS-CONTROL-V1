@@ -572,11 +572,21 @@ for _, g in valid.iterrows():
     elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
         st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
     
+        # --- Lấy min/max thực tế từ dữ liệu để làm Range default ---
+        sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+        if len(sub_fit) < 5:
+            st.warning(f"⚠️ Not enough data to perform prediction (N={len(sub_fit)})")
+            st.stop()
+    
+        hrb_data_min = float(sub_fit["Hardness_LINE"].min())
+        hrb_data_max = float(sub_fit["Hardness_LINE"].max())
+        hrb_step_default = max((hrb_data_max - hrb_data_min) / 10, 0.1)
+    
         # --- Chọn kiểu dự báo ---
         pred_type = st.radio(
             "Select input type for prediction:",
             ["Single Value", "Range"],
-            key="predict_type_custom_hardness"  # key duy nhất cho view này
+            key="predict_type_custom_hardness"
         )
     
         if pred_type == "Single Value":
@@ -584,9 +594,9 @@ for _, g in valid.iterrows():
                 "Enter desired LINE Hardness (HRB):",
                 min_value=0.0,
                 max_value=120.0,
-                value=90.0,  # mặc định có thể đổi
+                value=round(hrb_data_min + (hrb_data_max - hrb_data_min)/2,1),  # mặc định trung bình
                 step=0.1,
-                key="predict_hrb_single_custom_hardness"  # key duy nhất
+                key="predict_hrb_single_custom_hardness"
             )
             hrb_values = [user_hrb]
     
@@ -595,34 +605,27 @@ for _, g in valid.iterrows():
                 "Enter minimum LINE Hardness (HRB):",
                 min_value=0.0,
                 max_value=120.0,
-                value=88.0,
+                value=round(hrb_data_min,1),
                 step=0.1,
-                key="predict_hrb_min_custom_hardness"  # key duy nhất
+                key="predict_hrb_min_custom_hardness"
             )
             hrb_max = st.number_input(
                 "Enter maximum LINE Hardness (HRB):",
                 min_value=0.0,
                 max_value=120.0,
-                value=92.0,
+                value=round(hrb_data_max,1),
                 step=0.1,
-                key="predict_hrb_max_custom_hardness"  # key duy nhất
+                key="predict_hrb_max_custom_hardness"
             )
             step = st.number_input(
                 "Step for prediction:",
                 min_value=0.1,
                 max_value=10.0,
-                value=1.0,
+                value=round(hrb_step_default,1),
                 step=0.1,
-                key="predict_hrb_step_custom_hardness"  # key duy nhất
+                key="predict_hrb_step_custom_hardness"
             )
             hrb_values = list(np.arange(hrb_min, hrb_max + 0.01, step))
-    
-        # --- Chuẩn bị dữ liệu ---
-        sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
-        N_coils = len(sub_fit)
-        if N_coils < 5:
-            st.warning(f"⚠️ Not enough data to perform prediction (N={N_coils})")
-            st.stop()
     
         # --- Fit linear model TS/YS/EL ---
         pred_values = {}
@@ -634,7 +637,7 @@ for _, g in valid.iterrows():
     
         # --- Vẽ trend + marker dự báo ---
         fig, ax = plt.subplots(figsize=(14, 5))
-        coils = np.arange(1, N_coils + 1)
+        coils = np.arange(1, len(sub_fit) + 1)
     
         for prop, color, marker, unit in [("TS", "#1f77b4", "o", "MPa"),
                                            ("YS", "#2ca02c", "s", "MPa"),
@@ -642,7 +645,6 @@ for _, g in valid.iterrows():
             vals = sub_fit[prop].values
             ax.plot(coils, vals, marker=marker, color=color, label=f"{prop} Observed")
     
-            # predicted marker
             pred = pred_values[prop]
             pred_x = [coils[-1] + 1 + i for i in range(len(pred))]
             ax.scatter(pred_x, pred, color="red", s=100, marker="X", label=f"{prop} Predicted ({unit})")
@@ -659,8 +661,8 @@ for _, g in valid.iterrows():
         plt.tight_layout()
         st.pyplot(fig)
     
-        # --- Bảng dự báo thu gọn bằng expander ---
-        pred_table = pd.DataFrame({"HRB": [int(round(h)) for h in hrb_values]})
+        # --- Bảng dự báo ---
+        pred_table = pd.DataFrame({"HRB": [round(h,1) for h in hrb_values]})
         for prop in ["TS", "YS", "EL"]:
             pred_table[prop] = pred_values[prop]
     
