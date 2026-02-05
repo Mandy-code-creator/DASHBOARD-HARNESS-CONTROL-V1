@@ -572,70 +572,52 @@ for _, g in valid.iterrows():
                 )
    # ================================
     elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
+        import uuid
+    
         st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
     
-        # prefix key = view_mode
-        prefix = "predict"
+        # UID cố định cho session
+        if "predict_uid" not in st.session_state:
+            st.session_state.predict_uid = str(uuid.uuid4())
+        uid = st.session_state.predict_uid
     
-        # ====== Chọn kiểu dự báo ======
-        if "predict_type" not in st.session_state:
-            st.session_state.predict_type = "Single Value"
+        # Reset giá trị HRB khi view mới
+        for k in ["hrb_single", "hrb_min", "hrb_max", "hrb_step"]:
+            key = f"{k}_{uid}"
+            if key in st.session_state:
+                del st.session_state[key]
     
-        pred_type = st.radio(
-            "Select input type for prediction:",
-            ["Single Value", "Range"],
-            index=0 if st.session_state.predict_type == "Single Value" else 1,
-            key=f"{prefix}_type"
-        )
-        st.session_state.predict_type = pred_type
+        # Chọn kiểu dự báo
+        pred_type = st.radio("Select input type:", ["Single Value", "Range"], key=f"predict_type_{uid}")
     
-        # ====== Nhập HRB ======
         if pred_type == "Single Value":
-            if "hrb_single" not in st.session_state:
-                st.session_state.hrb_single = 90.0
-            user_hrb = st.number_input(
-                "Enter desired LINE Hardness (HRB):",
-                min_value=0.0, max_value=120.0,
-                value=st.session_state.hrb_single,
-                step=0.1,
-                key=f"{prefix}_hrb_single"
-            )
-            st.session_state.hrb_single = user_hrb
-            hrb_values = [user_hrb]
+            hrb = st.number_input("LINE Hardness (HRB):", 0.0, 120.0, value=None, step=0.1, key=f"hrb_single_{uid}")
+            hrb_values = [hrb]
+    
         else:
-            if "hrb_min" not in st.session_state:
-                st.session_state.hrb_min = 88.0
-            if "hrb_max" not in st.session_state:
-                st.session_state.hrb_max = 92.0
-            if "hrb_step" not in st.session_state:
-                st.session_state.hrb_step = 1.0
-    
-            hrb_min = st.number_input(
-                "Enter minimum LINE Hardness (HRB):",
-                min_value=0.0, max_value=120.0,
-                value=st.session_state.hrb_min,
-                step=0.1,
-                key=f"{prefix}_hrb_min"
-            )
-            hrb_max = st.number_input(
-                "Enter maximum LINE Hardness (HRB):",
-                min_value=0.0, max_value=120.0,
-                value=st.session_state.hrb_max,
-                step=0.1,
-                key=f"{prefix}_hrb_max"
-            )
-            step = st.number_input(
-                "Step for prediction:",
-                min_value=0.1, max_value=10.0,
-                value=st.session_state.hrb_step,
-                step=0.1,
-                key=f"{prefix}_hrb_step"
-            )
-    
-            st.session_state.hrb_min = hrb_min
-            st.session_state.hrb_max = hrb_max
-            st.session_state.hrb_step = step
+            hrb_min = st.number_input("Min HRB:", 0.0, 120.0, value=None, step=0.1, key=f"hrb_min_{uid}")
+            hrb_max = st.number_input("Max HRB:", 0.0, 120.0, value=None, step=0.1, key=f"hrb_max_{uid}")
+            step = st.number_input("Step:", 0.1, 10.0, value=1.0, step=0.1, key=f"hrb_step_{uid}")
             hrb_values = list(np.arange(hrb_min, hrb_max + 0.01, step))
+    
+        # Fit line TS/YS/EL
+        sub_fit = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"])
+        if len(sub_fit) < 5:
+            st.warning("⚠️ Not enough data")
+            st.stop()
+    
+        pred_values = {prop: np.poly1d(np.polyfit(sub_fit["Hardness_LINE"], sub_fit[prop], 1))(hrb_values)
+                       for prop in ["TS","YS","EL"]}
+    
+        # Vẽ chart
+        fig, ax = plt.subplots(figsize=(12,4))
+        coils = np.arange(1,len(sub_fit)+1)
+        for prop,color,marker in [("TS","#1f77b4","o"),("YS","#2ca02c","s"),("EL","#ff7f0e","^")]:
+            ax.plot(coils, sub_fit[prop], marker=marker, color=color, label=f"{prop} Observed")
+            pred_x = [coils[-1]+i+1 for i in range(len(hrb_values))]
+            ax.scatter(pred_x, pred_values[prop], color="red", marker="X", s=80, label=f"{prop} Predicted")
+            for j in range(len(hrb_values)):
+                ax.plot([coi]()
 
     elif view_mode == "📊 Hardness → Mechanical Range":
         st.markdown("## 📊 Hardness → Mechanical Properties Range")
