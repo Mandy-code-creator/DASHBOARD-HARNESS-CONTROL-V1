@@ -667,50 +667,50 @@ for _, g in valid.iterrows():
             "- EL unit is **%**, TS/YS units are **MPa**.\n"
             "- Table shows predicted values for selected LINE Hardness range."
         )
-   elif view_mode == "📊 Hardness → Mechanical Range":
-       st.markdown("## 📊 Summary: Hardness Bin Mapping → Mechanical Properties")
-    
-       # 1. Kiểm tra danh sách cột thực tế đang có trong dữ liệu
-        actual_columns = sub.columns.tolist()
+    elif view_mode == "📊 Hardness → Mechanical Range":
+           st.markdown("## 📊 Summary: Hardness Bin Mapping → Mechanical Properties")
         
-        # 2. Định nghĩa các cột mục tiêu (đảm bảo khớp với mapping ở phần trước)
-        target_group_cols = ["Product_Spec", "Gauge_Range_Group", "Std_Hardness_Range"]
+           # 1. Kiểm tra danh sách cột thực tế đang có trong dữ liệu
+            actual_columns = sub.columns.tolist()
+            
+            # 2. Định nghĩa các cột mục tiêu (đảm bảo khớp với mapping ở phần trước)
+            target_group_cols = ["Product_Spec", "Gauge_Range_Group", "Std_Hardness_Range"]
+            
+            # Kiểm tra xem có cột nào bị thiếu không
+            missing_cols = [c for c in target_group_cols if c not in actual_columns]
+            
+            if missing_cols:
+                st.error(f"❌ Lỗi hệ thống: Thiếu các cột sau trong dữ liệu: {missing_cols}")
+                st.info("💡 Mẹo: Kiểm tra xem bạn đã chạy bước Mapping Độ dày và Tách dải Hardness chưa.")
+                st.stop()
         
-        # Kiểm tra xem có cột nào bị thiếu không
-        missing_cols = [c for c in target_group_cols if c not in actual_columns]
+            # 3. Chuẩn bị dữ liệu sạch
+            # Đảm bảo các cột số tồn tại
+            mech_cols = ["TS", "YS", "EL", "Hardness_LINE"]
+            sub_stats = sub.dropna(subset=[c for c in mech_cols if c in actual_columns]).copy()
         
-        if missing_cols:
-            st.error(f"❌ Lỗi hệ thống: Thiếu các cột sau trong dữ liệu: {missing_cols}")
-            st.info("💡 Mẹo: Kiểm tra xem bạn đã chạy bước Mapping Độ dày và Tách dải Hardness chưa.")
-            st.stop()
-    
-        # 3. Chuẩn bị dữ liệu sạch
-        # Đảm bảo các cột số tồn tại
-        mech_cols = ["TS", "YS", "EL", "Hardness_LINE"]
-        sub_stats = sub.dropna(subset=[c for c in mech_cols if c in actual_columns]).copy()
-    
-        if sub_stats.empty:
-            st.warning("⚠️ Không có dữ liệu hợp lệ để hiển thị bảng Summary.")
-            st.stop()
-    
-        # 4. Thực hiện Groupby (Đã đảm bảo có đủ cột)
-        summary_range = (
-            sub_stats.groupby(target_group_cols)
-            .agg(
-                N_coils=("COIL_NO", "count"),
-                TS_min=("TS", "min"), TS_max=("TS", "max"), TS_mean=("TS", "mean"),
-                YS_min=("YS", "min"), YS_max=("YS", "max"), YS_mean=("YS", "mean"),
-                EL_min=("EL", "min"), EL_max=("EL", "max"), EL_mean=("EL", "mean")
+            if sub_stats.empty:
+                st.warning("⚠️ Không có dữ liệu hợp lệ để hiển thị bảng Summary.")
+                st.stop()
+        
+            # 4. Thực hiện Groupby (Đã đảm bảo có đủ cột)
+            summary_range = (
+                sub_stats.groupby(target_group_cols)
+                .agg(
+                    N_coils=("COIL_NO", "count"),
+                    TS_min=("TS", "min"), TS_max=("TS", "max"), TS_mean=("TS", "mean"),
+                    YS_min=("YS", "min"), YS_max=("YS", "max"), YS_mean=("YS", "mean"),
+                    EL_min=("EL", "min"), EL_max=("EL", "max"), EL_mean=("EL", "mean")
+                )
+                .reset_index()
             )
-            .reset_index()
-        )
-    
-        # 5. Hiển thị bảng
-        st.dataframe(
-            summary_range.style.format({
-                "TS_min": "{:.1f}", "TS_max": "{:.1f}", "TS_mean": "{:.1f}",
-                "YS_min": "{:.1f}", "YS_max": "{:.1f}", "YS_mean": "{:.1f}",
-                "EL_min": "{:.1f}", "EL_max": "{:.1f}", "EL_mean": "{:.1f}"
-            }),
-            use_container_width=True
-        )
+        
+            # 5. Hiển thị bảng
+            st.dataframe(
+                summary_range.style.format({
+                    "TS_min": "{:.1f}", "TS_max": "{:.1f}", "TS_mean": "{:.1f}",
+                    "YS_min": "{:.1f}", "YS_max": "{:.1f}", "YS_mean": "{:.1f}",
+                    "EL_min": "{:.1f}", "EL_max": "{:.1f}", "EL_mean": "{:.1f}"
+                }),
+                use_container_width=True
+            )
