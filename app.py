@@ -576,7 +576,7 @@ for _, g in valid.iterrows():
         pred_type = st.radio(
             "Select input type for prediction:",
             ["Single Value", "Range"],
-            key="predict_type"  # key cố định
+            key="predict_type_custom_hardness"  # key duy nhất cho view này
         )
     
         if pred_type == "Single Value":
@@ -586,7 +586,7 @@ for _, g in valid.iterrows():
                 max_value=120.0,
                 value=90.0,  # mặc định có thể đổi
                 step=0.1,
-                key="predict_hrb_single"  # key cố định
+                key="predict_hrb_single_custom_hardness"  # key duy nhất
             )
             hrb_values = [user_hrb]
     
@@ -597,7 +597,7 @@ for _, g in valid.iterrows():
                 max_value=120.0,
                 value=88.0,
                 step=0.1,
-                key="predict_hrb_min"  # key cố định
+                key="predict_hrb_min_custom_hardness"  # key duy nhất
             )
             hrb_max = st.number_input(
                 "Enter maximum LINE Hardness (HRB):",
@@ -605,7 +605,7 @@ for _, g in valid.iterrows():
                 max_value=120.0,
                 value=92.0,
                 step=0.1,
-                key="predict_hrb_max"  # key cố định
+                key="predict_hrb_max_custom_hardness"  # key duy nhất
             )
             step = st.number_input(
                 "Step for prediction:",
@@ -613,7 +613,7 @@ for _, g in valid.iterrows():
                 max_value=10.0,
                 value=1.0,
                 step=0.1,
-                key="predict_hrb_step"  # key cố định
+                key="predict_hrb_step_custom_hardness"  # key duy nhất
             )
             hrb_values = list(np.arange(hrb_min, hrb_max + 0.01, step))
     
