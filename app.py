@@ -715,110 +715,142 @@ for _, g in valid.iterrows():
 import streamlit as st
 import pandas as pd
 import numpy as np
-import matplotlib.pyplot as plt
 from io import BytesIO
-import uuid
+import matplotlib.pyplot as plt
 
-# ================================
+# =======================
 # CONFIG
-st.set_page_config(page_title="Dynamic Hardness Analysis", layout="wide")
+# =======================
+st.set_page_config(page_title="Dynamic Hardness Control", layout="wide")
 
-# ================================
-# HELPERS
-def generate_uid():
-    return str(uuid.uuid4())
+# =======================
+# LOAD DATA FROM GOOGLE SHEET
+# =======================
+SHEET_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv&gid=0"
 
-def load_google_sheet(sheet_url):
-    # Google Sheet chia sẻ public dưới dạng CSV
-    csv_url = sheet_url.replace("/edit#gid=", "/export?format=csv&gid=")
-    df = pd.read_csv(csv_url)
+@st.cache_data
+def load_data(url):
+    df = pd.read_csv(url)
+    # remove rows GE with HARDNESS < 88
+    df = df[~((df['HR STEEL GRADE'] == 'GE') & (df['HARDNESS 冶金'] < 88))]
     return df
 
-# ================================
-# DATA LOAD
-SHEET_URL = st.secrets.get("SHEET_URL", "YOUR_GOOGLE_SHEET_URL_HERE")
-df = load_google_sheet(SHEET_URL)
+df = load_data(SHEET_URL)
 
-# ================================
-# AUTO UID
-uid = generate_uid()
-
-# ================================
+# =======================
 # SIDEBAR FILTERS
-st.sidebar.header("Filters")
+# =======================
+uid = np.random.randint(0, 10000)  # unique key to prevent duplicate IDs
 
-rolling_type = st.sidebar.selectbox("Rolling Type", options=sorted(df["LINE"].unique()), key=f"rolling_{uid}")
-metal_type   = st.sidebar.selectbox("Metallic Type", options=sorted(df["METALLIC COATING TYPE"].dropna().unique()), key=f"metal_{uid}")
-quality_group= st.sidebar.selectbox("Quality Group", options=sorted(df["QUALITY_CODE"].dropna().unique()), key=f"quality_{uid}")
+rolling = st.sidebar.selectbox(
+    "Rolling Type", sorted(df["LINE"].unique()), key=f"rolling_{uid}"
+)
+metal = st.sidebar.selectbox(
+    "Metallic Type", sorted(df["METALLIC COATING TYPE"].unique()), key=f"metal_{uid}"
+)
+quality = st.sidebar.selectbox(
+    "Quality Group", sorted(df["QUALITY_CODE"].unique()), key=f"quality_{uid}"
+)
 
-# Order Gauge Range Filter
+# Order Gauge filter by interval
 min_gauge = int(df["ORDER GAUGE"].min())
 max_gauge = int(df["ORDER GAUGE"].max())
-gauge_range = st.sidebar.slider("ORDER GAUGE Range", min_value=min_gauge, max_value=max_gauge,
-                                value=(min_gauge, max_gauge), key=f"gauge_{uid}")
+gauge_range = st.sidebar.slider(
+    "Order Gauge Range",
+    min_value=min_gauge,
+    max_value=max_gauge,
+    value=(min_gauge, max_gauge),
+    step=1,
+    key=f"gauge_{uid}"
+)
 
-# ================================
-# DATA FILTERING
-sub = df.copy()
-sub = sub[sub["LINE"] == rolling_type]
-sub = sub[sub["METALLIC COATING TYPE"] == metal_type]
-sub = sub[sub["QUALITY_CODE"] == quality_group]
-sub = sub[(sub["ORDER GAUGE"] >= gauge_range[0]) & (sub["ORDER GAUGE"] <= gauge_range[1])]
+# =======================
+# FILTER DATA
+# =======================
+filtered = df[
+    (df["LINE"] == rolling)
+    & (df["METALLIC COATING TYPE"] == metal)
+    & (df["QUALITY_CODE"] == quality)
+    & (df["ORDER GAUGE"].between(gauge_range[0], gauge_range[1]))
+].copy()
 
-# Loại bỏ GE + HR < 88
-sub = sub[~((sub["HR STEEL GRADE"]=="GE") & (sub["HARDNESS 冶金"] < 88))]
+st.write(f"### Filtered Data ({len(filtered)} rows)")
+st.dataframe(filtered)
 
-# ================================
-# GRG + TOPSIS Calculation
-def calculate_grg(df, columns):
-    # Grey Relational Grade
-    # Normalization 0-1
-    norm_df = df[columns].apply(lambda x: (x - x.min()) / (x.max() - x.min()) if x.max()!=x.min() else 0)
-    # Deviation sequence
-    dev_seq = 1 - abs(norm_df - 1)
-    grg = dev_seq.mean(axis=1)
-    return grg
+# =======================
+# GRAY RELATION GRADE (GRG) + TOPSIS
+# =======================
+def gray_relation_grade(df, cols):
+    # Normalize
+    X = df[cols].copy()
+    X_norm = (X - X.min()) / (X.max() - X.min())
+    # Reference sequence is max
+    ref = X_norm.max()
+    # Calculate GRG
+    diff = abs(ref - X_norm)
+    min_diff = diff.min().min()
+    max_diff = diff.max().max()
+    grg = (min_diff + 0.5 * max_diff) / (diff + 0.5 * max_diff)
+    df['GRG'] = grg.mean(axis=1)
+    return df
 
-def calculate_topsis(df, columns):
-    # TOPSIS
-    norm = df[columns] / np.sqrt((df[columns]**2).sum())
-    ideal_best = norm.max()
-    ideal_worst = norm.min()
-    d_pos = np.sqrt(((norm - ideal_best)**2).sum(axis=1))
-    d_neg = np.sqrt(((norm - ideal_worst)**2).sum(axis=1))
-    score = d_neg / (d_pos + d_neg)
-    return score
+def topsis(df, cols):
+    # Normalize
+    X = df[cols].values
+    X_norm = X / np.sqrt((X ** 2).sum(axis=0))
+    # Weights equal
+    w = np.ones(X.shape[1]) / X.shape[1]
+    X_w = X_norm * w
+    # Ideal best/worst
+    ideal_best = X_w.max(axis=0)
+    ideal_worst = X_w.min(axis=0)
+    # Distance
+    D_plus = np.sqrt(((X_w - ideal_best) ** 2).sum(axis=1))
+    D_minus = np.sqrt(((X_w - ideal_worst) ** 2).sum(axis=1))
+    # Score
+    score = D_minus / (D_plus + D_minus)
+    df['TOPSIS'] = score
+    return df
 
-cols_to_use = ["HARDNESS 冶金", "TENSILE_YIELD", "TENSILE_TENSILE", "TENSILE_ELONG"]
-sub = sub.reset_index(drop=True)
-sub["GRG"] = calculate_grg(sub, cols_to_use)
-sub["TOPSIS"] = calculate_topsis(sub, cols_to_use)
+metric_cols = ['HARDNESS 冶金', 'HARDNESS 鍍鋅線 N', 'HARDNESS 鍍鋅線 C', 'HARDNESS 鍍鋅線 S', 
+               'TENSILE_YIELD', 'TENSILE_TENSILE', 'TENSILE_ELONG']
 
-# ================================
-# MAIN PAGE
-st.title("Dynamic Hardness Analysis (GRG + TOPSIS)")
+if not filtered.empty:
+    filtered = gray_relation_grade(filtered, metric_cols)
+    filtered = topsis(filtered, metric_cols)
 
-st.subheader("Filtered Data")
-st.dataframe(sub)
+# =======================
+# TABLE
+# =======================
+st.write("### Result Table")
+st.dataframe(filtered)
 
-# ================================
-# DOWNLOAD BUTTON
-csv_bytes = sub.to_csv(index=False).encode("utf-8")
-st.download_button("Download Result CSV", csv_bytes, "result.csv", "text/csv", key=f"download_{uid}")
+# Download CSV
+def convert_df_to_csv(df):
+    return df.to_csv(index=False).encode('utf-8')
 
-# ================================
+st.download_button(
+    "Download CSV",
+    data=convert_df_to_csv(filtered),
+    file_name="filtered_result.csv",
+    mime="text/csv",
+    key=f"download_{uid}"
+)
+
+# =======================
 # PLOT
-st.subheader("Plots")
-fig, ax = plt.subplots(figsize=(12,5))
+# =======================
+st.write("### Metrics Plot")
+if not filtered.empty:
+    fig, ax = plt.subplots(figsize=(12,5))
+    for col, color in zip(metric_cols, ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b','#e377c2']):
+        if col in filtered.columns:
+            ax.plot(filtered['COIL_NO'], filtered[col], marker='o', color=color, label=col)
+    ax.set_xlabel("COIL_NO")
+    ax.set_ylabel("Metric Value")
+    ax.legend()
+    ax.grid(True)
+    st.pyplot(fig)
+else:
+    st.info("No data to plot. Adjust filters.")
 
-for i, col in enumerate(cols_to_use + ["GRG", "TOPSIS"]):
-    if col in sub.columns:
-        color = plt.cm.tab10(i)
-        ax.plot(sub["COIL_NO"], sub[col], marker="o", label=col)
-
-ax.set_xlabel("COIL_NO")
-ax.set_ylabel("Value")
-ax.set_title("GRG + TOPSIS and Properties")
-ax.legend()
-plt.xticks(rotation=45)
-st.pyplot(fig)
