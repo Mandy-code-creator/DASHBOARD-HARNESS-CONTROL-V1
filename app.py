@@ -892,24 +892,22 @@ result["GFI"] = GFI
 st.markdown("### 🔹 GRG + GFI Table")
 st.dataframe(result.style.format("{:.3f}", subset=["GRG","GFI"]), use_container_width=True)
 
-# --- Plot GFI distribution ---
-gfi_vals = result["GFI"].replace([np.inf, -np.inf], np.nan).dropna()
-if not gfi_vals.empty:
-    fig, ax = plt.subplots(figsize=(10,4))
-    ax.hist(gfi_vals, bins=15, alpha=0.6, edgecolor="black", color="#1f77b4")
-    ax.set_title("GFI Distribution")
-    ax.set_xlabel("GFI Score")
-    ax.set_ylabel("Count")
-    plt.tight_layout()
-    st.pyplot(fig)
-    buf = fig_to_png(fig)
-    st.download_button("📥 Download GFI Distribution Chart", data=buf,
-                       file_name=f"GFI_distribution_{uid}.png", mime="image/png")
-else:
-    st.info("No valid GFI values to plot.")
+# --- Hiển thị bảng TOPSIS
+st.markdown("## 📋 TOPSIS Results")
+st.dataframe(result.drop(columns=["GFI"]), use_container_width=True)
 
+# --- Vẽ biểu đồ TS/YS/EL
+fig, ax = plt.subplots(figsize=(10,4))
+for col, color in [("TS","#1f77b4"), ("YS","#2ca02c"), ("EL","#ff7f0e")]:
+    ax.plot(result["COIL_NO"], result[col], marker="o", color=color, label=col)
+ax.set_xlabel("Coil Sequence")
+ax.set_ylabel("Mechanical Properties")
+ax.set_title("TS/YS/EL by Coil")
+ax.grid(alpha=0.3, linestyle="--")
+ax.legend()
+plt.tight_layout()
+st.pyplot(fig)
 
-# --- Download table ---
-csv_buf = result.to_csv(index=False).encode("utf-8")
-st.download_button("📥 Download GRG + GFI Table", data=csv_buf,
-                   file_name=f"GRG_GFI_table_{uid}.csv", mime="text/csv")
+# --- Download chart
+buf = fig_to_png(fig)
+st.download_button("📥 Download TS/YS/EL Chart", data=buf, file_name=f"TS_YS_EL_chart_{uid}.png", mime="image/png")
