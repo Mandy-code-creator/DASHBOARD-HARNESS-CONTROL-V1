@@ -671,64 +671,62 @@ for _, g in valid.iterrows():
 # ================================
 # 📊 Hard Bin Mapping → Mechanical Properties Summary
 # ================================
+import pandas as pd
+import streamlit as st
+
 st.markdown("## 📊 Hard Bin Mapping → Mechanical Properties Summary")
 
-# Cột nhóm chính
-group_cols = ["Quality_Code", "Product_Spec", "Gauge_Range", "Material"]
+# Chọn các cột chính
+group_cols = ["Product_Spec", "Gauge_Range", "Material", "Quality_Code"]
 
-# Lọc dữ liệu hợp lệ
-df_summary = df.dropna(subset=["Hardness_LAB", "Hardness_LINE", "TS", "YS", "EL", "Std_Min", "Std_Max"])
+# Lấy sub data đã lọc từ các view trước (df hiện tại)
+df_summary = df.dropna(subset=["Hardness_LAB","Hardness_LINE","TS","YS","EL","Std_Min","Std_Max"])
 
-# Hàm tính summary cơ bản cho mỗi nhóm
+# Hàm tổng hợp
 def agg_mech(group):
     return pd.Series({
-        "HRB_min": group["Std_Min"].min(),
-        "HRB_max": group["Std_Max"].max(),
-        "TS_min": group["TS"].min(),
-        "TS_max": group["TS"].max(),
-        "YS_min": group["YS"].min(),
-        "YS_max": group["YS"].max(),
-        "EL_min": group["EL"].min(),
-        "EL_max": group["EL"].max(),
-        "N_coils": group["COIL_NO"].nunique()
+        "HRB_Min": group["Std_Min"].min(),
+        "HRB_Max": group["Std_Max"].max(),
+        "TS_Min": group["TS"].min(),
+        "TS_Max": group["TS"].max(),
+        "YS_Min": group["YS"].min(),
+        "YS_Max": group["YS"].max(),
+        "EL_Min": group["EL"].min(),
+        "EL_Max": group["EL"].max(),
+        "N_Coils": group["COIL_NO"].nunique()
     })
 
-# Tạo bảng summary
-summary_hard = (
-    df_summary
-    .groupby(group_cols)
-    .apply(agg_mech)
-    .reset_index()
+# Group và aggregate
+summary_hard = df_summary.groupby(group_cols).apply(agg_mech).reset_index()
+
+# Pivot table để Quality_Code thành cột
+pivot_cols = ["HRB_Min","HRB_Max","TS_Min","TS_Max","YS_Min","YS_Max","EL_Min","EL_Max","N_Coils"]
+summary_pivot = summary_hard.pivot_table(
+    index=["Product_Spec","Gauge_Range","Material"],
+    columns="Quality_Code",
+    values=pivot_cols,
+    aggfunc="first"
 )
 
-# Tạo cột HRB range dạng "min~max"
-summary_hard["HRB_Range"] = summary_hard["HRB_min"].round(1).astype(str) + "~" + summary_hard["HRB_max"].round(1).astype(str)
-
-# Sắp xếp cột cho trực quan
-cols_order = [
-    "Quality_Code", "Product_Spec", "Gauge_Range", "Material",
-    "HRB_Range",
-    "TS_min","TS_max","YS_min","YS_max","EL_min","EL_max",
-    "N_coils"
-]
-summary_hard = summary_hard[cols_order]
-
-# Hiển thị bảng với format số thập phân
-summary_hard_display = summary_hard.style.format({
-    "TS_min":"{:.1f}", "TS_max":"{:.1f}",
-    "YS_min":"{:.1f}", "YS_max":"{:.1f}",
-    "EL_min":"{:.1f}", "EL_max":"{:.1f}"
-}).set_properties(**{"text-align":"center"})
+# Flatten multiindex cột
+summary_pivot.columns = ["{}_{}".format(val, qc) for val, qc in summary_pivot.columns]
+summary_pivot = summary_pivot.reset_index()
 
 # Hiển thị bảng duy nhất
-st.dataframe(summary_hard_display, use_container_width=True, height=450)
+st.dataframe(
+    summary_pivot.style.format({
+        col: "{:.1f}" for col in summary_pivot.columns if col not in ["Product_Spec","Gauge_Range","Material"]
+    }),
+    use_container_width=True,
+    height=500
+)
 
-# Chú giải
 st.markdown(
     """
-    - **HRB** = Standard Hardness Min~Max
-    - **TS/YS** in MPa, **EL** in %
-    - **N_coils** = số lượng coil trong mỗi nhóm
-    - Bảng gộp tất cả các Product Spec + Gauge Range + Material + Quality Code
-    """
+- HRB = Standard Hardness
+- TS/YS in MPa, EL in %
+- N_Coils = số lượng coil trong mỗi nhóm
+- Bảng gộp tất cả các Product Spec + Gauge Range + Material + Quality Code
+"""
 )
+
