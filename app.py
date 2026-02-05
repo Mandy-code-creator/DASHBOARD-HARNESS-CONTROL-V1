@@ -569,7 +569,7 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     # ================================
-      elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
+    elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
         st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
     
         # --- Chọn kiểu dự báo ---
@@ -584,7 +584,7 @@ for _, g in valid.iterrows():
                 "Enter desired LINE Hardness (HRB):",
                 min_value=0.0,
                 max_value=120.0,
-                value=90.0,  # mặc định có thể đổi nếu muốn
+                value=90.0,  # mặc định có thể đổi
                 step=0.1,
                 key="predict_hrb_single"  # key cố định
             )
