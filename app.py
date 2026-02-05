@@ -617,7 +617,7 @@ for _, g in valid.iterrows():
             pred_x = [coils[-1]+i+1 for i in range(len(hrb_values))]
             ax.scatter(pred_x, pred_values[prop], color="red", marker="X", s=80, label=f"{prop} Predicted")
            for j in range(len(hrb_values)):
-                ax.plot(
+               ax.plot(
                     [coils[-1], pred_x[j]],
                     [sub_fit[prop].values[-1], pred_values[prop][j]],
                     linestyle=":", color="red"
