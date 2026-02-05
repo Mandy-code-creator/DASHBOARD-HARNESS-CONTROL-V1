@@ -726,8 +726,15 @@ for _, g in valid.iterrows():
         hrb_values = list(range(hrb_min, hrb_max + 1, step))
     
         # --- Chuẩn bị dữ liệu ---
-        sub_risk = sub.dropna(subset=["Hardness_LINE","TS","YS","EL","Quality_Code"]).copy()
-    
+        # Lấy toàn bộ dữ liệu hợp lệ, không filter sidebar
+        sub_risk = df.dropna(subset=["Hardness_LINE","TS","YS","EL","Quality_Code"]).copy()
+        
+        # Loại bỏ GE* <88
+        sub_risk = sub_risk[~(
+            sub_risk["Quality_Code"].astype(str).str.startswith("GE") &
+            ((sub_risk["Hardness_LAB"] < 88) | (sub_risk["Hardness_LINE"] < 88))
+        )]
+
         if sub_risk.empty:
             st.warning("⚠️ No data available for mechanical property calculation.")
             st.stop()
