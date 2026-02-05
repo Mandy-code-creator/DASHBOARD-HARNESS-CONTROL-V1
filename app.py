@@ -670,24 +670,41 @@ for _, g in valid.iterrows():
     elif view_mode == "📊 Hardness → Mechanical Range":
         st.markdown("## 📊 Hardness → Mechanical Properties Range")
     
-        # 1️⃣ Kiểm tra dữ liệu
+        # ================================
+        # 1️⃣ Load Spec Sheet
+        # ================================
+        SPEC_URL = "https://docs.google.com/spreadsheets/d/YOUR_SPEC_SHEET_ID/export?format=csv"
+    
+        @st.cache_data
+        def load_spec():
+            df_spec = pd.read_csv(SPEC_URL)
+            df_spec.columns = df_spec.columns.str.strip()  # loại bỏ khoảng trắng
+            # ép kiểu số
+            for c in ["ORDER GAUGE_MIN","ORDER GAUGE_MAX","Hardness_MIN","Hardness_MAX",
+                      "TS_MIN","TS_MAX","YS_MIN","YS_MAX","EL_MIN","EL_MAX"]:
+                df_spec[c] = pd.to_numeric(df_spec[c], errors="coerce")
+            return df_spec
+    
+        spec_sheet = load_spec()
+    
+        # ================================
+        # 2️⃣ Kiểm tra dữ liệu
+        # ================================
         if sub.empty:
             st.info("No data available for Hardness → Mechanical Range")
             st.stop()
     
-        # 2️⃣ Lấy Spec Sheet mapping
-        # Giả sử bạn đã có DataFrame spec_sheet với các cột:
-        # ["PRODUCT SPECIFICATION CODE", "QUALITY_CODE", "HR STEEL GRADE", "ORDER GAUGE_MIN", "ORDER GAUGE_MAX",
-        #  "Hardness_MIN", "Hardness_MAX", "TS_MIN", "TS_MAX", "YS_MIN", "YS_MAX", "EL_MIN", "EL_MAX"]
-        
+        # ================================
+        # 3️⃣ Mapping TS/YS/EL từ Spec Sheet
+        # ================================
         def map_mech_props(row):
-            """Tìm range TS/YS/EL từ spec sheet dựa trên Product Code + Gauge + Hardness + Quality"""
+            """Tìm range TS/YS/EL từ Spec Sheet dựa trên Product Code + Gauge + Hardness + Quality"""
             spec_match = spec_sheet[
-                (spec_sheet["PRODUCT SPECIFICATION CODE"] == row["PRODUCT SPECIFICATION CODE"]) &
-                (spec_sheet["QUALITY_CODE"] == row["QUALITY_CODE"]) &
-                (spec_sheet["HR STEEL GRADE"] == row["HR STEEL GRADE"]) &
-                (spec_sheet["ORDER GAUGE_MIN"] <= row["ORDER GAUGE"]) &
-                (row["ORDER GAUGE"] < spec_sheet["ORDER GAUGE_MAX"]) &
+                (spec_sheet["PRODUCT SPECIFICATION CODE"] == row["Product_Spec"]) &
+                (spec_sheet["QUALITY_CODE"] == row["Quality_Code"]) &
+                (spec_sheet["HR STEEL GRADE"] == row["Material"]) &
+                (spec_sheet["ORDER GAUGE_MIN"] <= row["Order_Gauge"]) &
+                (row["Order_Gauge"] < spec_sheet["ORDER GAUGE_MAX"]) &
                 (spec_sheet["Hardness_MIN"] <= row["Hardness_LINE"]) &
                 (row["Hardness_LINE"] <= spec_sheet["Hardness_MAX"])
             ]
@@ -709,30 +726,36 @@ for _, g in valid.iterrows():
                     "EL_min": None, "EL_max": None
                 })
     
-        # 3️⃣ Áp dụng mapping
+        # ================================
+        # 4️⃣ Áp dụng mapping
+        # ================================
         mech_props = sub.apply(map_mech_props, axis=1)
         sub_stats = pd.concat([sub, mech_props], axis=1)
-        sub_stats = sub_stats.dropna(subset=["TS_min", "YS_min", "EL_min"]).copy()
+        sub_stats = sub_stats.dropna(subset=["TS_min","YS_min","EL_min"]).copy()
     
         if sub_stats.empty:
             st.info("No matching Spec Sheet data found for current selection")
             st.stop()
     
-        # 4️⃣ Group theo Hardness LINE rounded
+        # ================================
+        # 5️⃣ Group theo Hardness LINE rounded
+        # ================================
         sub_stats["HRB_round"] = sub_stats["Hardness_LINE"].round(0).astype(int)
     
         summary_range = (
             sub_stats.groupby("HRB_round").agg(
-                N_coils=("COIL_NO", "count"),
-                TS_min=("TS_min", "min"), TS_max=("TS_max", "max"),
-                YS_min=("YS_min", "min"), YS_max=("YS_max", "max"),
-                EL_min=("EL_min", "min"), EL_max=("EL_max", "max")
+                N_coils=("COIL_NO","count"),
+                TS_min=("TS_min","min"), TS_max=("TS_max","max"),
+                YS_min=("YS_min","min"), YS_max=("YS_max","max"),
+                EL_min=("EL_min","min"), EL_max=("EL_max","max")
             )
             .reset_index()
             .sort_values("HRB_round")
         )
     
-        # 5️⃣ Hiển thị bảng gọn
+        # ================================
+        # 6️⃣ Hiển thị bảng summary
+        # ================================
         st.dataframe(
             summary_range.style.format({
                 "TS_min":"{:.1f}", "TS_max":"{:.1f}",
@@ -743,7 +766,9 @@ for _, g in valid.iterrows():
             height=400
         )
     
-        # 6️⃣ Thêm note
+        # ================================
+        # 7️⃣ Thêm chú thích
+        # ================================
         st.markdown(
             "- HRB values rounded to nearest integer.\n"
             "- TS/YS in MPa, EL in %.\n"
