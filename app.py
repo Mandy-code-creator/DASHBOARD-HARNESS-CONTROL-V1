@@ -238,7 +238,7 @@ sub["NG"] = sub["NG_LAB"] | sub["NG_LINE"]
 qa = "FAIL" if sub["NG"].any() else "PASS"
 specs = ", ".join(sorted(sub["Product_Spec"].unique()))
 
-    st.markdown(
+st.markdown(
     f"""
 ### 🧱 Quality Group: {g['Quality_Group']}
 **Material:** {g['Material']}  
