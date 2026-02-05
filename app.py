@@ -732,71 +732,91 @@ for _, g in valid.iterrows():
                 "- N_coils = số lượng coil trong mỗi Hardness."
             )
     elif view_mode == "📊 Hardness → Mechanical Range & Risk":
-        st.error("🔥 VIEW ĐÃ ĐƯỢC TRIGGER")
         st.markdown("## 📊 Hardness → Mechanical Range & Risk Assessment")
     
-        import io
-        import matplotlib.pyplot as plt
+        # =========================
+        # INPUT (PHẢI CÓ KEY)
+        # =========================
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            hrb_min = st.number_input(
+                "Min Hardness (HRB)",
+                min_value=0, max_value=120, value=60, step=1,
+                key="risk_hrb_min"
+            )
+        with c2:
+            hrb_max = st.number_input(
+                "Max Hardness (HRB)",
+                min_value=0, max_value=120, value=95, step=1,
+                key="risk_hrb_max"
+            )
+        with c3:
+            hrb_step = st.number_input(
+                "Step (HRB)",
+                min_value=1, max_value=10, value=1, step=1,
+                key="risk_hrb_step"
+            )
+    
+        # =========================
+        # DATA PREP
+        # =========================
         import numpy as np
         import pandas as pd
+        import matplotlib.pyplot as plt
     
-        # --- Nhập khoảng Hardness ---
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            hrb_min = st.number_input("Min Hardness (HRB)", min_value=0, max_value=120, value=60, step=1)
-        with col2:
-            hrb_max = st.number_input("Max Hardness (HRB)", min_value=0, max_value=120, value=95, step=1)
-        with col3:
-            step = st.number_input("Step (HRB)", min_value=1, max_value=10, value=1, step=1)
+        required_cols = [
+            "Hardness_LINE", "TS", "YS", "EL",
+            "Standard TS min", "Standard TS max",
+            "Standard YS min", "Standard YS max",
+            "Standard EL min", "Standard EL max",
+            "Quality_Code"
+        ]
     
-        hrb_values = list(range(hrb_min, hrb_max + 1, step))
+        sub = df.dropna(subset=required_cols).copy()
     
-        # --- Chuẩn bị dữ liệu ---
-        sub_risk = df.dropna(subset=["Hardness_LINE","TS","YS","EL","Quality_Code"]).copy()
-    
-        # Loại bỏ GE* <88
-        sub_risk = sub_risk[~(
-            sub_risk["Quality_Code"].astype(str).str.startswith("GE") &
-            ((sub_risk["Hardness_LAB"] < 88) | (sub_risk["Hardness_LINE"] < 88))
-        )]
-    
-        if sub_risk.empty:
-            st.warning("⚠️ No data available for mechanical property calculation.")
+        if sub.empty:
+            st.warning("⚠️ No valid data for Mechanical Range & Risk analysis.")
             st.stop()
     
-        risk_table = []
+        # =========================
+        # MAIN CALC
+        # =========================
+        rows = []
     
-        for hrb in hrb_values:
-            subset = sub_risk[(sub_risk["Hardness_LINE"] >= hrb - 1) & (sub_risk["Hardness_LINE"] <= hrb + 1)]
+        for hrb in range(hrb_min, hrb_max + 1, hrb_step):
+            subset = sub[
+                (sub["Hardness_LINE"] >= hrb - 1) &
+                (sub["Hardness_LINE"] <= hrb + 1)
+            ]
+    
             if subset.empty:
-                nearest_idx = (sub_risk["Hardness_LINE"] - hrb).abs().idxmin()
-                subset = sub_risk.loc[[nearest_idx]]
+                continue
     
-            # Tránh NaN
-            TS_min = subset["TS"].min() if not subset["TS"].isna().all() else 0
-            TS_max = subset["TS"].max() if not subset["TS"].isna().all() else 0
-            YS_min = subset["YS"].min() if not subset["YS"].isna().all() else 0
-            YS_max = subset["YS"].max() if not subset["YS"].isna().all() else 0
-            EL_min = subset["EL"].min() if not subset["EL"].isna().all() else 0
-            EL_max = subset["EL"].max() if not subset["EL"].isna().all() else 0
+            TS_min, TS_max = subset["TS"].min(), subset["TS"].max()
+            YS_min, YS_max = subset["YS"].min(), subset["YS"].max()
+            EL_min, EL_max = subset["EL"].min(), subset["EL"].max()
     
-            # --- Fuzzy Risk ---
-            TS_ng = ((subset["TS"] < subset["Standard TS min"]) | (subset["TS"] > subset["Standard TS max"])).mean()
-            YS_ng = ((subset["YS"] < subset["Standard YS min"]) | (subset["YS"] > subset["Standard YS max"])).mean()
-            EL_ng = ((subset["EL"] < subset["Standard EL min"]) | (subset["EL"] > subset["Standard EL max"])).mean()
-            TS_ng, YS_ng, EL_ng = np.nan_to_num(TS_ng), np.nan_to_num(YS_ng), np.nan_to_num(EL_ng)
+            # NG rate
+            ts_ng = ((subset["TS"] < subset["Standard TS min"]) |
+                     (subset["TS"] > subset["Standard TS max"])).mean()
+            ys_ng = ((subset["YS"] < subset["Standard YS min"]) |
+                     (subset["YS"] > subset["Standard YS max"])).mean()
+            el_ng = ((subset["EL"] < subset["Standard EL min"]) |
+                     (subset["EL"] > subset["Standard EL max"])).mean()
     
-            qc_factor = 0.5 if subset["Quality_Code"].astype(str).str.contains("Full Hard|CQ").any() else 1.0
-            risk_score = qc_factor * np.mean([TS_ng, YS_ng, EL_ng])
+            # Quality adjustment
+            qc_factor = 0.7 if subset["Quality_Code"].astype(str).str.contains("CQ|FULL", case=False).any() else 1.0
+    
+            risk_score = qc_factor * np.mean([ts_ng, ys_ng, el_ng])
     
             if risk_score < 0.05:
-                risk_level = "Low ✅"
+                risk_level = "Low"
             elif risk_score < 0.2:
-                risk_level = "Medium ⚠️"
+                risk_level = "Medium"
             else:
-                risk_level = "High ❌"
+                risk_level = "High"
     
-            risk_table.append({
+            rows.append({
                 "HRB": hrb,
                 "TS_min": TS_min, "TS_max": TS_max,
                 "YS_min": YS_min, "YS_max": YS_max,
@@ -805,49 +825,37 @@ for _, g in valid.iterrows():
                 "Risk Level": risk_level
             })
     
-        if not risk_table:
-            st.warning("⚠️ No data found for selected Hardness range.")
+        if not rows:
+            st.warning("⚠️ No data found in selected Hardness range.")
             st.stop()
     
-        risk_df = pd.DataFrame(risk_table)
+        result_df = pd.DataFrame(rows)
     
-        # --- Hiển thị bảng ---
-        with st.expander(f"📋 Mechanical Range & Risk Table ({hrb_min}-{hrb_max} HRB)", expanded=True):
-            st.dataframe(risk_df.style.format({
-                "TS_min":"{:.1f}", "TS_max":"{:.1f}",
-                "YS_min":"{:.1f}", "YS_max":"{:.1f}",
-                "EL_min":"{:.1f}", "EL_max":"{:.1f}",
-                "Risk Score":"{:.2f}"
-            }), use_container_width=True)
+        # =========================
+        # SHOW TABLE
+        # =========================
+        st.dataframe(
+            result_df.style.format({
+                "TS_min": "{:.1f}", "TS_max": "{:.1f}",
+                "YS_min": "{:.1f}", "YS_max": "{:.1f}",
+                "EL_min": "{:.1f}", "EL_max": "{:.1f}",
+                "Risk Score": "{:.2f}"
+            }),
+            use_container_width=True
+        )
     
-        # --- Biểu đồ ---
-        fig, ax = plt.subplots(figsize=(14,5))
-        ax.errorbar(risk_df["HRB"], risk_df["TS_min"], yerr=risk_df["TS_max"]-risk_df["TS_min"], fmt='o', label="TS range", color="#1f77b4", capsize=5)
-        ax.errorbar(risk_df["HRB"], risk_df["YS_min"], yerr=risk_df["YS_max"]-risk_df["YS_min"], fmt='s', label="YS range", color="#2ca02c", capsize=5)
-        ax.errorbar(risk_df["HRB"], risk_df["EL_min"], yerr=risk_df["EL_max"]-risk_df["EL_min"], fmt='^', label="EL range (%)", color="#ff7f0e", capsize=5)
-    
-        # Color theo Risk Level
-        for idx, row in risk_df.iterrows():
-            color = {"Low ✅":"green","Medium ⚠️":"orange","High ❌":"red"}[row["Risk Level"]]
-            ax.scatter(row["HRB"], row["TS_max"], color=color, s=80, marker="X")
-            ax.scatter(row["HRB"], row["YS_max"], color=color, s=80, marker="X")
-            ax.scatter(row["HRB"], row["EL_max"], color=color, s=80, marker="X")
+        # =========================
+        # PLOT
+        # =========================
+        fig, ax = plt.subplots(figsize=(14, 5))
+        ax.plot(result_df["HRB"], result_df["TS_max"], label="TS max")
+        ax.plot(result_df["HRB"], result_df["YS_max"], label="YS max")
+        ax.plot(result_df["HRB"], result_df["EL_max"], label="EL max")
     
         ax.set_xlabel("Hardness (HRB)")
-        ax.set_ylabel("Mechanical Properties (MPa / %)")
-        ax.set_title("Hardness → Mechanical Range & Risk Assessment")
-        ax.grid(True, linestyle="--", alpha=0.3)
-        ax.legend(loc="center left", bbox_to_anchor=(1.02,0.5))
-        plt.tight_layout()
-        st.pyplot(fig)
+        ax.set_ylabel("Mechanical Properties")
+        ax.set_title("Hardness → Mechanical Range & Risk")
+        ax.grid(True, alpha=0.3)
+        ax.legend()
     
-        # --- Download chart ---
-        buf = io.BytesIO()
-        fig.savefig(buf, format="png", dpi=200)
-        buf.seek(0)
-        st.download_button(
-            "📥 Download Hardness → Mechanical Range & Risk Chart",
-            data=buf,
-            file_name=f"Hardness_Mechanical_Range_Risk_{hrb_min}_{hrb_max}.png",
-            mime="image/png"
-        )
+        st.pyplot(fig)
