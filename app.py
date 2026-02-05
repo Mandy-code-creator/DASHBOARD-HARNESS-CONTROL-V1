@@ -572,122 +572,119 @@ for _, g in valid.iterrows():
                 )
    # ================================
     elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
+        import uuid
         import plotly.graph_objects as go
     
         st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
     
-        # ====== 1️⃣ Input: Chọn kiểu dự báo ======
-        if "predict_type" not in st.session_state:
-            st.session_state.predict_type = "Single Value"
+        # ===== 1️⃣ UID cố định để giữ giá trị nhập =====
+        if "predict_uid" not in st.session_state:
+            st.session_state.predict_uid = str(uuid.uuid4())
+        uid = st.session_state.predict_uid
     
+        # ===== 2️⃣ Chọn kiểu dự báo =====
         pred_type = st.radio(
             "Select input type for prediction:",
             ["Single Value", "Range"],
-            key="predict_type"
+            key=f"predict_type_{uid}"
         )
     
         if pred_type == "Single Value":
-            if "user_hrb" not in st.session_state:
-                st.session_state.user_hrb = 90.0
             user_hrb = st.number_input(
                 "Enter desired LINE Hardness (HRB):",
-                min_value=0.0, max_value=120.0, value=st.session_state.user_hrb, step=0.1,
-                key="predict_hrb_single"
+                min_value=0.0, max_value=120.0, value=90.0, step=0.1,
+                key=f"predict_hrb_single_{uid}"
             )
             hrb_values = [user_hrb]
     
         else:
-            if "hrb_min" not in st.session_state:
-                st.session_state.hrb_min = 88.0
-            if "hrb_max" not in st.session_state:
-                st.session_state.hrb_max = 92.0
-            if "hrb_step" not in st.session_state:
-                st.session_state.hrb_step = 1.0
-    
             hrb_min = st.number_input(
                 "Enter minimum LINE Hardness (HRB):",
-                min_value=0.0, max_value=120.0, value=st.session_state.hrb_min, step=0.1,
-                key="predict_hrb_min"
+                min_value=0.0, max_value=120.0, value=88.0, step=0.1,
+                key=f"predict_hrb_min_{uid}"
             )
             hrb_max = st.number_input(
                 "Enter maximum LINE Hardness (HRB):",
-                min_value=0.0, max_value=120.0, value=st.session_state.hrb_max, step=0.1,
-                key="predict_hrb_max"
+                min_value=0.0, max_value=120.0, value=92.0, step=0.1,
+                key=f"predict_hrb_max_{uid}"
             )
             step = st.number_input(
                 "Step for prediction:",
-                min_value=0.1, max_value=10.0, value=st.session_state.hrb_step, step=0.1,
-                key="predict_hrb_step"
+                min_value=0.1, max_value=10.0, value=1.0, step=0.1,
+                key=f"predict_hrb_step_{uid}"
             )
             hrb_values = list(np.arange(hrb_min, hrb_max + 0.01, step))
     
-        # ====== 2️⃣ Chuẩn bị dữ liệu ======
+        # ===== 3️⃣ Chuẩn bị dữ liệu =====
         sub_fit = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"]).copy()
         N_coils = len(sub_fit)
         if N_coils < 5:
             st.warning(f"⚠️ Not enough data to perform prediction (N={N_coils})")
             st.stop()
     
-        # ====== 3️⃣ Fit linear model TS/YS/EL ======
+        # ===== 4️⃣ Fit linear model TS/YS/EL =====
         pred_values = {}
         for prop in ["TS","YS","EL"]:
             x = sub_fit["Hardness_LINE"].values
             y = sub_fit[prop].values
-            a, b = np.polyfit(x, y, 1)
+            a,b = np.polyfit(x, y, 1)
             pred_values[prop] = a * np.array(hrb_values) + b
     
-        # ====== 4️⃣ Vẽ Plotly ======
+        # ===== 5️⃣ Vẽ trend với Plotly =====
         fig = go.Figure()
     
-        # Observed values
+        coils = np.arange(1, N_coils+1)
+    
+        # Observed
         for prop, color, marker, unit in [("TS","#1f77b4","circle","MPa"),
                                            ("YS","#2ca02c","square","MPa"),
                                            ("EL","#ff7f0e","diamond","%")]:
             fig.add_trace(go.Scatter(
-                x=np.arange(1, N_coils+1),
-                y=sub_fit[prop].values,
-                mode="markers+lines",
+                x=coils,
+                y=sub_fit[prop],
+                mode='markers+lines',
                 name=f"{prop} Observed",
-                marker=dict(color=color, symbol=marker, size=10),
-                hovertemplate=f"Coil: %{{x}}<br>{prop}: %{{y:.1f}} {unit}<extra></extra>"
+                marker=dict(symbol=marker, size=10, color=color),
+                hovertemplate=f"Coil %{x}<br>{prop}: %{y:.1f} {unit}<extra></extra>"
             ))
     
-        # Predicted values
+        # Predicted
         for prop, color, unit in [("TS","#1f77b4","MPa"),
                                   ("YS","#2ca02c","MPa"),
                                   ("EL","#ff7f0e","%")]:
             pred = pred_values[prop]
-            pred_x = [N_coils + i + 1 for i in range(len(pred))]
+            pred_x = [coils[-1] + 1 + i for i in range(len(pred))]
             fig.add_trace(go.Scatter(
                 x=pred_x,
                 y=pred,
-                mode="markers",
-                name=f"{prop} Predicted",
-                marker=dict(color="red", symbol="x", size=12),
-                hovertemplate=f"Predicted {prop}: %{{y:.1f}} {unit}<extra></extra>"
+                mode='markers',
+                marker=dict(symbol='x', color='red', size=12),
+                name=f"{prop} Predicted ({unit})",
+                hovertemplate=f"Predicted HRB %{x}<br>{prop}: %{y:.1f} {unit}<extra></extra>"
             ))
-            # Nối cuối quan sát → dự báo
-            for i in range(len(pred)):
+            # nối cuối quan sát → dự báo
+            for j in range(len(pred)):
                 fig.add_trace(go.Scatter(
-                    x=[N_coils, pred_x[i]],
-                    y=[sub_fit[prop].values[-1], pred[i]],
-                    mode="lines",
-                    line=dict(color="red", dash="dot"),
-                    showlegend=False
+                    x=[coils[-1], pred_x[j]],
+                    y=[sub_fit[prop].values[-1], pred[j]],
+                    mode='lines',
+                    line=dict(color='red', width=2, dash='dot'),
+                    showlegend=False,
+                    hoverinfo='skip'
                 ))
     
         fig.update_layout(
             title="Trend: Observed TS/YS/EL with Predicted Hardness",
             xaxis_title="Coil Sequence",
             yaxis_title="Mechanical Properties (TS/YS in MPa, EL in %)",
-            legend=dict(orientation="v", x=1.02, y=0.5),
+            legend=dict(y=0.5, x=1.02),
             hovermode="closest",
             width=900, height=500
         )
     
         st.plotly_chart(fig, use_container_width=True)
     
-        # ====== 5️⃣ Bảng dự báo ======
+        # ===== 6️⃣ Bảng dự báo =====
         pred_table = pd.DataFrame({"HRB": [round(h,1) for h in hrb_values]})
         for prop in ["TS","YS","EL"]:
             pred_table[prop] = pred_values[prop]
@@ -696,14 +693,14 @@ for _, g in valid.iterrows():
             st.dataframe(pred_table.style.format("{:.1f}", subset=["TS","YS","EL"]),
                          use_container_width=True)
     
-        # ====== 6️⃣ Notes ======
+        # ===== 7️⃣ Ghi chú =====
         st.markdown("### 📌 Notes")
         st.markdown(
             "- Red 'X' markers indicate predicted values for custom hardness.\n"
             "- Dashed lines connect last observed coil to predicted values.\n"
             "- EL unit is **%**, TS/YS units are **MPa**.\n"
-            "- Hover over points to see exact TS/YS/EL values.\n"
-            "- Table shows predicted values for selected LINE Hardness range."
+            "- Table shows predicted values for selected LINE Hardness range.\n"
+            "- Hover on points to see Coil sequence and property values."
         )
 
     elif view_mode == "📊 Hardness → Mechanical Range":
