@@ -572,20 +572,23 @@ for _, g in valid.iterrows():
 
         st.sidebar.markdown("### 🧮 Predict Mechanical Properties for Custom Hardness")
     
+        # Tạo key duy nhất dựa trên Material + Gauge_Range
+        base_key = f"{g['Material']}_{g['Gauge_Range']}_predict"
+    
         # ----------------------------
         # 1️⃣ Chọn kiểu input
         # ----------------------------
         pred_type = st.sidebar.radio(
             "Select input type:",
             ["Single Value", "Range"],
-            key="pred_type"
+            key=f"{base_key}_pred_type"
         )
     
         if pred_type == "Single Value":
             user_hrb_single = st.sidebar.number_input(
                 "Enter LINE Hardness (HRB) to predict TS/YS/EL",
                 min_value=0.0, max_value=120.0, value=90.0, step=0.1,
-                key="user_hrb_single"
+                key=f"{base_key}_single"
             )
             user_hrb_vals = [user_hrb_single]
     
@@ -593,18 +596,18 @@ for _, g in valid.iterrows():
             hrb_min = st.sidebar.number_input(
                 "Enter MIN LINE Hardness (HRB)",
                 min_value=0.0, max_value=120.0, value=88.0, step=0.1,
-                key="user_hrb_min"
+                key=f"{base_key}_min"
             )
             hrb_max = st.sidebar.number_input(
                 "Enter MAX LINE Hardness (HRB)",
                 min_value=0.0, max_value=120.0, value=92.0, step=0.1,
-                key="user_hrb_max"
+                key=f"{base_key}_max"
             )
             if hrb_max < hrb_min:
                 st.sidebar.error("⚠️ Max cannot be less than Min")
                 user_hrb_vals = []
             else:
-                user_hrb_vals = list(np.linspace(hrb_min, hrb_max, 5))  # chia khoảng thành 5 điểm
+                user_hrb_vals = list(np.linspace(hrb_min, hrb_max, 5))
     
         # ----------------------------
         # 2️⃣ Chuẩn bị dữ liệu fit
@@ -664,7 +667,7 @@ for _, g in valid.iterrows():
                     a, b = np.polyfit(sub_fit["Hardness_LINE"], sub_fit[prop], 1)
                     pred_point[prop] = a*hrb + b
     
-                # vẽ marker trên biểu đồ trend
+                # Vẽ marker
                 ax_ts.scatter(len(sub_fit)+1, pred_point["TS"], color="red", s=100, marker="X", label=f"Pred HRB={hrb:.1f}")
                 ax_ys.scatter(len(sub_fit)+1, pred_point["YS"], color="red", s=100, marker="X")
                 ax_el.scatter(len(sub_fit)+1, pred_point["EL"], color="red", s=100, marker="X")
@@ -689,5 +692,5 @@ for _, g in valid.iterrows():
                 for prop in ["TS","YS","EL"]:
                     a, b = np.polyfit(sub_fit["Hardness_LINE"], sub_fit[prop], 1)
                     pred_point[prop] = a*hrb + b
-                st.markdown(f"**HRB={hrb:.1f} → Predicted:** TS={pred_point['TS']:.1f}, "
-                            f"YS={pred_point['YS']:.1f}, EL={pred_point['EL']:.1f}")
+                st.markdown(f"**HRB={hrb:.1f} → Predicted:** TS={pred_point['TS']:.1f} MPa, "
+                            f"YS={pred_point['YS']:.1f} MPa, EL={pred_point['EL']:.1f}%")
