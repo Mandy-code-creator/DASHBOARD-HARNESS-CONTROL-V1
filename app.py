@@ -668,51 +668,52 @@ for _, g in valid.iterrows():
             "- Table shows predicted values for selected LINE Hardness range."
         )
 # ================================
-# ================================
-# =========================
-# 🗂 Product Spec + Mechanical Properties Summary
-# =========================
-st.markdown("---")
-st.header("📋 Product Spec & Mechanical Properties Summary")
-
-# Chọn các cột cần hiển thị
-display_cols = [
-    "Quality_Code",
-    "Product_Spec",
-    "Gauge_Range",
-    "Material",
-    "HRB_Min",
-    "HRB_Max",
-    "TS_Min",
-    "TS_Max",
-    "YS_Min",
-    "YS_Max",
-    "EL_Min",
-    "EL_Max",
-    "N_Coils"
-]
-
-# Lọc những cột thực sự có trong limit_df
-display_cols = [c for c in display_cols if c in limit_df.columns]
-
-# Gộp dữ liệu trùng nhau theo Quality_Code + Product_Spec + Gauge_Range + Material
-group_cols = ["Quality_Code", "Product_Spec", "Gauge_Range", "Material"]
-agg_cols = [c for c in display_cols if c not in group_cols]
-
-# Gộp numeric
-summary_view = limit_df.groupby(group_cols, as_index=False)[agg_cols].agg({
-    col: "mean" for col in agg_cols
-})
-
-# Hiển thị table
-st.dataframe(summary_view, use_container_width=True)
-
-# =========================
-# Optionally: download CSV
-st.download_button(
-    "⬇ Download summary CSV",
-    summary_view.to_csv(index=False).encode("utf-8"),
-    file_name="product_spec_summary.csv",
-    mime="text/csv"
-)
-
+    elif view_mode == "📊 TS/YS/EL + HRB + N_Coils":
+        st.subheader("Summary: TS/YS/EL + Hardness + Number of Coils")
+    
+        # Sidebar filter (nếu muốn)
+        quality_list = df["QUALITY_CODE"].unique()
+        product_list = df["PRODUCT SPECIFICATION CODE"].unique()
+        gauge_list = df["ORDER GAUGE"].unique()
+    
+        selected_quality = st.sidebar.multiselect("Select Quality Code", quality_list, default=quality_list)
+        selected_product = st.sidebar.multiselect("Select Product Spec", product_list, default=product_list)
+        selected_gauge = st.sidebar.multiselect("Select Gauge", gauge_list, default=gauge_list)
+    
+        # Lọc dữ liệu
+        sub_df = df[
+            (df["QUALITY_CODE"].isin(selected_quality)) &
+            (df["PRODUCT SPECIFICATION CODE"].isin(selected_product)) &
+            (df["ORDER GAUGE"].isin(selected_gauge))
+        ]
+    
+        # Group by và tính summary
+        group_cols = ["QUALITY_CODE", "PRODUCT SPECIFICATION CODE", "ORDER GAUGE"]
+        summary_view = sub_df.groupby(group_cols, as_index=False).agg({
+            "Standard Hardness": "min",
+            "HARDNESS 冶金": "min",
+            "HARDNESS 鍍鋅線 N": "min",
+            "HARDNESS 鍍鋅線 C": "min",
+            "HARDNESS 鍍鋅線 S": "min",
+            "Standard YS min": "min",
+            "Standard YS max": "max",
+            "Standard TS min": "min",
+            "Standard TS max": "max",
+            "Standard EL min": "min",
+            "Standard EL max": "max",
+            "TENSILE_YIELD": "mean",
+            "TENSILE_TENSILE": "mean",
+            "TENSILE_ELONG": "mean",
+            "COIL_NO": "count"
+        }).rename(columns={"COIL_NO": "N_Coils"})
+    
+        # Hiển thị bảng
+        st.dataframe(summary_view, use_container_width=True)
+    
+        # Nút download CSV
+        st.download_button(
+            "⬇ Download summary CSV",
+            summary_view.to_csv(index=False).encode("utf-8"),
+            file_name="summary_TS_YS_EL.csv",
+            mime="text/csv"
+        )
