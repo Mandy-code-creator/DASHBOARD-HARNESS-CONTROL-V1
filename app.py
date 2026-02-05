@@ -667,36 +667,91 @@ for _, g in valid.iterrows():
             "- EL unit is **%**, TS/YS units are **MPa**.\n"
             "- Table shows predicted values for selected LINE Hardness range."
         )
-st.markdown("## 📊 Hard Bin Mapping → Mechanical Properties Summary")
+import streamlit as st
+import pandas as pd
+import numpy as np
+import requests
+from io import StringIO
 
-# --- 1️⃣ Parse Gauge Range nếu chưa có ---
-def parse_range(text):
-    """Chuyển '0.28–0.35' → (0.28, 0.35)"""
-    nums = re.findall(r"\d+\.?\d*", str(text))
-    if len(nums) >= 2:
-        return float(nums[0]), float(nums[1])
-    return None, None
+st.set_page_config(page_title="Hard Bin Mapping", layout="wide")
+st.title("📊 Hard Bin Mapping → Mechanical Properties Summary")
 
-df["Gauge_Lo"], df["Gauge_Hi"] = zip(*df["Gauge_Range"].apply(parse_range))
+# ================================
+# LOAD MAIN DATA
+# ================================
+DATA_URL = "https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
+GAUGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
+SPEC_URL = "https://docs.google.com/spreadsheets/d/YOUR_SPEC_SHEET_ID/export?format=csv"
 
-# --- 2️⃣ Nhóm theo Product Spec + Gauge_Range ---
-group_cols = ["Product_Spec","Gauge_Range"]
-summary_hard = df.groupby(group_cols).agg(
-    N_coils=("COIL_NO","count"),
-    Hardness_min=("Std_Min","min"),
-    Hardness_max=("Std_Max","max")
+@st.cache_data
+def load_csv(url):
+    r = requests.get(url)
+    r.encoding = "utf-8"
+    return pd.read_csv(StringIO(r.text))
+
+df = load_csv(DATA_URL)
+gauge_df = load_csv(GAUGE_URL)
+spec_sheet = load_csv(SPEC_URL)
+
+# ================================
+# CLEAN COLUMN NAMES
+# ================================
+df.columns = df.columns.str.strip()
+gauge_df.columns = gauge_df.columns.str.strip()
+spec_sheet.columns = spec_sheet.columns.str.strip()
+
+# ================================
+# MAP GAUGE RANGE
+# ================================
+import re
+ranges = []
+gauge_col = next(c for c in gauge_df.columns if "RANGE" in c.upper())
+for _, r in gauge_df.iterrows():
+    nums = re.findall(r"\d+\.\d+|\d+", str(r[gauge_col]))
+    if len(nums)>=2:
+        ranges.append((float(nums[0]), float(nums[-1]), r[gauge_col]))
+
+def map_gauge(val):
+    for lo, hi, name in ranges:
+        if lo <= val < hi:
+            return name
+    return None
+
+df["Gauge_Range"] = df["ORDER GAUGE"].apply(map_gauge)
+df = df.dropna(subset=["Gauge_Range"])
+
+# ================================
+# SPLIT STANDARD HARDNESS
+# ================================
+def split_std(x):
+    if isinstance(x,str) and "~" in x:
+        lo, hi = x.split("~")
+        return float(lo), float(hi)
+    return np.nan, np.nan
+
+df[["Std_Min","Std_Max"]] = df["Standard Hardness"].apply(lambda x: pd.Series(split_std(x)))
+
+# ================================
+# GROUP BY Product Spec + Gauge Range
+# ================================
+summary_hard = df.groupby(["PRODUCT SPECIFICATION CODE","Gauge_Range"]).agg(
+    N_coils=("COIL NO","nunique"),
+    Std_Min=("Std_Min","first"),
+    Std_Max=("Std_Max","first"),
+    Hardness_MIN=("Hardness_LAB","min"),
+    Hardness_MAX=("Hardness_LAB","max")
 ).reset_index()
 
-# --- 3️⃣ Mapping Mechanical Properties từ Spec Sheet ---
+# ================================
+# MAP MECHANICAL PROPERTIES FROM SPEC SHEET
+# ================================
 def map_mech(row):
-    """Map TS/YS/EL min/max dựa trên Product Spec + Gauge + Hardness"""
-    lo, hi = parse_range(row["Gauge_Range"])
     spec_match = spec_sheet[
-        (spec_sheet["PRODUCT SPECIFICATION CODE"] == row["Product_Spec"]) &
-        (spec_sheet["ORDER GAUGE_MIN"] <= lo) &
-        (hi < spec_sheet["ORDER GAUGE_MAX"]) &
-        (spec_sheet["Hardness_MIN"] <= row["Hardness_min"]) &
-        (row["Hardness_max"] <= spec_sheet["Hardness_MAX"])
+        (spec_sheet["PRODUCT SPECIFICATION CODE"] == row["PRODUCT SPECIFICATION CODE"]) &
+        (spec_sheet["ORDER GAUGE_MIN"] <= row["Std_Min"]) &
+        (row["Std_Max"] <= spec_sheet["ORDER GAUGE_MAX"]) &
+        (spec_sheet["Hardness_MIN"] <= row["Std_Min"]) &
+        (row["Std_Max"] <= spec_sheet["Hardness_MAX"])
     ]
     if not spec_match.empty:
         return pd.Series({
@@ -709,39 +764,16 @@ def map_mech(row):
         })
     else:
         return pd.Series({
-            "TS_min": None, "TS_max": None,
-            "YS_min": None, "YS_max": None,
-            "EL_min": None, "EL_max": None
+            "TS_min": np.nan, "TS_max": np.nan,
+            "YS_min": np.nan, "YS_max": np.nan,
+            "EL_min": np.nan, "EL_max": np.nan
         })
 
 summary_hard = pd.concat([summary_hard, summary_hard.apply(map_mech, axis=1)], axis=1)
 
-# --- 4️⃣ QA flag (tùy chọn) ---
-def qa_flag(row):
-    ts_flag = "⚠️" if row["TS_min"] is None else "✅"
-    ys_flag = "⚠️" if row["YS_min"] is None else "✅"
-    el_flag = "⚠️" if row["EL_min"] is None else "✅"
-    return pd.Series({"TS_flag": ts_flag, "YS_flag": ys_flag, "EL_flag": el_flag})
-
-summary_hard = pd.concat([summary_hard, summary_hard.apply(qa_flag, axis=1)], axis=1)
-
-# --- 5️⃣ Hiển thị bảng ---
-st.dataframe(
-    summary_hard.style.format({
-        "Hardness_min":"{:.1f}", "Hardness_max":"{:.1f}",
-        "TS_min":"{:.1f}", "TS_max":"{:.1f}",
-        "YS_min":"{:.1f}", "YS_max":"{:.1f}",
-        "EL_min":"{:.1f}", "EL_max":"{:.1f}"
-    }),
-    use_container_width=True,
-    height=500
-)
-
-# --- 6️⃣ Cho download CSV ---
-csv_buf = summary_hard.to_csv(index=False).encode("utf-8")
-st.download_button(
-    "📥 Download Hard Bin Mapping CSV",
-    data=csv_buf,
-    file_name="hard_bin_mapping_summary.csv",
-    mime="text/csv"
-)
+# ================================
+# DISPLAY TABLE
+# ================================
+st.dataframe(summary_hard.style.format("{:.1f}", subset=["Std_Min","Std_Max","Hardness_MIN","Hardness_MAX",
+                                                         "TS_min","TS_max","YS_min","YS_max","EL_min","EL_max"]),
+             use_container_width=True, height=600)
