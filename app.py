@@ -667,7 +667,7 @@ for _, g in valid.iterrows():
             "- EL unit is **%**, TS/YS units are **MPa**.\n"
             "- Table shows predicted values for selected LINE Hardness range."
         )
-   st.markdown("## 📊 Hard Bin Mapping → Mechanical Properties Summary")
+st.markdown("## 📊 Hard Bin Mapping → Mechanical Properties Summary")
 
 # --- 1️⃣ Parse Gauge Range nếu chưa có ---
 def parse_range(text):
