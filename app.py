@@ -252,7 +252,7 @@ st.markdown(
     # ================================
     # VIEW MODE SWITCH
     # ================================
-    if view_mode == "📋 Data Table":
+if view_mode == "📋 Data Table":
         st.dataframe(sub, use_container_width=True)
 
     elif view_mode == "📈 Trend (LAB / LINE)":
