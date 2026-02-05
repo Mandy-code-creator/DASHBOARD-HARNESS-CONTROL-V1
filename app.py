@@ -668,74 +668,74 @@ for _, g in valid.iterrows():
             "- Table shows predicted values for selected LINE Hardness range."
         )
     elif view_mode == "📊 Hardness → Mechanical Range":
-    st.markdown("## 📊 Summary: Hardness Bin Mapping → Mechanical Properties")
-
-    # 1️⃣ Chuẩn bị dữ liệu và kiểm tra các cột cần thiết
-    # Sử dụng cột Gauge_Range_Group mà chúng ta đã mapping từ bảng Google Sheet trước đó
-    cols_to_check = ["Hardness_LINE", "TS", "YS", "EL", "Product_Spec", "Gauge_Range_Group", "Std_Min", "Std_Max"]
-    sub_stats = sub.dropna(subset=[c for c in cols_to_check if c in sub.columns]).copy()
+        st.markdown("## 📊 Summary: Hardness Bin Mapping → Mechanical Properties")
     
-    if sub_stats.empty:
-        st.info("⚠️ Không có dữ liệu để hiển thị bảng Summary.")
-        st.stop()
-
-    # 2️⃣ Tạo cột hiển thị dải Hardness tiêu chuẩn (ví dụ: 58-65)
-    sub_stats["Std_Hardness_Range"] = sub_stats["Std_Min"].astype(str) + " ~ " + sub_stats["Std_Max"].astype(str)
-
-    # 3️⃣ Gom nhóm theo Spec, Gauge Range và Standard Hardness
-    # Đây là logic để gộp các cuộn có cùng điều kiện lại với nhau
-    summary_range = (
-        sub_stats.groupby(["Product_Spec", "Gauge_Range_Group", "Std_Hardness_Range"])
-        .agg(
-            N_coils=("COIL_NO", "count"),
-            TS_min=("TS", "min"), TS_max=("TS", "max"), TS_mean=("TS", "mean"),
-            YS_min=("YS", "min"), YS_max=("YS", "max"), YS_mean=("YS", "mean"),
-            EL_min=("EL", "min"), EL_max=("EL", "max"), EL_mean=("EL", "mean")
-        )
-        .reset_index()
-    )
-
-    if summary_range.empty:
-        st.info("⚠️ Không tìm thấy dữ liệu phù hợp với các nhóm Hardness.")
-    else:
-        # 4️⃣ Hiển thị bảng Summary Data theo yêu cầu của sếp
-        st.markdown("### 📋 Bảng tổng hợp theo Hard Bin Mapping")
+        # 1️⃣ Chuẩn bị dữ liệu và kiểm tra các cột cần thiết
+        # Sử dụng cột Gauge_Range_Group mà chúng ta đã mapping từ bảng Google Sheet trước đó
+        cols_to_check = ["Hardness_LINE", "TS", "YS", "EL", "Product_Spec", "Gauge_Range_Group", "Std_Min", "Std_Max"]
+        sub_stats = sub.dropna(subset=[c for c in cols_to_check if c in sub.columns]).copy()
         
-        # Format bảng để hiển thị đẹp hơn
-        formatted_summary = summary_range.rename(columns={
-            "Product_Spec": "SPEC CODE",
-            "Gauge_Range_Group": "ORDER GAUGE RANGE",
-            "Std_Hardness_Range": "STD HARDNESS (Min~Max)",
-            "N_coils": "Số Coil"
-        })
-
-        st.dataframe(
-            formatted_summary.style.format({
-                "TS_min": "{:.1f}", "TS_max": "{:.1f}", "TS_mean": "{:.1f}",
-                "YS_min": "{:.1f}", "YS_max": "{:.1f}", "YS_mean": "{:.1f}",
-                "EL_min": "{:.1f}", "EL_max": "{:.1f}", "EL_mean": "{:.1f}"
-            }),
-            use_container_width=True,
-            height=500
+        if sub_stats.empty:
+            st.info("⚠️ Không có dữ liệu để hiển thị bảng Summary.")
+            st.stop()
+    
+        # 2️⃣ Tạo cột hiển thị dải Hardness tiêu chuẩn (ví dụ: 58-65)
+        sub_stats["Std_Hardness_Range"] = sub_stats["Std_Min"].astype(str) + " ~ " + sub_stats["Std_Max"].astype(str)
+    
+        # 3️⃣ Gom nhóm theo Spec, Gauge Range và Standard Hardness
+        # Đây là logic để gộp các cuộn có cùng điều kiện lại với nhau
+        summary_range = (
+            sub_stats.groupby(["Product_Spec", "Gauge_Range_Group", "Std_Hardness_Range"])
+            .agg(
+                N_coils=("COIL_NO", "count"),
+                TS_min=("TS", "min"), TS_max=("TS", "max"), TS_mean=("TS", "mean"),
+                YS_min=("YS", "min"), YS_max=("YS", "max"), YS_mean=("YS", "mean"),
+                EL_min=("EL", "min"), EL_max=("EL", "max"), EL_mean=("EL", "mean")
+            )
+            .reset_index()
         )
-
-        # 5️⃣ Ghi chú kỹ thuật cho bảng
-        st.info(
-            f"**Ghi chú:**\n"
-            f"- Bảng trên tự động gom nhóm các Coil dựa trên mã sản phẩm và khoảng độ dày.\n"
-            f"- Khoảng độ dày đang áp dụng logic: {selected_group} (ví dụ $0.28 \le T < 0.35$).\n"
-            f"- Dữ liệu cơ tính được lấy từ kết quả đo thực tế của các cuộn trong nhóm."
-        )
-
-        # 6️⃣ Nút tải dữ liệu Summary
-        csv = summary_range.to_csv(index=False).encode('utf-8')
-        st.download_button(
-            "📥 Tải bảng Summary (CSV)",
-            csv,
-            "Hardness_Mechanical_Summary.csv",
-            "text/csv",
-            key='download-summary'
-        )
+    
+        if summary_range.empty:
+            st.info("⚠️ Không tìm thấy dữ liệu phù hợp với các nhóm Hardness.")
+        else:
+            # 4️⃣ Hiển thị bảng Summary Data theo yêu cầu của sếp
+            st.markdown("### 📋 Bảng tổng hợp theo Hard Bin Mapping")
+            
+            # Format bảng để hiển thị đẹp hơn
+            formatted_summary = summary_range.rename(columns={
+                "Product_Spec": "SPEC CODE",
+                "Gauge_Range_Group": "ORDER GAUGE RANGE",
+                "Std_Hardness_Range": "STD HARDNESS (Min~Max)",
+                "N_coils": "Số Coil"
+            })
+    
+            st.dataframe(
+                formatted_summary.style.format({
+                    "TS_min": "{:.1f}", "TS_max": "{:.1f}", "TS_mean": "{:.1f}",
+                    "YS_min": "{:.1f}", "YS_max": "{:.1f}", "YS_mean": "{:.1f}",
+                    "EL_min": "{:.1f}", "EL_max": "{:.1f}", "EL_mean": "{:.1f}"
+                }),
+                use_container_width=True,
+                height=500
+            )
+    
+            # 5️⃣ Ghi chú kỹ thuật cho bảng
+            st.info(
+                f"**Ghi chú:**\n"
+                f"- Bảng trên tự động gom nhóm các Coil dựa trên mã sản phẩm và khoảng độ dày.\n"
+                f"- Khoảng độ dày đang áp dụng logic: {selected_group} (ví dụ $0.28 \le T < 0.35$).\n"
+                f"- Dữ liệu cơ tính được lấy từ kết quả đo thực tế của các cuộn trong nhóm."
+            )
+    
+            # 6️⃣ Nút tải dữ liệu Summary
+            csv = summary_range.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                "📥 Tải bảng Summary (CSV)",
+                csv,
+                "Hardness_Mechanical_Summary.csv",
+                "text/csv",
+                key='download-summary'
+            )
 # ================================
 
 import streamlit as st
