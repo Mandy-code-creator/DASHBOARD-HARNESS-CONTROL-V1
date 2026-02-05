@@ -668,55 +668,45 @@ for _, g in valid.iterrows():
             "- Table shows predicted values for selected LINE Hardness range."
         )
     elif view_mode == "📊 Hardness → Mechanical Range":
-        st.markdown("## 📊 Summary: Hardness Bin Mapping → Mechanical Properties")
-        
-        # --- BƯỚC SỬA LỖI QUAN TRỌNG: TẠO CỘT THIẾU ---
-        # Đảm bảo cột Std_Hardness_Range tồn tại trước khi Groupby
-        if "Std_Min" in sub.columns and "Std_Max" in sub.columns:
-            sub["Std_Hardness_Range"] = sub["Std_Min"].astype(str) + " ~ " + sub["Std_Max"].astype(str)
-        
-        # Kiểm tra danh sách cột thực tế
-        actual_columns = sub.columns.tolist()
-        target_group_cols = ["Product_Spec", "Gauge_Range_Group", "Std_Hardness_Range"]
-        
-        # Kiểm tra xem có cột nào bị thiếu không để tránh KeyError
-        missing_cols = [c for c in target_group_cols if c not in actual_columns]
-        
-        if missing_cols:
-            st.error(f"❌ Lỗi hệ thống: Thiếu các cột sau trong dữ liệu: {missing_cols}")
-            st.info("💡 Mẹo: Hãy chắc chắn bạn đã chọn đúng Grade và dữ liệu đã qua bước Mapping.")
-            st.stop()
-        
-        # --- BƯỚC 2: CHUẨN BỊ DỮ LIỆU SẠCH ---
-        mech_cols = ["TS", "YS", "EL", "Hardness_LINE"]
-        # Chỉ lấy các dòng có đủ dữ liệu cơ tính để thống kê không bị sai lệch
-        sub_stats = sub.dropna(subset=[c for c in mech_cols if c in actual_columns]).copy()
-        
+        st.markdown("## 📊 Hardness → Mechanical Properties Range")
+    
+        # 1️⃣ Chuẩn bị dữ liệu
+        sub_stats = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         if sub_stats.empty:
-            st.warning("⚠️ Không có dữ liệu hợp lệ (TS/YS/EL) để hiển thị bảng Summary.")
+            st.info("No data available for Hardness → Mechanical Range")
             st.stop()
-            
-        # --- BƯỚC 3: THỰC HIỆN GROUPBY (HARD BIN MAPPING) ---
+    
+        # 2️⃣ Tạo bảng thống kê theo Hardness LINE rounded
+        sub_stats["HRB_round"] = sub_stats["Hardness_LINE"].round(0).astype(int)
+    
         summary_range = (
-            sub_stats.groupby(target_group_cols)
-            .agg(
+            sub_stats.groupby("HRB_round").agg(
                 N_coils=("COIL_NO", "count"),
-                TS_min=("TS", "min"), TS_max=("TS", "max"), TS_mean=("TS", "mean"),
-                YS_min=("YS", "min"), YS_max=("YS", "max"), YS_mean=("YS", "mean"),
-                EL_min=("EL", "min"), EL_max=("EL", "max"), EL_mean=("EL", "mean")
+                TS_min=("TS", "min"), TS_max=("TS", "max"), TS_mean=("TS","mean"),
+                YS_min=("YS", "min"), YS_max=("YS", "max"), YS_mean=("YS","mean"),
+                EL_min=("EL", "min"), EL_max=("EL", "max"), EL_mean=("EL","mean")
             )
             .reset_index()
+            .sort_values("HRB_round")
         )
-        
-        # --- BƯỚC 4: HIỂN THỊ BẢNG GỌN GÀNG ---
-        st.dataframe(
-            summary_range.style.format({
-                "TS_min": "{:.1f}", "TS_max": "{:.1f}", "TS_mean": "{:.1f}",
-                "YS_min": "{:.1f}", "YS_max": "{:.1f}", "YS_mean": "{:.1f}",
-                "EL_min": "{:.1f}", "EL_max": "{:.1f}", "EL_mean": "{:.1f}"
-            }),
-            use_container_width=True,
-            height=500
-        )
-        
-        st.info(f"📌 Ghi chú: Dữ liệu được gom nhóm theo Product Spec và khoảng độ dày {selected_group}.")
+    
+        if summary_range.empty:
+            st.info("No data found for current Hardness values")
+        else:
+            # 3️⃣ Hiển thị bảng gọn
+            st.dataframe(
+                summary_range.style.format({
+                    "TS_min":"{:.1f}", "TS_max":"{:.1f}", "TS_mean":"{:.1f}",
+                    "YS_min":"{:.1f}", "YS_max":"{:.1f}", "YS_mean":"{:.1f}",
+                    "EL_min":"{:.1f}", "EL_max":"{:.1f}", "EL_mean":"{:.1f}"
+                }),
+                use_container_width=True,
+                height=400
+            )
+    
+            # 4️⃣ Thêm note
+            st.markdown(
+                "- HRB values rounded to nearest integer.\n"
+                "- TS/YS in MPa, EL in %.\n"
+                "- N_coils = số lượng coil trong mỗi Hardness."
+            )
