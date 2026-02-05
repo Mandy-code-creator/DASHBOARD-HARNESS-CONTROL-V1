@@ -624,18 +624,22 @@ if len(hrb_values) > 0:
         # --- Plot trend + predicted marker ---
         fig, ax = plt.subplots(figsize=(14,5))
         coils = np.arange(1, len(sub_fit)+1)
+        
         for prop,color,marker,unit in [("TS","#1f77b4","o","MPa"),("YS","#2ca02c","s","MPa"),("EL","#ff7f0e","^","%")]:
             vals = sub_fit[prop].values
             ax.plot(coils, vals, marker=marker, color=color, label=f"{prop} Observed")
+            
             # add predicted marker
             pred = pred_values[prop]
-            last_val = vals[-1]
-            ax.scatter([len(coils)+i for i in range(len(hrb_values))], pred, color="red", s=100, marker="X", label=f"{prop} Predicted" if i==0 else "")
-            for i,val in enumerate(pred):
-                ax.plot([len(coils), len(coils)+i+1], [last_val,val], linestyle=":", color="red", linewidth=2)
-                ax.annotate(f"{val:.1f}{unit}", xy=(len(coils)+i+1,val),
+            pred_x = np.arange(len(coils)+1, len(coils)+1+len(pred))
+            ax.scatter(pred_x, pred, color="red", s=100, marker="X", label=f"{prop} Predicted")
+            
+            # connect last observed point to first predicted point
+            for j in range(len(pred)):
+                ax.plot([len(coils), pred_x[j]], [vals[-1], pred[j]], linestyle=":", color="red", linewidth=2)
+                ax.annotate(f"{pred[j]:.1f}{unit}", xy=(pred_x[j], pred[j]),
                             xytext=(5,0), textcoords='offset points', color="red", fontweight="bold")
-
+        
         ax.set_xlabel("Coil Sequence")
         ax.set_ylabel("Mechanical Properties (MPa / %)")
         ax.set_title("Trend: Observed TS/YS/EL with Predicted Hardness")
@@ -643,6 +647,7 @@ if len(hrb_values) > 0:
         ax.legend()
         plt.tight_layout()
         st.pyplot(fig)
+
 
         # --- Prediction summary ---
         st.markdown("### 📌 Predicted Mechanical Properties")
