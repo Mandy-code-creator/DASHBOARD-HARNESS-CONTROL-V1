@@ -313,45 +313,28 @@ for _, g in valid.iterrows():
            mime="image/png"
         )
     elif view_mode == "🛠 Hardness → TS/YS/EL":
-
-        # ================================
-        # 1️⃣ Chuẩn bị dữ liệu
-        # ================================
-        st.write("Sub size before filter:", sub.shape)
-st.write(sub[["QUALITY_CODE","Hardness_LAB","Hardness_LINE"]].head(10))
-
+        # Chuẩn bị dữ liệu
         sub = sub.dropna(subset=["Hardness_LAB","Hardness_LINE","TS","YS","EL"])
-        # ✅ Loại bỏ coil GE* <88 (LAB hoặc LINE) nếu cột QUALITY_CODE tồn tại
-    if "QUALITY_CODE" in sub.columns:
-        sub = sub[~(
-            sub["QUALITY_CODE"].astype(str).str.startswith("GE") &
-            ((sub["Hardness_LAB"] < 88) | (sub["Hardness_LINE"] < 88))
-        )]
-
-        # đảm bảo QUALITY_CODE là string để dùng str.startswith()
-        sub["QUALITY_CODE"] = sub["QUALITY_CODE"].astype(str)
     
-        # Loại bỏ coil GE* <88 cho cả LAB và LINE
-        sub = sub[~(
-            sub["QUALITY_CODE"].str.startswith("GE") &
-            ((sub["Hardness_LAB"] < 88) | (sub["Hardness_LINE"] < 88))
-        )]
-    st.write("Sub size after GE* filter:", sub.shape)
-
-        # ================================
-        # 2️⃣ Binning Hardness
-        # ================================
+        # Loại bỏ GE* <88 nếu có
+        if "QUALITY_CODE" in sub.columns:
+            sub = sub[~(
+                sub["QUALITY_CODE"].astype(str).str.startswith("GE") &
+                ((sub["Hardness_LAB"] < 88) | (sub["Hardness_LINE"] < 88))
+            )]
+    
+        # Binning Hardness
         bins = [0,56,58,60,62,88,92,97,100]
         labels = ["<56","56-58","58-60","60-62","62-88","88-92","92-97","≥97"]
         sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
     
-        # ================================
-        # 3️⃣ Lấy giới hạn cơ tính
-        # ================================
-        mech_cols = ["Standard TS min","Standard TS max",
-                     "Standard YS min","Standard YS max",
-                     "Standard EL min","Standard EL max"]
-        sub = sub.dropna(subset=mech_cols)
+            # ================================
+            # 3️⃣ Lấy giới hạn cơ tính
+            # ================================
+            mech_cols = ["Standard TS min","Standard TS max",
+                         "Standard YS min","Standard YS max",
+                         "Standard EL min","Standard EL max"]
+            sub = sub.dropna(subset=mech_cols)
     
         # ================================
         # 4️⃣ Summary thống kê
