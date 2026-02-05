@@ -314,13 +314,34 @@ for _, g in valid.iterrows():
         )
     elif view_mode == "🛠 Hardness → TS/YS/EL":
 
-        sub = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"])
+        # ================================
+        # 1️⃣ Chuẩn bị dữ liệu + loại bỏ GE* <88
+        # ================================
+        sub = sub.dropna(subset=["Hardness_LAB","Hardness_LINE","TS","YS","EL"])
+        # Loại bỏ coil GE* có LAB hoặc LINE <88
+        sub = sub[~(
+            sub["QUALITY_CODE"].str.startswith("GE") &
+            ((sub["Hardness_LAB"] < 88) | (sub["Hardness_LINE"] < 88))
+        )]
+    
+        # ================================
+        # 2️⃣ Binning Hardness
+        # ================================
         bins = [0,56,58,60,62,88,92,97,100]
         labels = ["<56","56-58","58-60","60-62","62-88","88-92","92-97","≥97"]
         sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
-        mech_cols = ["Standard TS min","Standard TS max","Standard YS min","Standard YS max","Standard EL min","Standard EL max"]
+    
+        # ================================
+        # 3️⃣ Lấy giới hạn cơ tính
+        # ================================
+        mech_cols = ["Standard TS min","Standard TS max",
+                     "Standard YS min","Standard YS max",
+                     "Standard EL min","Standard EL max"]
         sub = sub.dropna(subset=mech_cols)
     
+        # ================================
+        # 4️⃣ Summary thống kê
+        # ================================
         summary = (sub.groupby("HRB_bin").agg(
             N_coils=("COIL_NO","count"),
             TS_mean=("TS","mean"), TS_min=("TS","min"), TS_max=("TS","max"),
@@ -330,39 +351,79 @@ for _, g in valid.iterrows():
         ).reset_index())
         summary = summary[summary["N_coils"]>0]
     
+        # ================================
+        # 5️⃣ Vẽ biểu đồ
+        # ================================
         x = np.arange(len(summary))
         fig, ax = plt.subplots(figsize=(16,6))
+    
+        # TS
         ax.plot(x, summary["TS_mean"], marker="o", linewidth=2, markersize=8, label="TS Mean")
         ax.fill_between(x, summary["TS_min"], summary["TS_max"], alpha=0.15)
+    
+        # YS
         ax.plot(x, summary["YS_mean"], marker="s", linewidth=2, markersize=8, label="YS Mean")
         ax.fill_between(x, summary["YS_min"], summary["YS_max"], alpha=0.15)
+    
+        # EL
         ax.plot(x, summary["EL_mean"], marker="^", linewidth=2, markersize=8, label="EL Mean (%)")
         ax.fill_between(x, summary["EL_min"], summary["EL_max"], alpha=0.15)
     
+        # ================================
+        # 6️⃣ Annotation (EL < spec → đỏ + ❌)
+        # ================================
         for idx, row in enumerate(summary.itertuples()):
-            ax.annotate(f"{row.TS_mean:.1f}", (x[idx], row.TS_mean), xytext=(0,12), textcoords="offset points", ha="center", va="bottom", fontsize=10, fontweight="bold")
-            ax.annotate(f"{row.YS_mean:.1f}", (x[idx], row.YS_mean), xytext=(0,-18), textcoords="offset points", ha="center", va="top", fontsize=10, fontweight="bold")
+            # TS
+            ax.annotate(f"{row.TS_mean:.1f}", (x[idx], row.TS_mean),
+                        xytext=(0,12), textcoords="offset points",
+                        ha="center", va="bottom", fontsize=10, fontweight="bold")
+            # YS
+            ax.annotate(f"{row.YS_mean:.1f}", (x[idx], row.YS_mean),
+                        xytext=(0,-18), textcoords="offset points",
+                        ha="center", va="top", fontsize=10, fontweight="bold")
+            # EL
             el_fail = row.EL_mean < row.EL_spec_min
-            ax.annotate(f"{row.EL_mean:.1f}%" + (" ❌" if el_fail else ""), (x[idx], row.EL_mean), xytext=(0,20), textcoords="offset points", ha="center", va="bottom", fontsize=10, fontweight="bold", color="red" if el_fail else None)
+            ax.annotate(f"{row.EL_mean:.1f}%" + (" ❌" if el_fail else ""),
+                        (x[idx], row.EL_mean),
+                        xytext=(0,20), textcoords="offset points",
+                        ha="center", va="bottom", fontsize=10, fontweight="bold",
+                        color="red" if el_fail else None)
     
+        # ================================
+        # 7️⃣ Trục & style
+        # ================================
         ax.set_xticks(x)
         ax.set_xticklabels(summary["HRB_bin"].astype(str), fontweight="bold", fontsize=12)
         ax.set_xlabel("Hardness Range (HRB)", fontsize=12, fontweight="bold")
         ax.set_ylabel("Mechanical Properties (MPa)", fontsize=12, fontweight="bold")
         ax.set_title("Correlation: Hardness vs TS/YS/EL", fontsize=14, fontweight="bold")
+    
+        # Đường phân cách FULL HARD
         if "88-92" in summary["HRB_bin"].astype(str).values:
             idx88 = summary.index[summary["HRB_bin"].astype(str)=="88-92"][0]
             ax.axvline(idx88-0.5, linestyle="--", alpha=0.5)
+    
         ax.legend(loc='upper left', bbox_to_anchor=(1.02,1), fontsize=10)
         ax.grid(True, linestyle='--', alpha=0.5)
         plt.tight_layout()
         st.pyplot(fig)
     
+        # ================================
+        # 8️⃣ Bảng dữ liệu
+        # ================================
         with st.expander("🔹 Mechanical Properties per Hardness Range", expanded=False):
-            st.dataframe(summary.style.format("{:.1f}", subset=summary.columns[2:]), use_container_width=True, height=300)
+            st.dataframe(summary.style.format("{:.1f}", subset=summary.columns[2:]),
+                         use_container_width=True, height=300)
     
+        # ================================
+        # 9️⃣ Download
+        # ================================
         buf = fig_to_png(fig)
-        st.download_button("📥 Download Hardness → TS/YS/EL Chart", data=buf, file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png", mime="image/png")
+        st.download_button("📥 Download Hardness → TS/YS/EL Chart",
+                           data=buf,
+                           file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
+                           mime="image/png")
+    
 
     elif view_mode == "📊 TS/YS/EL Trend & Distribution":
         import re, uuid
