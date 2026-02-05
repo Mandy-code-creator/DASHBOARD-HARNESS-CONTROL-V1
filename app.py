@@ -668,8 +668,8 @@ for _, g in valid.iterrows():
             "- Table shows predicted values for selected LINE Hardness range."
         )
 # ================================
-    elif view_mode == "📊 TS/YS/EL + HRB + N_Coils":
-        st.subheader("Summary: TS/YS/EL + Hardness + Number of Coils")
+    elif view_mode == "📊 Hardness → Mechanical Range":
+        st.subheader("📊 Hardness → Mechanical Range")
     
         # Sidebar filter (nếu muốn)
         quality_list = df["QUALITY_CODE"].unique()
