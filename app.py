@@ -712,218 +712,208 @@ for _, g in valid.iterrows():
             )
 # ================================
 # ================================
-# STREAMLIT PAGE – GRG + TOPSIS CONTROL LIMIT
+# STREAMLIT APP – GRG + TOPSIS CONTROL LIMITS
 # ================================
 import streamlit as st
 import pandas as pd
 import numpy as np
 import requests, re, uuid
-import matplotlib.pyplot as plt
 from io import StringIO, BytesIO
+import matplotlib.pyplot as plt
 
-st.set_page_config(page_title="SPC GRG+TOPSIS Dashboard", layout="wide")
-st.title("📊 SPC Grey Relation + TOPSIS – Control Limit Analysis")
+st.set_page_config(page_title="SPC Hardness – GRG + TOPSIS", layout="wide")
+st.title("📊 SPC Hardness – Grey Relation Grade + TOPSIS Control Limit")
 
-# ================================
+# -----------------------------
 # UTILS
-# ================================
+# -----------------------------
 def fig_to_png(fig):
     buf = BytesIO()
     fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
     buf.seek(0)
     return buf
 
-def parse_range(text):
-    nums = re.findall(r"\d+\.\d+|\d+", str(text))
-    if len(nums) < 2:
-        return None, None
-    return float(nums[0]), float(nums[-1])
+def grey_relation_grade(matrix):
+    """Compute Grey Relation Grade (GRG)"""
+    matrix = np.array(matrix, dtype=float)
+    x_min = matrix.min(axis=0)
+    x_max = matrix.max(axis=0)
+    diff = np.abs(matrix - x_max)
+    delta_min = diff.min()
+    delta_max = diff.max()
+    gr = (delta_min + 0.5*delta_max) / (diff + 0.5*delta_max)
+    return gr.mean(axis=1)
 
-# ================================
-# LOAD MAIN DATA
-# ================================
+def topsis(matrix, weights=None):
+    """Compute TOPSIS score"""
+    matrix = np.array(matrix, dtype=float)
+    if weights is None:
+        weights = np.ones(matrix.shape[1])
+    # normalization
+    norm = matrix / np.sqrt((matrix**2).sum(axis=0))
+    norm = norm * weights
+    ideal_best = norm.max(axis=0)
+    ideal_worst = norm.min(axis=0)
+    d_plus = np.sqrt(((norm - ideal_best)**2).sum(axis=1))
+    d_minus = np.sqrt(((norm - ideal_worst)**2).sum(axis=1))
+    score = d_minus / (d_plus + d_minus)
+    return score
+
+# -----------------------------
+# LOAD DATA
+# -----------------------------
 DATA_URL = "https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
+GAUGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
 
 @st.cache_data
 def load_main():
     r = requests.get(DATA_URL)
     r.encoding = "utf-8"
     df = pd.read_csv(StringIO(r.text))
-    # Chuyển các cột numeric
-    for c in ["Hardness_LAB","Hardness_LINE","TS","YS","EL","Order_Gauge"]:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce")
-    # Chuẩn hóa tên cột
-    df = df.rename(columns={
-        "PRODUCT SPECIFICATION CODE":"Product_Spec",
-        "HR STEEL GRADE":"Material",
-        "Claasify material":"Rolling_Type",
-        "TOP COATMASS":"Top_Coatmass",
-        "ORDER GAUGE":"Order_Gauge",
-        "COIL NO":"COIL_NO",
-        "QUALITY_CODE":"Quality_Code",
-        "Standard Hardness":"Std_Text",
-        "HARDNESS 冶金":"Hardness_LAB",
-        "HARDNESS 鍍鋅線 C":"Hardness_LINE",
-        "TENSILE_YIELD":"YS",
-        "TENSILE_TENSILE":"TS",
-        "TENSILE_ELONG":"EL",
-    })
-    # Split standard hardness
+    df.rename(columns={
+        "PRODUCT SPECIFICATION CODE": "Product_Spec",
+        "HR STEEL GRADE": "Material",
+        "Claasify material": "Rolling_Type",
+        "METALLIC COATING TYPE": "Metallic_Type",
+        "ORDER GAUGE": "Order_Gauge",
+        "QUALITY_CODE": "Quality_Code",
+        "TOP COATMASS": "Top_Coatmass",
+        "Standard Hardness": "Std_Text",
+        "HARDNESS 冶金": "Hardness_LAB",
+        "HARDNESS 鍍鋅線 C": "Hardness_LINE",
+        "TENSILE_YIELD": "YS",
+        "TENSILE_TENSILE": "TS",
+        "TENSILE_ELONG": "EL"
+    }, inplace=True)
+    for c in ["Hardness_LAB","Hardness_LINE","YS","TS","EL","Order_Gauge"]:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    # Standard min/max
     def split_std(x):
         if isinstance(x,str) and "~" in x:
-            lo,hi = x.split("~")
+            lo, hi = x.split("~")
             return float(lo), float(hi)
         return np.nan, np.nan
     df[["Std_Min","Std_Max"]] = df["Std_Text"].apply(lambda x: pd.Series(split_std(x)))
-    # Merge CQ00 + CQ06
+    # Quality Group
     df["Quality_Group"] = df["Quality_Code"].replace({"CQ00":"CQ00 / CQ06","CQ06":"CQ00 / CQ06"})
-    # Loại bỏ GE* < 88
-    if "Quality_Code" in df.columns:
-        df = df[~(df["Quality_Code"].astype(str).str.startswith("GE") &
-                  ((df["Hardness_LAB"]<88)|(df["Hardness_LINE"]<88)))]
+    # Remove GE* <88
+    df = df[~((df["Quality_Code"].astype(str).str.startswith("GE")) & ((df["Hardness_LAB"]<88)|(df["Hardness_LINE"]<88)))]
     return df
-
-df = load_main()
-
-# ================================
-# LOAD GAUGE RANGE
-# ================================
-GAUGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
 
 @st.cache_data
 def load_gauge():
-    gdf = pd.read_csv(GAUGE_URL)
-    gdf.columns = gdf.columns.str.strip()
-    ranges = []
-    gauge_col = next(c for c in gdf.columns if "RANGE" in c.upper())
-    for _, r in gdf.iterrows():
-        lo,hi = parse_range(r[gauge_col])
-        if lo is not None:
-            ranges.append((lo,hi,r[gauge_col]))
-    return ranges
+    df = pd.read_csv(GAUGE_URL)
+    df.columns = df.columns.str.strip()
+    return df
 
-gauge_ranges = load_gauge()
+df = load_main()
+gauge_df = load_gauge()
 
+# Parse gauge range
+def parse_range(text):
+    nums = re.findall(r"\d+\.\d+|\d+", str(text))
+    if len(nums)<2: return None,None
+    return float(nums[0]), float(nums[-1])
+
+ranges = []
+gauge_col = next(c for c in gauge_df.columns if "RANGE" in c.upper())
+for _, r in gauge_df.iterrows():
+    lo, hi = parse_range(r[gauge_col])
+    if lo is not None: ranges.append((lo, hi, r[gauge_col]))
 def map_gauge(val):
-    for lo,hi,name in gauge_ranges:
-        if lo <= val < hi:
-            return name
+    for lo, hi, name in ranges:
+        if lo <= val < hi: return name
     return None
-
 df["Gauge_Range"] = df["Order_Gauge"].apply(map_gauge)
 df = df.dropna(subset=["Gauge_Range"])
 
-# ================================
+# -----------------------------
 # SIDEBAR FILTER
-# ================================
-st.sidebar.header("🎛 FILTER")
+# -----------------------------
 uid = str(uuid.uuid4())
-
 rolling = st.sidebar.radio("Rolling Type", sorted(df["Rolling_Type"].unique()), key=f"rolling_{uid}")
 metal   = st.sidebar.radio("Metallic Type", sorted(df["Metallic_Type"].unique()), key=f"metal_{uid}")
 qgroup  = st.sidebar.radio("Quality Group", sorted(df["Quality_Group"].unique()), key=f"qgroup_{uid}")
+df = df[(df["Rolling_Type"]==rolling)&(df["Metallic_Type"]==metal)&(df["Quality_Group"]==qgroup)]
 
-df_filtered = df[
-    (df["Rolling_Type"]==rolling)&
-    (df["Metallic_Type"]==metal)&
-    (df["Quality_Group"]==qgroup)
-]
+gauge_sel = st.sidebar.selectbox("Gauge Range", sorted(df["Gauge_Range"].unique()), key=f"gauge_{uid}")
+df = df[df["Gauge_Range"]==gauge_sel]
 
-view_mode = st.sidebar.radio("📊 View Mode", ["📋 Data Table","📊 GRG + TOPSIS"], key=f"view_{uid}")
-
-if df_filtered.empty:
-    st.warning("⚠️ No data after filter")
+# -----------------------------
+# CHECK VALID GROUP
+# -----------------------------
+GROUP_COLS = ["Rolling_Type","Metallic_Type","Quality_Group","Gauge_Range","Material"]
+cnt = df.groupby(GROUP_COLS).agg(N_Coils=("COIL_NO","nunique")).reset_index()
+valid = cnt[cnt["N_Coils"]>=5]  # giảm threshold cho test
+if valid.empty:
+    st.warning("⚠️ No group with enough coils")
     st.stop()
 
-# ================================
-# VIEW MODE
-# ================================
-if view_mode=="📋 Data Table":
-    st.dataframe(df_filtered, use_container_width=True)
+# -----------------------------
+# MAIN LOOP
+# -----------------------------
+for _, g in valid.iterrows():
+    sub = df[(df["Rolling_Type"]==g["Rolling_Type"]) &
+             (df["Metallic_Type"]==g["Metallic_Type"]) &
+             (df["Quality_Group"]==g["Quality_Group"]) &
+             (df["Gauge_Range"]==g["Gauge_Range"]) &
+             (df["Material"]==g["Material"])].copy()
+    st.markdown(f"### 🧱 Material: {g['Material']} | Gauge: {g['Gauge_Range']} | Coils: {len(sub)}")
 
-elif view_mode=="📊 GRG + TOPSIS":
-    st.markdown("## 🧮 Grey Relation Grade (GRG) + TOPSIS Control Limit Analysis")
-    
-    # ================================
-    # 1️⃣ Chuẩn bị dữ liệu cho GRG
-    # ================================
-    # Chỉ lấy các cột Hardness + Mechanical Properties
-    df_grg = df_filtered.dropna(subset=["Hardness_LINE","TS","YS","EL"]).copy()
-    if df_grg.empty:
-        st.info("No data for GRG calculation")
-        st.stop()
-    
-    # Chỉ lấy các cột numeric để tính GRG
-    criteria = ["Hardness_LINE","TS","YS","EL"]
-    data_matrix = df_grg[criteria].values.astype(float)
-    
-    # ================================
-    # 2️⃣ Chuẩn hóa dữ liệu (Min-Max)
-    # ================================
-    min_vals = np.min(data_matrix, axis=0)
-    max_vals = np.max(data_matrix, axis=0)
-    norm_matrix = (data_matrix - min_vals)/(max_vals - min_vals + 1e-8)
-    
-    # ================================
-    # 3️⃣ Tính Grey Relation Coefficient (GRC) & Grade (GRG)
-    # ================================
-    ref = np.max(norm_matrix, axis=0)  # Lấy giá trị tốt nhất làm reference
-    diff_matrix = np.abs(ref - norm_matrix)
-    delta_min = np.min(diff_matrix)
-    delta_max = np.max(diff_matrix)
-    rho = 0.5
-    grc = (delta_min + rho*delta_max)/(diff_matrix + rho*delta_max)
-    grg = np.mean(grc, axis=1)
-    
-    df_grg["GRG"] = grg
-    
-    # ================================
-    # 4️⃣ Topsis
-    # ================================
-    # Chỉ tiêu trọng số bằng nhau
-    w = np.ones(len(criteria))/len(criteria)
-    # Chuẩn hóa lại
-    X = norm_matrix
-    X_weighted = X*w
-    # Positive ideal
-    V_pos = np.max(X_weighted, axis=0)
-    V_neg = np.min(X_weighted, axis=0)
-    dist_pos = np.sqrt(np.sum((X_weighted - V_pos)**2, axis=1))
-    dist_neg = np.sqrt(np.sum((X_weighted - V_neg)**2, axis=1))
-    ci = dist_neg/(dist_pos+dist_neg)
-    df_grg["CI"] = ci
-    
-    # ================================
-    # 5️⃣ Hiển thị bảng GRG + CI
-    # ================================
-    st.markdown("### 📋 GRG + TOPSIS Score Table")
-    st.dataframe(df_grg[["COIL_NO","Hardness_LINE","TS","YS","EL","GRG","CI"]].style.format("{:.3f}", subset=["GRG","CI"]), use_container_width=True)
-    
-    # ================================
-    # 6️⃣ Vẽ biểu đồ GRG vs CI
-    # ================================
-    fig, ax = plt.subplots(figsize=(10,5))
-    sc = ax.scatter(df_grg["GRG"], df_grg["CI"], c=df_grg["Hardness_LINE"], cmap="viridis", s=80, edgecolor="k")
-    for i,row in df_grg.iterrows():
-        ax.text(row["GRG"], row["CI"], str(row["COIL_NO"]), fontsize=8, ha="right", va="bottom")
-    ax.set_xlabel("GRG")
-    ax.set_ylabel("TOPSIS CI")
-    ax.set_title("Scatter: GRG vs CI (color = Hardness_LINE)")
-    plt.colorbar(sc, label="Hardness_LINE (HRB)")
-    plt.grid(alpha=0.3)
+    # -----------------------------
+    # GRG + TOPSIS
+    # -----------------------------
+    sub_gr = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"])[["COIL_NO","Hardness_LINE","TS","YS","EL"]].copy()
+    if sub_gr.empty:
+        st.info("No data for GRG + TOPSIS calculation")
+        continue
+
+    # Build matrix: Hardness, TS, YS, EL
+    matrix = sub_gr[["Hardness_LINE","TS","YS","EL"]].values
+    grg_score = grey_relation_grade(matrix)
+    topsis_score = topsis(matrix)
+
+    sub_gr["GRG"] = grg_score
+    sub_gr["TOPSIS"] = topsis_score
+    sub_gr["GFI"] = (grg_score + topsis_score)/2
+
+    # -----------------------------
+    # Show table
+    # -----------------------------
+    st.subheader("📋 GRG + TOPSIS Results per Coil")
+    st.dataframe(sub_gr[["COIL_NO","Hardness_LINE","TS","YS","EL","GRG","TOPSIS","GFI"]].style.format("{:.3f}", subset=["GRG","TOPSIS","GFI"]),
+                 use_container_width=True)
+
+    # -----------------------------
+    # Plot GFI
+    # -----------------------------
+    fig, ax = plt.subplots(figsize=(12,4))
+    ax.plot(sub_gr["COIL_NO"], sub_gr["GFI"], marker="o", linestyle="-", color="#1f77b4")
+    ax.set_xlabel("COIL_NO")
+    ax.set_ylabel("GFI")
+    ax.set_title("GFI Trend per Coil")
+    ax.grid(alpha=0.3, linestyle="--")
     plt.tight_layout()
     st.pyplot(fig)
-    
-    # ================================
-    # 7️⃣ Download CSV + Chart
-    # ================================
-    csv_buf = df_grg.to_csv(index=False).encode("utf-8")
-    st.download_button("📥 Download GRG+TOPSIS CSV", data=csv_buf,
-                       file_name=f"GRG_TOPSIS_{rolling}_{metal}_{qgroup}.csv", mime="text/csv",
-                       key=f"dl_csv_{uid}")
-    
-    png_buf = fig_to_png(fig)
-    st.download_button("📥 Download Scatter Chart", data=png_buf,
-                       file_name=f"GRG_TOPSIS_{rolling}_{metal}_{qgroup}.png", mime="image/png",
-                       key=f"dl_png_{uid}")
+    buf = fig_to_png(fig)
+    st.download_button(label="📥 Download GFI Chart",
+                       data=buf,
+                       file_name=f"GFI_{g['Material']}_{g['Gauge_Range']}.png",
+                       mime="image/png")
+
+    # -----------------------------
+    # Control limits based on GFI
+    # -----------------------------
+    gfi_mean = sub_gr["GFI"].mean()
+    gfi_std  = sub_gr["GFI"].std(ddof=1)
+    lsl = max(0, gfi_mean - 3*gfi_std)
+    usl = min(1, gfi_mean + 3*gfi_std)
+    st.markdown(f"**📌 GFI Control Limit:** LSL={lsl:.3f}, USL={usl:.3f}")
+
+    # Highlight out-of-limit coils
+    out_limit = sub_gr[(sub_gr["GFI"]<lsl)|(sub_gr["GFI"]>usl)]
+    if not out_limit.empty:
+        st.warning(f"⚠️ {len(out_limit)} coils out of control limit")
+        st.dataframe(out_limit[["COIL_NO","GFI"]].style.format("{:.3f}"))
+
+
