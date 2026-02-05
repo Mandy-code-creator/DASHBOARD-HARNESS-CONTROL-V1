@@ -317,6 +317,9 @@ for _, g in valid.iterrows():
         # ================================
         # 1️⃣ Chuẩn bị dữ liệu
         # ================================
+        st.write("Sub size before filter:", sub.shape)
+st.write(sub[["QUALITY_CODE","Hardness_LAB","Hardness_LINE"]].head(10))
+
         sub = sub.dropna(subset=["Hardness_LAB","Hardness_LINE","TS","YS","EL"])
         # ✅ Loại bỏ coil GE* <88 (LAB hoặc LINE) nếu cột QUALITY_CODE tồn tại
     if "QUALITY_CODE" in sub.columns:
@@ -333,7 +336,8 @@ for _, g in valid.iterrows():
             sub["QUALITY_CODE"].str.startswith("GE") &
             ((sub["Hardness_LAB"] < 88) | (sub["Hardness_LINE"] < 88))
         )]
-    
+    st.write("Sub size after GE* filter:", sub.shape)
+
         # ================================
         # 2️⃣ Binning Hardness
         # ================================
