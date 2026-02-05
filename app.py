@@ -714,14 +714,19 @@ for _, g in valid.iterrows():
     elif view_mode == "📊 Hardness → Mechanical Range & Risk":
         st.markdown("## 📊 Hardness → Mechanical Range & Risk Assessment")
     
+        import io
+        import matplotlib.pyplot as plt
+        import numpy as np
+        import pandas as pd
+    
         # --- Nhập khoảng Hardness ---
         col1, col2, col3 = st.columns(3)
         with col1:
-            hrb_min = st.number_input("Min Hardness (HRB)", min_value=0, max_value=120, value=60, step=1, key="risk_hrb_min")
+            hrb_min = st.number_input("Min Hardness (HRB)", min_value=0, max_value=120, value=60, step=1)
         with col2:
-            hrb_max = st.number_input("Max Hardness (HRB)", min_value=0, max_value=120, value=95, step=1, key="risk_hrb_max")
+            hrb_max = st.number_input("Max Hardness (HRB)", min_value=0, max_value=120, value=95, step=1)
         with col3:
-            step = st.number_input("Step (HRB)", min_value=1, max_value=10, value=1, step=1, key="risk_hrb_step")
+            step = st.number_input("Step (HRB)", min_value=1, max_value=10, value=1, step=1)
     
         hrb_values = list(range(hrb_min, hrb_max + 1, step))
     
@@ -741,36 +746,28 @@ for _, g in valid.iterrows():
         risk_table = []
     
         for hrb in hrb_values:
-            # ±1 HRB
             subset = sub_risk[(sub_risk["Hardness_LINE"] >= hrb - 1) & (sub_risk["Hardness_LINE"] <= hrb + 1)]
-    
-            # fallback nearest HRB nếu trống
             if subset.empty:
                 nearest_idx = (sub_risk["Hardness_LINE"] - hrb).abs().idxmin()
                 subset = sub_risk.loc[[nearest_idx]]
     
-            TS_min, TS_max = subset["TS"].min(), subset["TS"].max()
-            YS_min, YS_max = subset["YS"].min(), subset["YS"].max()
-            EL_min, EL_max = subset["EL"].min(), subset["EL"].max()
+            # Tránh NaN
+            TS_min = subset["TS"].min() if not subset["TS"].isna().all() else 0
+            TS_max = subset["TS"].max() if not subset["TS"].isna().all() else 0
+            YS_min = subset["YS"].min() if not subset["YS"].isna().all() else 0
+            YS_max = subset["YS"].max() if not subset["YS"].isna().all() else 0
+            EL_min = subset["EL"].min() if not subset["EL"].isna().all() else 0
+            EL_max = subset["EL"].max() if not subset["EL"].isna().all() else 0
     
-            # --- Fuzzy / Statistical Risk Assessment ---
+            # --- Fuzzy Risk ---
             TS_ng = ((subset["TS"] < subset["Standard TS min"]) | (subset["TS"] > subset["Standard TS max"])).mean()
             YS_ng = ((subset["YS"] < subset["Standard YS min"]) | (subset["YS"] > subset["Standard YS max"])).mean()
             EL_ng = ((subset["EL"] < subset["Standard EL min"]) | (subset["EL"] > subset["Standard EL max"])).mean()
-    
-            # tránh NaN
             TS_ng, YS_ng, EL_ng = np.nan_to_num(TS_ng), np.nan_to_num(YS_ng), np.nan_to_num(EL_ng)
     
-            # Hardness deviation (không dùng trong risk_score hiện)
-            TS_dev = abs(subset["TS"].mean() - (subset["Standard TS min"].mean() + subset["Standard TS max"].mean())/2)
-            YS_dev = abs(subset["YS"].mean() - (subset["Standard YS min"].mean() + subset["Standard YS max"].mean())/2)
-            EL_dev = abs(subset["EL"].mean() - (subset["Standard EL min"].mean() + subset["Standard EL max"].mean())/2)
-    
-            # Quality_Code adjustment
             qc_factor = 0.5 if subset["Quality_Code"].astype(str).str.contains("Full Hard|CQ").any() else 1.0
-    
-            # Fuzzy risk score (0–1)
             risk_score = qc_factor * np.mean([TS_ng, YS_ng, EL_ng])
+    
             if risk_score < 0.05:
                 risk_level = "Low ✅"
             elif risk_score < 0.2:
@@ -802,21 +799,18 @@ for _, g in valid.iterrows():
                 "Risk Score":"{:.2f}"
             }), use_container_width=True)
     
-        # --- Biểu đồ trực quan Fuzzy ---
+        # --- Biểu đồ ---
         fig, ax = plt.subplots(figsize=(14,5))
-        ax.errorbar(risk_df["HRB"], risk_df["TS_min"], yerr=risk_df["TS_max"]-risk_df["TS_min"],
-                    fmt='o', label="TS range", color="#1f77b4", capsize=5)
-        ax.errorbar(risk_df["HRB"], risk_df["YS_min"], yerr=risk_df["YS_max"]-risk_df["YS_min"],
-                    fmt='s', label="YS range", color="#2ca02c", capsize=5)
-        ax.errorbar(risk_df["HRB"], risk_df["EL_min"], yerr=risk_df["EL_max"]-risk_df["EL_min"],
-                    fmt='^', label="EL range (%)", color="#ff7f0e", capsize=5)
+        ax.errorbar(risk_df["HRB"], risk_df["TS_min"], yerr=risk_df["TS_max"]-risk_df["TS_min"], fmt='o', label="TS range", color="#1f77b4", capsize=5)
+        ax.errorbar(risk_df["HRB"], risk_df["YS_min"], yerr=risk_df["YS_max"]-risk_df["YS_min"], fmt='s', label="YS range", color="#2ca02c", capsize=5)
+        ax.errorbar(risk_df["HRB"], risk_df["EL_min"], yerr=risk_df["EL_max"]-risk_df["EL_min"], fmt='^', label="EL range (%)", color="#ff7f0e", capsize=5)
     
-        # Color markers theo Risk Level
+        # Color theo Risk Level
         for idx, row in risk_df.iterrows():
             color = {"Low ✅":"green","Medium ⚠️":"orange","High ❌":"red"}[row["Risk Level"]]
-            ax.scatter(row["HRB"], row["TS_max"], color=color, s=100, marker="X")
-            ax.scatter(row["HRB"], row["YS_max"], color=color, s=100, marker="X")
-            ax.scatter(row["HRB"], row["EL_max"], color=color, s=100, marker="X")
+            ax.scatter(row["HRB"], row["TS_max"], color=color, s=80, marker="X")
+            ax.scatter(row["HRB"], row["YS_max"], color=color, s=80, marker="X")
+            ax.scatter(row["HRB"], row["EL_max"], color=color, s=80, marker="X")
     
         ax.set_xlabel("Hardness (HRB)")
         ax.set_ylabel("Mechanical Properties (MPa / %)")
@@ -826,15 +820,10 @@ for _, g in valid.iterrows():
         plt.tight_layout()
         st.pyplot(fig)
     
-        # --- Download ---
-        import io
-        def fig_to_png(fig):
-            buf = io.BytesIO()
-            fig.savefig(buf, format="png", dpi=200)
-            buf.seek(0)
-            return buf
-    
-        buf = fig_to_png(fig)
+        # --- Download chart ---
+        buf = io.BytesIO()
+        fig.savefig(buf, format="png", dpi=200)
+        buf.seek(0)
         st.download_button(
             "📥 Download Hardness → Mechanical Range & Risk Chart",
             data=buf,
