@@ -577,12 +577,12 @@ for _, g in valid.iterrows():
     
         st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
     
-        # ===== 1️⃣ UID cố định để giữ giá trị nhập =====
+        # ====== 1️⃣ Khởi tạo UID cố định cho widget ======
         if "predict_uid" not in st.session_state:
             st.session_state.predict_uid = str(uuid.uuid4())
         uid = st.session_state.predict_uid
     
-        # ===== 2️⃣ Chọn kiểu dự báo =====
+        # ====== 2️⃣ Chọn kiểu dự báo ======
         pred_type = st.radio(
             "Select input type for prediction:",
             ["Single Value", "Range"],
@@ -615,77 +615,65 @@ for _, g in valid.iterrows():
             )
             hrb_values = list(np.arange(hrb_min, hrb_max + 0.01, step))
     
-        # ===== 3️⃣ Chuẩn bị dữ liệu =====
+        # ====== 3️⃣ Chuẩn bị dữ liệu ======
         sub_fit = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"]).copy()
         N_coils = len(sub_fit)
         if N_coils < 5:
             st.warning(f"⚠️ Not enough data to perform prediction (N={N_coils})")
             st.stop()
     
-        # ===== 4️⃣ Fit linear model TS/YS/EL =====
+        # ====== 4️⃣ Fit linear model TS/YS/EL ======
         pred_values = {}
         for prop in ["TS","YS","EL"]:
             x = sub_fit["Hardness_LINE"].values
             y = sub_fit[prop].values
-            a,b = np.polyfit(x, y, 1)
+            a, b = np.polyfit(x, y, 1)
             pred_values[prop] = a * np.array(hrb_values) + b
     
-        # ===== 5️⃣ Vẽ trend với Plotly =====
+        # ====== 5️⃣ Vẽ Plotly interactive chart ======
         fig = go.Figure()
     
+        # Observed values
         coils = np.arange(1, N_coils+1)
-    
-        # Observed
-        for prop, color, marker, unit in [("TS","#1f77b4","circle","MPa"),
-                                           ("YS","#2ca02c","square","MPa"),
-                                           ("EL","#ff7f0e","diamond","%")]:
+        for prop, color, unit in [("TS","#1f77b4","MPa"),
+                                   ("YS","#2ca02c","MPa"),
+                                   ("EL","#ff7f0e","%")]:
             fig.add_trace(go.Scatter(
                 x=coils,
                 y=sub_fit[prop],
-                mode='markers+lines',
+                mode='lines+markers',
                 name=f"{prop} Observed",
-                marker=dict(symbol=marker, size=10, color=color),
-                hovertemplate=f"Coil %{{x}}<br>{prop}: %{{y:.1f}} {unit}<extra></extra>"
-
+                marker=dict(symbol="circle", size=8, color=color),
+                line=dict(width=2),
+                hovertemplate=f"Coil %{x}<br>{prop}: %{y:.1f} {unit}<extra></extra>"
             ))
     
-        # Predicted
+        # Predicted values
+        pred_x = [coils[-1] + 1 + i for i in range(len(hrb_values))]
         for prop, color, unit in [("TS","#1f77b4","MPa"),
-                                  ("YS","#2ca02c","MPa"),
-                                  ("EL","#ff7f0e","%")]:
-            pred = pred_values[prop]
-            pred_x = [coils[-1] + 1 + i for i in range(len(pred))]
+                                   ("YS","#2ca02c","MPa"),
+                                   ("EL","#ff7f0e","%")]:
             fig.add_trace(go.Scatter(
                 x=pred_x,
-                y=pred,
-                mode='markers',
-                marker=dict(symbol='x', color='red', size=12),
-                name=f"{prop} Predicted ({unit})",
-                hovertemplate=f"Coil %{{x}}<br>{prop}: %{{y:.1f}} {unit}<extra></extra>"
+                y=pred_values[prop],
+                mode='markers+lines',
+                name=f"{prop} Predicted",
+                marker=dict(symbol="x", size=12, color="red"),
+                line=dict(dash='dot', color="red", width=2),
+                hovertemplate=f"Predicted {prop}: %{y:.1f} {unit}<extra></extra>"
             ))
-            # nối cuối quan sát → dự báo
-            for j in range(len(pred)):
-                fig.add_trace(go.Scatter(
-                    x=[coils[-1], pred_x[j]],
-                    y=[sub_fit[prop].values[-1], pred[j]],
-                    mode='lines',
-                    line=dict(color='red', width=2, dash='dot'),
-                    showlegend=False,
-                    hoverinfo='skip'
-                ))
     
         fig.update_layout(
             title="Trend: Observed TS/YS/EL with Predicted Hardness",
             xaxis_title="Coil Sequence",
             yaxis_title="Mechanical Properties (TS/YS in MPa, EL in %)",
-            legend=dict(y=0.5, x=1.02),
-            hovermode="closest",
-            width=900, height=500
+            legend=dict(x=1.02, y=0.5),
+            margin=dict(l=50, r=150, t=50, b=50),
+            hovermode="closest"
         )
-    
         st.plotly_chart(fig, use_container_width=True)
     
-        # ===== 6️⃣ Bảng dự báo =====
+        # ====== 6️⃣ Bảng dự báo ======
         pred_table = pd.DataFrame({"HRB": [round(h,1) for h in hrb_values]})
         for prop in ["TS","YS","EL"]:
             pred_table[prop] = pred_values[prop]
@@ -694,14 +682,14 @@ for _, g in valid.iterrows():
             st.dataframe(pred_table.style.format("{:.1f}", subset=["TS","YS","EL"]),
                          use_container_width=True)
     
-        # ===== 7️⃣ Ghi chú =====
+        # ====== 7️⃣ Ghi chú ======
         st.markdown("### 📌 Notes")
         st.markdown(
             "- Red 'X' markers indicate predicted values for custom hardness.\n"
             "- Dashed lines connect last observed coil to predicted values.\n"
             "- EL unit is **%**, TS/YS units are **MPa**.\n"
             "- Table shows predicted values for selected LINE Hardness range.\n"
-            "- Hover on points to see Coil sequence and property values."
+            "- Hover over points to see Coil and TS/YS/EL values."
         )
 
     elif view_mode == "📊 Hardness → Mechanical Range":
