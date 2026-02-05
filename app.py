@@ -669,111 +669,51 @@ for _, g in valid.iterrows():
         )
 import streamlit as st
 import pandas as pd
-import numpy as np
-import requests
-from io import StringIO
 
-st.set_page_config(page_title="Hard Bin Mapping", layout="wide")
 st.title("📊 Hard Bin Mapping → Mechanical Properties Summary")
 
-# ================================
-# LOAD MAIN DATA
-# ================================
+# --- Load data ---
 DATA_URL = "https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
 GAUGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
-SPEC_URL = "https://docs.google.com/spreadsheets/d/YOUR_SPEC_SHEET_ID/export?format=csv"
+
 
 @st.cache_data
 def load_csv(url):
-    r = requests.get(url)
-    r.encoding = "utf-8"
-    return pd.read_csv(StringIO(r.text))
+    return pd.read_csv(url)
 
 df = load_csv(DATA_URL)
 gauge_df = load_csv(GAUGE_URL)
 spec_sheet = load_csv(SPEC_URL)
 
-# ================================
-# CLEAN COLUMN NAMES
-# ================================
-df.columns = df.columns.str.strip()
-gauge_df.columns = gauge_df.columns.str.strip()
-spec_sheet.columns = spec_sheet.columns.str.strip()
-
-# ================================
-# MAP GAUGE RANGE
-# ================================
-import re
-ranges = []
-gauge_col = next(c for c in gauge_df.columns if "RANGE" in c.upper())
-for _, r in gauge_df.iterrows():
-    nums = re.findall(r"\d+\.\d+|\d+", str(r[gauge_col]))
-    if len(nums)>=2:
-        ranges.append((float(nums[0]), float(nums[-1]), r[gauge_col]))
-
+# --- Map gauge range ---
 def map_gauge(val):
-    for lo, hi, name in ranges:
-        if lo <= val < hi:
-            return name
+    for _, row in gauge_df.iterrows():
+        parts = str(row['GAUGE_RANGE']).split("≤")
+        if len(parts) == 2:
+            low = float(parts[0])
+            high = float(parts[1])
+            if low <= val < high:
+                return row['GAUGE_RANGE']
     return None
 
-df["Gauge_Range"] = df["ORDER GAUGE"].apply(map_gauge)
-df = df.dropna(subset=["Gauge_Range"])
+df['Gauge_Range'] = df['ORDER GAUGE'].apply(map_gauge)
+df = df.dropna(subset=['Gauge_Range'])
 
-# ================================
-# SPLIT STANDARD HARDNESS
-# ================================
-def split_std(x):
-    if isinstance(x,str) and "~" in x:
-        lo, hi = x.split("~")
-        return float(lo), float(hi)
-    return np.nan, np.nan
+# --- Extract Standard Hardness Min/Max ---
+df[['Std_Min','Std_Max']] = df['Standard Hardness'].str.split("~", expand=True).astype(float)
 
-df[["Std_Min","Std_Max"]] = df["Standard Hardness"].apply(lambda x: pd.Series(split_std(x)))
-
-# ================================
-# GROUP BY Product Spec + Gauge Range
-# ================================
-summary_hard = df.groupby(["PRODUCT SPECIFICATION CODE","Gauge_Range"]).agg(
-    N_coils=("COIL NO","nunique"),
-    Std_Min=("Std_Min","first"),
-    Std_Max=("Std_Max","first"),
-    Hardness_MIN=("Hardness_LAB","min"),
-    Hardness_MAX=("Hardness_LAB","max")
+# --- Group by Product Spec + Gauge Range ---
+summary = df.groupby(['PRODUCT SPECIFICATION CODE','Gauge_Range']).agg(
+    Std_Min=('Std_Min','min'),
+    Std_Max=('Std_Max','max')
 ).reset_index()
 
-# ================================
-# MAP MECHANICAL PROPERTIES FROM SPEC SHEET
-# ================================
-def map_mech(row):
-    spec_match = spec_sheet[
-        (spec_sheet["PRODUCT SPECIFICATION CODE"] == row["PRODUCT SPECIFICATION CODE"]) &
-        (spec_sheet["ORDER GAUGE_MIN"] <= row["Std_Min"]) &
-        (row["Std_Max"] <= spec_sheet["ORDER GAUGE_MAX"]) &
-        (spec_sheet["Hardness_MIN"] <= row["Std_Min"]) &
-        (row["Std_Max"] <= spec_sheet["Hardness_MAX"])
-    ]
-    if not spec_match.empty:
-        return pd.Series({
-            "TS_min": spec_match["TS_MIN"].min(),
-            "TS_max": spec_match["TS_MAX"].max(),
-            "YS_min": spec_match["YS_MIN"].min(),
-            "YS_max": spec_match["YS_MAX"].max(),
-            "EL_min": spec_match["EL_MIN"].min(),
-            "EL_max": spec_match["EL_MAX"].max()
-        })
-    else:
-        return pd.Series({
-            "TS_min": np.nan, "TS_max": np.nan,
-            "YS_min": np.nan, "YS_max": np.nan,
-            "EL_min": np.nan, "EL_max": np.nan
-        })
+# --- Merge với Spec Sheet để lấy TS/YS/EL ---
+summary = summary.merge(
+    spec_sheet[['PRODUCT SPECIFICATION CODE','TS_MIN','TS_MAX','YS_MIN','YS_MAX','EL_MIN','EL_MAX']],
+    on='PRODUCT SPECIFICATION CODE',
+    how='left'
+)
 
-summary_hard = pd.concat([summary_hard, summary_hard.apply(map_mech, axis=1)], axis=1)
-
-# ================================
-# DISPLAY TABLE
-# ================================
-st.dataframe(summary_hard.style.format("{:.1f}", subset=["Std_Min","Std_Max","Hardness_MIN","Hardness_MAX",
-                                                         "TS_min","TS_max","YS_min","YS_max","EL_min","EL_max"]),
-             use_container_width=True, height=600)
+# --- Display ---
+st.dataframe(summary, use_container_width=True)
