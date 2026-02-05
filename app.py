@@ -569,16 +569,18 @@ for _, g in valid.iterrows():
                     f"**📌 Quick Conclusion:** HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | " +
                     " | ".join(conclusion)
                 )
-    # ================================
+   # ================================
     elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
         import uuid
     
         st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
     
-        # --- Tạo uuid để tránh Duplicate Key ---
-        uid = str(uuid.uuid4())
+        # ====== 1️⃣ Tạo UID cố định để giữ giá trị nhập ======
+        if "predict_uid" not in st.session_state:
+            st.session_state.predict_uid = str(uuid.uuid4())
+        uid = st.session_state.predict_uid
     
-        # --- Chọn kiểu dự báo ---
+        # ====== 2️⃣ Chọn kiểu dự báo ======
         pred_type = st.radio(
             "Select input type for prediction:",
             ["Single Value", "Range"],
@@ -611,38 +613,43 @@ for _, g in valid.iterrows():
             )
             hrb_values = list(np.arange(hrb_min, hrb_max + 0.01, step))
     
-        # --- Chuẩn bị dữ liệu ---
+        # ====== 3️⃣ Chuẩn bị dữ liệu ======
         sub_fit = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"]).copy()
         N_coils = len(sub_fit)
         if N_coils < 5:
             st.warning(f"⚠️ Not enough data to perform prediction (N={N_coils})")
             st.stop()
     
-        # --- Fit linear model TS/YS/EL ---
+        # ====== 4️⃣ Fit linear model TS/YS/EL ======
         pred_values = {}
         for prop in ["TS","YS","EL"]:
             x = sub_fit["Hardness_LINE"].values
             y = sub_fit[prop].values
-            a,b = np.polyfit(x,y,1)
+            a, b = np.polyfit(x, y, 1)
             pred_values[prop] = a * np.array(hrb_values) + b
     
-        # --- Vẽ trend + marker dự báo ---
+        # ====== 5️⃣ Vẽ trend + marker dự báo ======
         fig, ax = plt.subplots(figsize=(14,5))
         coils = np.arange(1, N_coils+1)
     
+        # Observed
         for prop, color, marker, unit in [("TS","#1f77b4","o","MPa"),
                                            ("YS","#2ca02c","s","MPa"),
                                            ("EL","#ff7f0e","^","%")]:
             vals = sub_fit[prop].values
             ax.plot(coils, vals, marker=marker, color=color, label=f"{prop} Observed")
     
-            # predicted marker
+        # Predicted
+        for prop, color, unit in [("TS","#1f77b4","MPa"),
+                                  ("YS","#2ca02c","MPa"),
+                                  ("EL","#ff7f0e","%")]:
             pred = pred_values[prop]
             pred_x = [coils[-1] + 1 + i for i in range(len(pred))]
             ax.scatter(pred_x, pred, color="red", s=100, marker="X", label=f"{prop} Predicted ({unit})")
-            # connect last observed to predicted
+            # nối cuối quan sát → dự báo
             for j in range(len(pred)):
-                ax.plot([coils[-1], pred_x[j]], [vals[-1], pred[j]], linestyle=":", color="red", linewidth=2)
+                ax.plot([coils[-1], pred_x[j]], [sub_fit[prop].values[-1], pred[j]],
+                        linestyle=":", color="red", linewidth=2)
     
         ax.set_xlabel("Coil Sequence")
         ax.set_ylabel("Mechanical Properties (TS/YS in MPa, EL in %)")
@@ -652,21 +659,24 @@ for _, g in valid.iterrows():
         plt.tight_layout()
         st.pyplot(fig)
     
-        # --- Bảng dự báo thu gọn bằng expander ---
-        pred_table = pd.DataFrame({"HRB": [int(round(h)) for h in hrb_values]})
+        # ====== 6️⃣ Bảng dự báo ======
+        pred_table = pd.DataFrame({"HRB": [round(h,1) for h in hrb_values]})
         for prop in ["TS","YS","EL"]:
             pred_table[prop] = pred_values[prop]
     
         with st.expander("📋 Predicted Mechanical Properties (click to expand)", expanded=True):
-            st.dataframe(pred_table.style.format("{:.1f}", subset=["TS","YS","EL"]), use_container_width=True)
+            st.dataframe(pred_table.style.format("{:.1f}", subset=["TS","YS","EL"]),
+                         use_container_width=True)
     
+        # ====== 7️⃣ Ghi chú ======
         st.markdown("### 📌 Notes")
         st.markdown(
-            "- Red 'X' markers on trend indicate predicted values for custom hardness.\n"
+            "- Red 'X' markers indicate predicted values for custom hardness.\n"
             "- Dashed lines connect last observed coil to predicted values.\n"
             "- EL unit is **%**, TS/YS units are **MPa**.\n"
             "- Table shows predicted values for selected LINE Hardness range."
         )
+
     elif view_mode == "📊 Hardness → Mechanical Range":
         st.markdown("## 📊 Hardness → Mechanical Properties Range")
     
