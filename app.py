@@ -712,9 +712,8 @@ for _, g in valid.iterrows():
             )
 # ================================
 # ================================
-# STREAMLIT PAGE: GRG + TOPSIS CONTROL LIMIT
+# STREAMLIT PAGE – GRG + TOPSIS CONTROL LIMIT
 # ================================
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -725,18 +724,11 @@ import matplotlib.pyplot as plt
 # ================================
 # PAGE CONFIG
 # ================================
-st.set_page_config(page_title="SPC Hardness Control – GRG + TOPSIS", layout="wide")
-st.title("📊 GRG + TOPSIS – Control Limit Analysis")
+st.set_page_config(page_title="GRG + TOPSIS Hardness Control", layout="wide")
+st.title("🧮 GRG + TOPSIS – Hardness Control Limit Analysis")
 
 # ================================
-# REFRESH DATA
-# ================================
-if st.sidebar.button("🔄 Refresh Data"):
-    st.cache_data.clear()
-    st.rerun()
-
-# ================================
-# UTIL FUNCTIONS
+# UTILS
 # ================================
 def fig_to_png(fig):
     buf = BytesIO()
@@ -744,57 +736,42 @@ def fig_to_png(fig):
     buf.seek(0)
     return buf
 
-def parse_range(text):
-    nums = re.findall(r"\d+\.?\d*", str(text))
-    if len(nums) < 2:
-        return None, None
-    return float(nums[0]), float(nums[-1])
-
 # ================================
 # LOAD DATA
 # ================================
 DATA_URL = "https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
-GAUGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
 
 @st.cache_data
-def load_data():
+def load_main():
     r = requests.get(DATA_URL)
     r.encoding = "utf-8"
-    df = pd.read_csv(StringIO(r.text))
-    g = pd.read_csv(GAUGE_URL)
-    g.columns = g.columns.str.strip()
-    return df, g
+    return pd.read_csv(StringIO(r.text))
 
-df_raw, gauge_df = load_data()
-
-# ================================
-# UID for unique widget keys
-# ================================
-uid = str(uuid.uuid4())
+df = load_main()
 
 # ================================
 # RENAME COLUMNS & FORCE NUMERIC
 # ================================
-df = df_raw.rename(columns={
+df = df.rename(columns={
     "PRODUCT SPECIFICATION CODE": "Product_Spec",
     "HR STEEL GRADE": "Material",
     "Claasify material": "Rolling_Type",
     "ORDER GAUGE": "Order_Gauge",
-    "QUALITY_CODE": "Quality_Code",
-    "Standard Hardness": "Std_Text",
     "HARDNESS 冶金": "Hardness_LAB",
     "HARDNESS 鍍鋅線 C": "Hardness_LINE",
-    "TENSILE_YIELD": "YS",
-    "TENSILE_TENSILE": "TS",
-    "TENSILE_ELONG": "EL",
-    "METALLIC COATING TYPE": "Metallic_Type"
+    "TENSILE_YIELD":"YS",
+    "TENSILE_TENSILE":"TS",
+    "TENSILE_ELONG":"EL",
+    "QUALITY_CODE":"Quality_Code",
+    "METALLIC COATING TYPE":"Metallic_Type",
+    "Standard Hardness":"Std_Text"
 })
 
 for c in ["Hardness_LAB","Hardness_LINE","YS","TS","EL","Order_Gauge"]:
     df[c] = pd.to_numeric(df[c], errors="coerce")
 
 # ================================
-# SPLIT STANDARD HARDNESS
+# Standard Hardness Min/Max
 # ================================
 def split_std(x):
     if isinstance(x,str) and "~" in x:
@@ -805,18 +782,34 @@ def split_std(x):
 df[["Std_Min","Std_Max"]] = df["Std_Text"].apply(lambda x: pd.Series(split_std(x)))
 
 # ================================
-# MERGE CQ00 + CQ06
+# FILTER GE* <88
 # ================================
-df["Quality_Group"] = df["Quality_Code"].replace({"CQ00":"CQ00 / CQ06","CQ06":"CQ00 / CQ06"})
+df = df[~((df["Quality_Code"].astype(str).str.startswith("GE")) & ((df["Hardness_LAB"]<88) | (df["Hardness_LINE"]<88)))]
 
 # ================================
-# MAP ORDER GAUGE TO RANGE
+# LOAD GAUGE RANGE
 # ================================
+GAUGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
+
+@st.cache_data
+def load_gauge():
+    gdf = pd.read_csv(GAUGE_URL)
+    gdf.columns = gdf.columns.str.strip()
+    return gdf
+
+gauge_df = load_gauge()
+gauge_col = next(c for c in gauge_df.columns if "RANGE" in c.upper())
+
+def parse_range(text):
+    nums = re.findall(r"\d+\.\d+|\d+", str(text))
+    if len(nums)<2: return None,None
+    return float(nums[0]), float(nums[-1])
+
 ranges = []
 for _, r in gauge_df.iterrows():
-    lo, hi = parse_range(r[gauge_df.columns[0]])
+    lo, hi = parse_range(r[gauge_col])
     if lo is not None:
-        ranges.append((lo, hi, r[gauge_df.columns[0]]))
+        ranges.append((lo, hi, r[gauge_col]))
 
 def map_gauge(val):
     for lo, hi, name in ranges:
@@ -830,88 +823,88 @@ df = df.dropna(subset=["Gauge_Range"])
 # ================================
 # SIDEBAR FILTER
 # ================================
+uid = str(uuid.uuid4())
 st.sidebar.header("🎛 FILTER")
 rolling = st.sidebar.radio("Rolling Type", sorted(df["Rolling_Type"].unique()), key=f"rolling_{uid}")
 metal   = st.sidebar.radio("Metallic Type", sorted(df["Metallic_Type"].unique()), key=f"metal_{uid}")
-qgroup  = st.sidebar.radio("Quality Group", sorted(df["Quality_Group"].unique()), key=f"qgroup_{uid}")
+qgroup  = st.sidebar.radio("Quality Group", sorted(df["Quality_Code"].unique()), key=f"qgroup_{uid}")
+gauge   = st.sidebar.radio("Gauge Range", sorted(df["Gauge_Range"].unique()), key=f"gauge_{uid}")
 
-df_filtered = df[
-    (df["Rolling_Type"] == rolling) &
-    (df["Metallic_Type"] == metal) &
-    (df["Quality_Group"] == qgroup)
+sub = df[
+    (df["Rolling_Type"]==rolling) &
+    (df["Metallic_Type"]==metal) &
+    (df["Quality_Code"]==qgroup) &
+    (df["Gauge_Range"]==gauge)
 ]
 
-# Loại bỏ GE* < 88
-df_filtered = df_filtered[~(
-    df_filtered["Quality_Code"].astype(str).str.startswith("GE") &
-    ((df_filtered["Hardness_LINE"] < 88) | (df_filtered["Hardness_LAB"] < 88))
-)]
+if sub.empty:
+    st.warning("⚠️ No data after filter")
+    st.stop()
 
+# ================================
 # ================================
 # GRG + TOPSIS
 # ================================
-if df_filtered.empty:
-    st.warning("⚠️ No data available after filtering.")
+st.markdown("## ⚙️ GRG + TOPSIS Hardness Control")
+
+# --- Chuẩn bị dữ liệu ---
+data_mat = sub[["Hardness_LAB","Hardness_LINE","TS","YS","EL"]].dropna()
+if data_mat.empty:
+    st.info("No data available for GRG/TOPSIS computation")
     st.stop()
 
-st.subheader("📊 GRG + TOPSIS Analysis")
+# --- 1️⃣ Normalization for GRG ---
+X = data_mat.values.astype(float)
+# Normalize: min-max for benefit criteria (TS,YS,EL), Hardness is cost criterion
+X_norm = np.zeros_like(X)
+for j in range(X.shape[1]):
+    col = X[:,j]
+    if j < 2:  # Hardness → cost
+        X_norm[:,j] = (col.min() - col)/(col.max() - col.min())
+    else:       # TS/YS/EL → benefit
+        X_norm[:,j] = (col - col.min())/(col.max() - col.min())
 
-# Chuẩn bị dữ liệu cho GRG: Hardness_LINE → TS, YS, EL
-X = df_filtered[["TS","YS","EL"]].copy()
-ref = df_filtered["Hardness_LINE"]
+# --- 2️⃣ Grey Relation Grade (GRG) ---
+# Reference sequence: max of benefit, min of cost
+ref = np.array([X[:,0].min(), X[:,1].min(), X[:,2].max(), X[:,3].max(), X[:,4].max()])
+delta = np.abs(X_norm - ref)
+delta_min = delta.min()
+delta_max = delta.max()
+rho = 0.5
+GRG = (delta_min + rho*delta_max)/(delta + rho*delta_max)
+GRG_score = GRG.mean(axis=1)
 
-# Normalize (0-1) cho GRG
-X_norm = (X - X.min()) / (X.max() - X.min())
-ref_norm = (ref - ref.min()) / (ref.max() - ref.min())
-
-# Tính GRG
-grg_list = []
-for i in range(len(X_norm)):
-    diff = abs(X_norm.iloc[i] - ref_norm.iloc[i])
-    grg = (diff.max() + 0.5*diff.min()) / (diff + 0.5*diff.min())
-    grg_list.append(grg.mean())
-df_filtered["GRG"] = grg_list
-
-# TOPSIS
-# 1. normalize
-X_topsis = X.values.astype(float)
-X_norm_topsis = X_topsis / np.sqrt((X_topsis**2).sum(axis=0))
-# 2. weights (tự đặt đều)
-w = np.array([1/3,1/3,1/3])
-X_weighted = X_norm_topsis * w
-# 3. ideal best/worst
-ideal_best = X_weighted.max(axis=0)
-ideal_worst = X_weighted.min(axis=0)
-# 4. khoảng cách
-dist_best = np.sqrt(((X_weighted - ideal_best)**2).sum(axis=1))
-dist_worst = np.sqrt(((X_weighted - ideal_worst)**2).sum(axis=1))
-df_filtered["Topsis_Score"] = dist_worst / (dist_best + dist_worst)
+# --- 3️⃣ TOPSIS ---
+# Distance to ideal
+ideal_best = X_norm.max(axis=0)
+ideal_worst = X_norm.min(axis=0)
+dist_best = np.sqrt(np.sum((X_norm - ideal_best)**2, axis=1))
+dist_worst = np.sqrt(np.sum((X_norm - ideal_worst)**2, axis=1))
+GFI = dist_worst / (dist_best + dist_worst)
 
 # ================================
-# Hiển thị bảng kết quả
+# Display table + plot
 # ================================
-st.markdown("### 🔹 Result Table")
-st.dataframe(df_filtered[["COIL_NO","Order_Gauge","Hardness_LINE","TS","YS","EL","GRG","Topsis_Score"]], use_container_width=True)
+result = data_mat.copy()
+result["GRG"] = GRG_score
+result["GFI"] = GFI
 
-# ================================
-# Biểu đồ GRG & TOPSIS
-# ================================
-fig, ax = plt.subplots(figsize=(12,5))
-ax.plot(df_filtered["COIL_NO"], df_filtered["GRG"], marker='o', label="GRG")
-ax.plot(df_filtered["COIL_NO"], df_filtered["Topsis_Score"], marker='s', label="TOPSIS Score")
-ax.set_xlabel("COIL_NO")
-ax.set_ylabel("Score")
-ax.set_title("GRG & TOPSIS Score by Coil")
-ax.grid(True, linestyle='--', alpha=0.3)
-ax.legend()
+st.markdown("### 🔹 GRG + GFI Table")
+st.dataframe(result.style.format("{:.3f}", subset=["GRG","GFI"]), use_container_width=True)
+
+# --- Plot GFI distribution ---
+fig, ax = plt.subplots(figsize=(10,4))
+ax.hist(result["GFI"], bins=15, alpha=0.6, edgecolor="black", color="#1f77b4")
+ax.set_title("GFI Distribution")
+ax.set_xlabel("GFI Score")
+ax.set_ylabel("Count")
 plt.tight_layout()
 st.pyplot(fig)
-
-# ================================
-# Download
-# ================================
 buf = fig_to_png(fig)
-st.download_button("📥 Download GRG+TOPSIS Chart", data=buf, file_name="grg_topsis_chart.png", mime="image/png")
+st.download_button("📥 Download GFI Distribution Chart", data=buf,
+                   file_name=f"GFI_distribution_{uid}.png", mime="image/png")
 
-csv_buf = df_filtered.to_csv(index=False).encode('utf-8')
-st.download_button("📥 Download Result Table", data=csv_buf, file_name="grg_topsis_result.csv", mime="text/csv")
+# --- Download table ---
+csv_buf = result.to_csv(index=False).encode("utf-8")
+st.download_button("📥 Download GRG + GFI Table", data=csv_buf,
+                   file_name=f"GRG_GFI_table_{uid}.csv", mime="text/csv")
