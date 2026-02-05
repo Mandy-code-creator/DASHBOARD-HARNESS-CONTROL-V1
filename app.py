@@ -668,55 +668,45 @@ for _, g in valid.iterrows():
             "- Table shows predicted values for selected LINE Hardness range."
         )
     elif view_mode == "📊 Hardness → Mechanical Range":
-        st.markdown("## 📊 Mechanical Properties Range by Hardness Interval")
+        st.markdown("## 📊 Hardness → Mechanical Properties Range")
     
-        # ===== Sidebar input =====
-        hrb_min = st.sidebar.number_input(
-            "Minimum Hardness (HRB):", min_value=0, max_value=120, value=88, step=1,
-            key="range_hrb_min"
-        )
-        hrb_max = st.sidebar.number_input(
-            "Maximum Hardness (HRB):", min_value=0, max_value=120, value=92, step=1,
-            key="range_hrb_max"
-        )
-    
-        if hrb_min > hrb_max:
-            st.warning("⚠️ Minimum Hardness cannot be greater than Maximum Hardness")
+        # 1️⃣ Chuẩn bị dữ liệu
+        sub_stats = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+        if sub_stats.empty:
+            st.info("No data available for Hardness → Mechanical Range")
             st.stop()
     
-        # ===== Filter dữ liệu hiện tại =====
-        sub_range = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"]).copy()
-        sub_range = sub_range[(sub_range["Hardness_LINE"] >= hrb_min) &
-                              (sub_range["Hardness_LINE"] <= hrb_max)]
+        # 2️⃣ Tạo bảng thống kê theo Hardness LINE rounded
+        sub_stats["HRB_round"] = sub_stats["Hardness_LINE"].round(0).astype(int)
     
-        if sub_range.empty:
-            st.info(f"No data found for Hardness range {hrb_min}-{hrb_max} HRB")
-            st.stop()
-    
-        # ===== Tính toán min/max/mean =====
-        summary = pd.DataFrame({
-            "Hardness Min": [int(sub_range["Hardness_LINE"].min())],
-            "Hardness Max": [int(sub_range["Hardness_LINE"].max())],
-            "TS Min (MPa)": [sub_range["TS"].min()],
-            "TS Max (MPa)": [sub_range["TS"].max()],
-            "YS Min (MPa)": [sub_range["YS"].min()],
-            "YS Max (MPa)": [sub_range["YS"].max()],
-            "EL Min (%)": [sub_range["EL"].min()],
-            "EL Max (%)": [sub_range["EL"].max()],
-            "TS Mean (MPa)": [sub_range["TS"].mean()],
-            "YS Mean (MPa)": [sub_range["YS"].mean()],
-            "EL Mean (%)": [sub_range["EL"].mean()],
-            "N Coils": [len(sub_range)]
-        })
-    
-        st.markdown(f"### Hardness interval: {hrb_min} – {hrb_max} HRB")
-        st.dataframe(summary.style.format("{:.1f}", subset=summary.columns[2:]), use_container_width=True)
-    
-        st.markdown("### ℹ️ Notes")
-        st.markdown(
-            "- Values are based on **existing data**.\n"
-            "- Hardness values rounded to integers.\n"
-            "- TS/YS in MPa, EL in %.\n"
-            "- Min/Max show the observed range; Mean shows average of selected coils.\n"
-            "- N Coils: number of coils in this hardness interval."
+        summary_range = (
+            sub_stats.groupby("HRB_round").agg(
+                N_coils=("COIL_NO", "count"),
+                TS_min=("TS", "min"), TS_max=("TS", "max"), TS_mean=("TS","mean"),
+                YS_min=("YS", "min"), YS_max=("YS", "max"), YS_mean=("YS","mean"),
+                EL_min=("EL", "min"), EL_max=("EL", "max"), EL_mean=("EL","mean")
+            )
+            .reset_index()
+            .sort_values("HRB_round")
         )
+    
+        if summary_range.empty:
+            st.info("No data found for current Hardness values")
+        else:
+            # 3️⃣ Hiển thị bảng gọn
+            st.dataframe(
+                summary_range.style.format({
+                    "TS_min":"{:.1f}", "TS_max":"{:.1f}", "TS_mean":"{:.1f}",
+                    "YS_min":"{:.1f}", "YS_max":"{:.1f}", "YS_mean":"{:.1f}",
+                    "EL_min":"{:.1f}", "EL_max":"{:.1f}", "EL_mean":"{:.1f}"
+                }),
+                use_container_width=True,
+                height=400
+            )
+    
+            # 4️⃣ Thêm note
+            st.markdown(
+                "- HRB values rounded to nearest integer.\n"
+                "- TS/YS in MPa, EL in %.\n"
+                "- N_coils = số lượng coil trong mỗi Hardness."
+            )
