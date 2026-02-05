@@ -726,15 +726,14 @@ for _, g in valid.iterrows():
         hrb_values = list(range(hrb_min, hrb_max + 1, step))
     
         # --- Chuẩn bị dữ liệu ---
-        # Lấy toàn bộ dữ liệu hợp lệ, không filter sidebar
         sub_risk = df.dropna(subset=["Hardness_LINE","TS","YS","EL","Quality_Code"]).copy()
-        
+    
         # Loại bỏ GE* <88
         sub_risk = sub_risk[~(
             sub_risk["Quality_Code"].astype(str).str.startswith("GE") &
             ((sub_risk["Hardness_LAB"] < 88) | (sub_risk["Hardness_LINE"] < 88))
         )]
-
+    
         if sub_risk.empty:
             st.warning("⚠️ No data available for mechanical property calculation.")
             st.stop()
@@ -742,12 +741,11 @@ for _, g in valid.iterrows():
         risk_table = []
     
         for hrb in hrb_values:
-            # Chọn tất cả coils trong khoảng ±0.5 HRB
-            # Chọn tất cả coils trong khoảng ±1 HRB
+            # ±1 HRB
             subset = sub_risk[(sub_risk["Hardness_LINE"] >= hrb - 1) & (sub_risk["Hardness_LINE"] <= hrb + 1)]
-            
-            # fallback nếu vẫn trống: lấy nearest HRB
-            if subset.empty and not sub_risk.empty:
+    
+            # fallback nearest HRB nếu trống
+            if subset.empty:
                 nearest_idx = (sub_risk["Hardness_LINE"] - hrb).abs().idxmin()
                 subset = sub_risk.loc[[nearest_idx]]
     
@@ -756,18 +754,20 @@ for _, g in valid.iterrows():
             EL_min, EL_max = subset["EL"].min(), subset["EL"].max()
     
             # --- Fuzzy / Statistical Risk Assessment ---
-            # 1. % cuộn ngoài spec
             TS_ng = ((subset["TS"] < subset["Standard TS min"]) | (subset["TS"] > subset["Standard TS max"])).mean()
             YS_ng = ((subset["YS"] < subset["Standard YS min"]) | (subset["YS"] > subset["Standard YS max"])).mean()
             EL_ng = ((subset["EL"] < subset["Standard EL min"]) | (subset["EL"] > subset["Standard EL max"])).mean()
     
-            # 2. Hardness deviation (HRB vs spec midpoint)
+            # tránh NaN
+            TS_ng, YS_ng, EL_ng = np.nan_to_num(TS_ng), np.nan_to_num(YS_ng), np.nan_to_num(EL_ng)
+    
+            # Hardness deviation (không dùng trong risk_score hiện)
             TS_dev = abs(subset["TS"].mean() - (subset["Standard TS min"].mean() + subset["Standard TS max"].mean())/2)
             YS_dev = abs(subset["YS"].mean() - (subset["Standard YS min"].mean() + subset["Standard YS max"].mean())/2)
             EL_dev = abs(subset["EL"].mean() - (subset["Standard EL min"].mean() + subset["Standard EL max"].mean())/2)
     
-            # 3. Quality_Code adjustment
-            qc_factor = 0.5 if "Full Hard" in subset["Quality_Code"].values or "CQ" in subset["Quality_Code"].values else 1.0
+            # Quality_Code adjustment
+            qc_factor = 0.5 if subset["Quality_Code"].astype(str).str.contains("Full Hard|CQ").any() else 1.0
     
             # Fuzzy risk score (0–1)
             risk_score = qc_factor * np.mean([TS_ng, YS_ng, EL_ng])
@@ -793,7 +793,7 @@ for _, g in valid.iterrows():
     
         risk_df = pd.DataFrame(risk_table)
     
-        # --- Hiển thị bảng (có thể thu gọn) ---
+        # --- Hiển thị bảng ---
         with st.expander(f"📋 Mechanical Range & Risk Table ({hrb_min}-{hrb_max} HRB)", expanded=True):
             st.dataframe(risk_df.style.format({
                 "TS_min":"{:.1f}", "TS_max":"{:.1f}",
@@ -827,8 +827,17 @@ for _, g in valid.iterrows():
         st.pyplot(fig)
     
         # --- Download ---
+        import io
+        def fig_to_png(fig):
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=200)
+            buf.seek(0)
+            return buf
+    
         buf = fig_to_png(fig)
-        st.download_button("📥 Download Hardness → Mechanical Range & Risk Chart",
-                           data=buf,
-                           file_name=f"Hardness_Mechanical_Range_Risk_{hrb_min}_{hrb_max}.png",
-                           mime="image/png")
+        st.download_button(
+            "📥 Download Hardness → Mechanical Range & Risk Chart",
+            data=buf,
+            file_name=f"Hardness_Mechanical_Range_Risk_{hrb_min}_{hrb_max}.png",
+            mime="image/png"
+        )
