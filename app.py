@@ -645,7 +645,8 @@ for _, g in valid.iterrows():
                 mode='markers+lines',
                 name=f"{prop} Observed",
                 marker=dict(symbol=marker, size=10, color=color),
-                hovertemplate=f"Coil %{x}<br>{prop}: %{y:.1f} {unit}<extra></extra>"
+                hovertemplate=f"Coil %{{x}}<br>{prop}: %{{y:.1f}} {unit}<extra></extra>"
+
             ))
     
         # Predicted
@@ -660,7 +661,7 @@ for _, g in valid.iterrows():
                 mode='markers',
                 marker=dict(symbol='x', color='red', size=12),
                 name=f"{prop} Predicted ({unit})",
-                hovertemplate=f"Predicted HRB %{x}<br>{prop}: %{y:.1f} {unit}<extra></extra>"
+                hovertemplate=f"Coil %{{x}}<br>{prop}: %{{y:.1f}} {unit}<extra></extra>"
             ))
             # nối cuối quan sát → dự báo
             for j in range(len(pred)):
