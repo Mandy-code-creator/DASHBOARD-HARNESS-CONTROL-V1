@@ -667,25 +667,35 @@ for _, g in valid.iterrows():
             "- EL unit is **%**, TS/YS units are **MPa**.\n"
             "- Table shows predicted values for selected LINE Hardness range."
         )
-    elif view_mode == "📊 Hardness → Mechanical Range":
+   elif view_mode == "📊 Hardness → Mechanical Range":
         st.markdown("## 📊 Summary: Hardness Bin Mapping → Mechanical Properties")
     
-        # 1️⃣ Chuẩn bị dữ liệu và kiểm tra các cột cần thiết
-        # Sử dụng cột Gauge_Range_Group mà chúng ta đã mapping từ bảng Google Sheet trước đó
-        cols_to_check = ["Hardness_LINE", "TS", "YS", "EL", "Product_Spec", "Gauge_Range_Group", "Std_Min", "Std_Max"]
-        sub_stats = sub.dropna(subset=[c for c in cols_to_check if c in sub.columns]).copy()
+        # 1. Kiểm tra danh sách cột thực tế đang có trong dữ liệu
+        actual_columns = sub.columns.tolist()
         
-        if sub_stats.empty:
-            st.info("⚠️ Không có dữ liệu để hiển thị bảng Summary.")
+        # 2. Định nghĩa các cột mục tiêu (đảm bảo khớp với mapping ở phần trước)
+        target_group_cols = ["Product_Spec", "Gauge_Range_Group", "Std_Hardness_Range"]
+        
+        # Kiểm tra xem có cột nào bị thiếu không
+        missing_cols = [c for c in target_group_cols if c not in actual_columns]
+        
+        if missing_cols:
+            st.error(f"❌ Lỗi hệ thống: Thiếu các cột sau trong dữ liệu: {missing_cols}")
+            st.info("💡 Mẹo: Kiểm tra xem bạn đã chạy bước Mapping Độ dày và Tách dải Hardness chưa.")
             st.stop()
     
-        # 2️⃣ Tạo cột hiển thị dải Hardness tiêu chuẩn (ví dụ: 58-65)
-        sub_stats["Std_Hardness_Range"] = sub_stats["Std_Min"].astype(str) + " ~ " + sub_stats["Std_Max"].astype(str)
+        # 3. Chuẩn bị dữ liệu sạch
+        # Đảm bảo các cột số tồn tại
+        mech_cols = ["TS", "YS", "EL", "Hardness_LINE"]
+        sub_stats = sub.dropna(subset=[c for c in mech_cols if c in actual_columns]).copy()
     
-        # 3️⃣ Gom nhóm theo Spec, Gauge Range và Standard Hardness
-        # Đây là logic để gộp các cuộn có cùng điều kiện lại với nhau
+        if sub_stats.empty:
+            st.warning("⚠️ Không có dữ liệu hợp lệ để hiển thị bảng Summary.")
+            st.stop()
+    
+        # 4. Thực hiện Groupby (Đã đảm bảo có đủ cột)
         summary_range = (
-            sub_stats.groupby(["Product_Spec", "Gauge_Range_Group", "Std_Hardness_Range"])
+            sub_stats.groupby(target_group_cols)
             .agg(
                 N_coils=("COIL_NO", "count"),
                 TS_min=("TS", "min"), TS_max=("TS", "max"), TS_mean=("TS", "mean"),
@@ -695,188 +705,12 @@ for _, g in valid.iterrows():
             .reset_index()
         )
     
-        if summary_range.empty:
-            st.info("⚠️ Không tìm thấy dữ liệu phù hợp với các nhóm Hardness.")
-        else:
-            # 4️⃣ Hiển thị bảng Summary Data theo yêu cầu của sếp
-            st.markdown("### 📋 Bảng tổng hợp theo Hard Bin Mapping")
-            
-            # Format bảng để hiển thị đẹp hơn
-            formatted_summary = summary_range.rename(columns={
-                "Product_Spec": "SPEC CODE",
-                "Gauge_Range_Group": "ORDER GAUGE RANGE",
-                "Std_Hardness_Range": "STD HARDNESS (Min~Max)",
-                "N_coils": "Số Coil"
-            })
-    
-            st.dataframe(
-                formatted_summary.style.format({
-                    "TS_min": "{:.1f}", "TS_max": "{:.1f}", "TS_mean": "{:.1f}",
-                    "YS_min": "{:.1f}", "YS_max": "{:.1f}", "YS_mean": "{:.1f}",
-                    "EL_min": "{:.1f}", "EL_max": "{:.1f}", "EL_mean": "{:.1f}"
-                }),
-                use_container_width=True,
-                height=500
-            )
-    
-            # 5️⃣ Ghi chú kỹ thuật cho bảng
-            st.info(
-                f"**Ghi chú:**\n"
-                f"- Bảng trên tự động gom nhóm các Coil dựa trên mã sản phẩm và khoảng độ dày.\n"
-                f"- Khoảng độ dày đang áp dụng logic: {selected_group} (ví dụ $0.28 \le T < 0.35$).\n"
-                f"- Dữ liệu cơ tính được lấy từ kết quả đo thực tế của các cuộn trong nhóm."
-            )
-    
-            # 6️⃣ Nút tải dữ liệu Summary
-            csv = summary_range.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                "📥 Tải bảng Summary (CSV)",
-                csv,
-                "Hardness_Mechanical_Summary.csv",
-                "text/csv",
-                key='download-summary'
-            )
-# ================================
-
-import streamlit as st
-import pandas as pd
-import numpy as np
-from io import BytesIO
-import matplotlib.pyplot as plt
-
-# =======================
-# CONFIG
-# =======================
-st.set_page_config(page_title="Dynamic Hardness Control", layout="wide")
-
-# =======================
-# LOAD DATA FROM GOOGLE SHEET
-# =======================
-SHEET_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv&gid=0"
-
-@st.cache_data
-def load_data(url):
-    df = pd.read_csv(url)
-    # remove rows GE with HARDNESS < 88
-    df = df[~((df['HR STEEL GRADE'] == 'GE') & (df['HARDNESS 冶金'] < 88))]
-    return df
-
-df = load_data(SHEET_URL)
-
-# =======================
-# SIDEBAR FILTERS
-# =======================
-uid = np.random.randint(0, 10000)  # unique key to prevent duplicate IDs
-
-rolling = st.sidebar.selectbox(
-    "Rolling Type", sorted(df["LINE"].unique()), key=f"rolling_{uid}"
-)
-metal = st.sidebar.selectbox(
-    "Metallic Type", sorted(df["METALLIC COATING TYPE"].unique()), key=f"metal_{uid}"
-)
-quality = st.sidebar.selectbox(
-    "Quality Group", sorted(df["QUALITY_CODE"].unique()), key=f"quality_{uid}"
-)
-
-# Order Gauge filter by interval
-min_gauge = int(df["ORDER GAUGE"].min())
-max_gauge = int(df["ORDER GAUGE"].max())
-gauge_range = st.sidebar.slider(
-    "Order Gauge Range",
-    min_value=min_gauge,
-    max_value=max_gauge,
-    value=(min_gauge, max_gauge),
-    step=1,
-    key=f"gauge_{uid}"
-)
-
-# =======================
-# FILTER DATA
-# =======================
-filtered = df[
-    (df["LINE"] == rolling)
-    & (df["METALLIC COATING TYPE"] == metal)
-    & (df["QUALITY_CODE"] == quality)
-    & (df["ORDER GAUGE"].between(gauge_range[0], gauge_range[1]))
-].copy()
-
-st.write(f"### Filtered Data ({len(filtered)} rows)")
-st.dataframe(filtered)
-
-# =======================
-# GRAY RELATION GRADE (GRG) + TOPSIS
-# =======================
-def gray_relation_grade(df, cols):
-    # Normalize
-    X = df[cols].copy()
-    X_norm = (X - X.min()) / (X.max() - X.min())
-    # Reference sequence is max
-    ref = X_norm.max()
-    # Calculate GRG
-    diff = abs(ref - X_norm)
-    min_diff = diff.min().min()
-    max_diff = diff.max().max()
-    grg = (min_diff + 0.5 * max_diff) / (diff + 0.5 * max_diff)
-    df['GRG'] = grg.mean(axis=1)
-    return df
-
-def topsis(df, cols):
-    # Normalize
-    X = df[cols].values
-    X_norm = X / np.sqrt((X ** 2).sum(axis=0))
-    # Weights equal
-    w = np.ones(X.shape[1]) / X.shape[1]
-    X_w = X_norm * w
-    # Ideal best/worst
-    ideal_best = X_w.max(axis=0)
-    ideal_worst = X_w.min(axis=0)
-    # Distance
-    D_plus = np.sqrt(((X_w - ideal_best) ** 2).sum(axis=1))
-    D_minus = np.sqrt(((X_w - ideal_worst) ** 2).sum(axis=1))
-    # Score
-    score = D_minus / (D_plus + D_minus)
-    df['TOPSIS'] = score
-    return df
-
-metric_cols = ['HARDNESS 冶金', 'HARDNESS 鍍鋅線 N', 'HARDNESS 鍍鋅線 C', 'HARDNESS 鍍鋅線 S', 
-               'TENSILE_YIELD', 'TENSILE_TENSILE', 'TENSILE_ELONG']
-
-if not filtered.empty:
-    filtered = gray_relation_grade(filtered, metric_cols)
-    filtered = topsis(filtered, metric_cols)
-
-# =======================
-# TABLE
-# =======================
-st.write("### Result Table")
-st.dataframe(filtered)
-
-# Download CSV
-def convert_df_to_csv(df):
-    return df.to_csv(index=False).encode('utf-8')
-
-st.download_button(
-    "Download CSV",
-    data=convert_df_to_csv(filtered),
-    file_name="filtered_result.csv",
-    mime="text/csv",
-    key=f"download_{uid}"
-)
-
-# =======================
-# PLOT
-# =======================
-st.write("### Metrics Plot")
-if not filtered.empty:
-    fig, ax = plt.subplots(figsize=(12,5))
-    for col, color in zip(metric_cols, ['#1f77b4','#ff7f0e','#2ca02c','#d62728','#9467bd','#8c564b','#e377c2']):
-        if col in filtered.columns:
-            ax.plot(filtered['COIL_NO'], filtered[col], marker='o', color=color, label=col)
-    ax.set_xlabel("COIL_NO")
-    ax.set_ylabel("Metric Value")
-    ax.legend()
-    ax.grid(True)
-    st.pyplot(fig)
-else:
-    st.info("No data to plot. Adjust filters.")
-
+        # 5. Hiển thị bảng
+        st.dataframe(
+            summary_range.style.format({
+                "TS_min": "{:.1f}", "TS_max": "{:.1f}", "TS_mean": "{:.1f}",
+                "YS_min": "{:.1f}", "YS_max": "{:.1f}", "YS_mean": "{:.1f}",
+                "EL_min": "{:.1f}", "EL_max": "{:.1f}", "EL_mean": "{:.1f}"
+            }),
+            use_container_width=True
+        )
