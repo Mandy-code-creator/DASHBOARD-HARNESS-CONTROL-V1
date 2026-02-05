@@ -570,27 +570,25 @@ for _, g in valid.iterrows():
                 )
     # ================================
     elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
-        import uuid
-    
-        st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
-    
-        # --- Tạo uuid để tránh Duplicate Key ---
-        uid = str(uuid.uuid4())
-    
+       st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
+
         # --- Chọn kiểu dự báo ---
         pred_type = st.radio(
             "Select input type for prediction:",
             ["Single Value", "Range"],
-            key=f"predict_type_{uid}"
+            key="predict_type"  # key cố định
         )
-    
+        
         if pred_type == "Single Value":
             user_hrb = st.number_input(
                 "Enter desired LINE Hardness (HRB):",
-                min_value=0.0, max_value=120.0, value=90.0, step=0.1,
-                key=f"predict_hrb_single_{uid}"
+                min_value=0.0, max_value=120.0,
+                value=90.0,  # mặc định có thể đổi nếu muốn
+                step=0.1,
+                key="predict_hrb_single"  # key cố định, không dùng uuid
             )
             hrb_values = [user_hrb]
+
     
         else:
             hrb_min = st.number_input(
