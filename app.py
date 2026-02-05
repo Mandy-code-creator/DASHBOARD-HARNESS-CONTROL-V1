@@ -153,12 +153,28 @@ df["Gauge_Range"] = df["Order_Gauge"].apply(map_gauge)
 df = df.dropna(subset=["Gauge_Range"])
 
 # ================================
-# SIDEBAR FILTER
+# ================================
+# SIDEBAR FILTER (FIXED – NO DUPLICATE ID)
 # ================================
 st.sidebar.header("🎛 FILTER")
-rolling = st.sidebar.radio("Rolling Type", sorted(df["Rolling_Type"].unique()))
-metal   = st.sidebar.radio("Metallic Type", sorted(df["Metallic_Type"].unique()))
-qgroup  = st.sidebar.radio("Quality Group", sorted(df["Quality_Group"].unique()))
+
+rolling = st.sidebar.radio(
+    "Rolling Type",
+    sorted(df["Rolling_Type"].unique()),
+    key="filter_rolling_type"
+)
+
+metal = st.sidebar.radio(
+    "Metallic Type",
+    sorted(df["Metallic_Type"].unique()),
+    key="filter_metallic_type"
+)
+
+qgroup = st.sidebar.radio(
+    "Quality Group",
+    sorted(df["Quality_Group"].unique()),
+    key="filter_quality_group"
+)
 
 df = df[
     (df["Rolling_Type"] == rolling) &
@@ -178,10 +194,13 @@ view_mode = st.sidebar.radio(
         "📊 Hardness → Mechanical Range",
         "📊 Hardness → Mechanical Range & Risk"
     ],
-     key="view_mode_main"
+    key="view_mode_main"
 )
 
-with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
+with st.sidebar.expander(
+    "💡 About 95% Confidence Interval (CI)",
+    expanded=False
+):
     st.markdown(
         """
         - The shaded area around the predicted line represents the **95% Confidence Interval (CI)**.
