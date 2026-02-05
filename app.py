@@ -651,13 +651,13 @@ for _, g in valid.iterrows():
         plt.tight_layout()
         st.pyplot(fig)
     
-        # --- Ghi chú & bảng dự báo ngoài chart ---
-        pred_table = pd.DataFrame({"HRB": hrb_values})
+        # --- Bảng dự báo thu gọn bằng expander ---
+        pred_table = pd.DataFrame({"HRB": [int(round(h)) for h in hrb_values]})
         for prop in ["TS","YS","EL"]:
             pred_table[prop] = pred_values[prop]
     
-        st.markdown("### 📋 Predicted Mechanical Properties")
-        st.dataframe(pred_table.style.format("{:.1f}", subset=["TS","YS","EL"]), use_container_width=True)
+        with st.expander("📋 Predicted Mechanical Properties (click to expand)", expanded=True):
+            st.dataframe(pred_table.style.format("{:.1f}", subset=["TS","YS","EL"]), use_container_width=True)
     
         st.markdown("### 📌 Notes")
         st.markdown(
