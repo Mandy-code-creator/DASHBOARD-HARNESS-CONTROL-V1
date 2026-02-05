@@ -318,7 +318,13 @@ for _, g in valid.iterrows():
         # 1️⃣ Chuẩn bị dữ liệu
         # ================================
         sub = sub.dropna(subset=["Hardness_LAB","Hardness_LINE","TS","YS","EL"])
-    
+        # ✅ Loại bỏ coil GE* <88 (LAB hoặc LINE) nếu cột QUALITY_CODE tồn tại
+    if "QUALITY_CODE" in sub.columns:
+        sub = sub[~(
+            sub["QUALITY_CODE"].astype(str).str.startswith("GE") &
+            ((sub["Hardness_LAB"] < 88) | (sub["Hardness_LINE"] < 88))
+        )]
+
         # đảm bảo QUALITY_CODE là string để dùng str.startswith()
         sub["QUALITY_CODE"] = sub["QUALITY_CODE"].astype(str)
     
