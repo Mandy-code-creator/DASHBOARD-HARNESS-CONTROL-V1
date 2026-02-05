@@ -668,9 +668,9 @@ for _, g in valid.iterrows():
             "- Table shows predicted values for selected LINE Hardness range."
         )
    elif view_mode == "📊 Hardness → Mechanical Range":
-        st.markdown("## 📊 Summary: Hardness Bin Mapping → Mechanical Properties")
+       st.markdown("## 📊 Summary: Hardness Bin Mapping → Mechanical Properties")
     
-        # 1. Kiểm tra danh sách cột thực tế đang có trong dữ liệu
+       # 1. Kiểm tra danh sách cột thực tế đang có trong dữ liệu
         actual_columns = sub.columns.tolist()
         
         # 2. Định nghĩa các cột mục tiêu (đảm bảo khớp với mapping ở phần trước)
