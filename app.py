@@ -3,6 +3,7 @@
 # CQ00 + CQ06 MERGED
 # PRODUCT SPEC MERGED IN SAME GAUGE RANGE
 # TREND + DISTRIBUTION VIEW SEPARATE
+# GE* <88 FILTERED
 # ================================
 
 import streamlit as st
@@ -109,6 +110,15 @@ df["Quality_Group"] = df["Quality_Code"].replace({
 })
 
 # ================================
+# LOẠI BỎ GE* <88 NGAY TỪ ĐẦU
+# ================================
+if "Quality_Code" in df.columns:
+    df = df[~(
+        df["Quality_Code"].astype(str).str.startswith("GE") &
+        ((df["Hardness_LAB"] < 88) | (df["Hardness_LINE"] < 88))
+    )]
+
+# ================================
 # LOAD GAUGE RANGE TABLE
 # ================================
 GAUGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
@@ -155,6 +165,7 @@ df = df[
     (df["Metallic_Type"] == metal) &
     (df["Quality_Group"] == qgroup)
 ]
+
 view_mode = st.sidebar.radio(
     "📊 View Mode",
     [
@@ -163,25 +174,24 @@ view_mode = st.sidebar.radio(
         "📊 Distribution (LAB + LINE)",
         "🛠 Hardness → TS/YS/EL",
         "📊 TS/YS/EL Trend & Distribution",
-        "🧮 Predict TS/YS/EL"  # <-- view mới thêm ở đây
+        "🧮 Predict TS/YS/EL"
     ]
 )
-# ----- Sidebar note: CI explanation (once)
+
 with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
     st.markdown(
-                """
-    - The shaded area around the predicted line represents the **95% Confidence Interval (CI)**.
-    - It means that **approximately 95% of future observations are expected to fall within this range** if the linear model is valid.
-    - Narrow CI → high precision; wide CI → higher uncertainty.
-    - This note is **shown once** for clarity and can be collapsed.
-    """
-            )
+        """
+        - The shaded area around the predicted line represents the **95% Confidence Interval (CI)**.
+        - It means that **approximately 95% of future observations are expected to fall within this range** if the linear model is valid.
+        - Narrow CI → high precision; wide CI → higher uncertainty.
+        - This note is **shown once** for clarity and can be collapsed.
+        """
+    )
 
 # ================================
 # GROUP CONDITION
 # ================================
 GROUP_COLS = ["Rolling_Type","Metallic_Type","Quality_Group","Gauge_Range","Material"]
-
 cnt = df.groupby(GROUP_COLS).agg(N_Coils=("COIL_NO","nunique")).reset_index()
 valid = cnt[cnt["N_Coils"] >= 30]
 if valid.empty:
@@ -204,40 +214,9 @@ for _, g in valid.iterrows():
     sub["NG_LAB"]  = (sub["Hardness_LAB"] < lo) | (sub["Hardness_LAB"] > hi)
     sub["NG_LINE"] = (sub["Hardness_LINE"] < lo) | (sub["Hardness_LINE"] > hi)
     sub["NG"] = sub["NG_LAB"] | sub["NG_LINE"]
-
     qa = "FAIL" if sub["NG"].any() else "PASS"
     specs = ", ".join(sorted(sub["Product_Spec"].unique()))
-    sub = df[
-        (df["Rolling_Type"] == g["Rolling_Type"]) &
-        (df["Metallic_Type"] == g["Metallic_Type"]) &
-        (df["Quality_Group"] == g["Quality_Group"]) &
-        (df["Gauge_Range"] == g["Gauge_Range"]) &
-        (df["Material"] == g["Material"])
-    ].sort_values("COIL_NO")
 
-# ================================
-# LOẠI BỎ GE* <88 NGAY TỪ ĐẦU
-# ================================
-if "Quality_Code" in sub.columns:
-    sub = sub[~(
-        sub["Quality_Code"].astype(str).str.startswith("GE") &
-        ((sub["Hardness_LAB"] < 88) | (sub["Hardness_LINE"] < 88))
-    )]
-
-# ================================
-# TIẾP TỤC TÍNH LO/HI, NG, QA
-# ================================
-if sub.empty:
-    st.warning("⚠️ All coils filtered out (GE* <88)")
-    continue
-
-    lo, hi = sub.iloc[0][["Std_Min","Std_Max"]]
-    sub["NG_LAB"]  = (sub["Hardness_LAB"] < lo) | (sub["Hardness_LAB"] > hi)
-    sub["NG_LINE"] = (sub["Hardness_LINE"] < lo) | (sub["Hardness_LINE"] > hi)
-    sub["NG"] = sub["NG_LAB"] | sub["NG_LINE"]
-    qa = "FAIL" if sub["NG"].any() else "PASS"
-    specs = ", ".join(sorted(sub["Product_Spec"].unique()))
-    
     st.markdown(
         f"""
 ### 🧱 Quality Group: {g['Quality_Group']}
@@ -247,15 +226,15 @@ if sub.empty:
 **Coils:** {sub['COIL_NO'].nunique()} | **QA:** 🧪 **{qa}**  
 **Hardness Limit (HRB):** {lo:.1f} ~ {hi:.1f}
 """
-)
+    )
 
     # ================================
     # VIEW MODE SWITCH
     # ================================
-if view_mode == "📋 Data Table":
+    if view_mode == "📋 Data Table":
         st.dataframe(sub, use_container_width=True)
 
-elif view_mode == "📈 Trend (LAB / LINE)":
+    elif view_mode == "📈 Trend (LAB / LINE)":
         x = np.arange(1, len(sub)+1)
         fig, ax = plt.subplots(figsize=(8,4))
         ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB")
@@ -269,15 +248,15 @@ elif view_mode == "📈 Trend (LAB / LINE)":
         ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
         plt.tight_layout()
         st.pyplot(fig)
-        # ==== DOWNLOAD BUTTON ====
         buf = fig_to_png(fig)
         st.download_button(
-           label="📥 Download Trend Chart",
-           data=buf,
-           file_name=f"trend_{g['Material']}_{g['Gauge_Range']}.png",
-           mime="image/png"
+            label="📥 Download Trend Chart",
+            data=buf,
+            file_name=f"trend_{g['Material']}_{g['Gauge_Range']}.png",
+            mime="image/png"
         )
-elif view_mode == "📊 Distribution (LAB + LINE)":
+
+    elif view_mode == "📊 Distribution (LAB + LINE)":
         lab = sub["Hardness_LAB"].dropna()
         line = sub["Hardness_LINE"].dropna()
         if len(lab) >= 10 and len(line) >= 10:
@@ -287,62 +266,48 @@ elif view_mode == "📊 Distribution (LAB + LINE)":
             x_max = max(mean_lab + 3*std_lab, mean_line + 3*std_line)
             bins = np.linspace(x_min, x_max, 25)
             fig, ax = plt.subplots(figsize=(8,4.5))
-    
-            # ---- histogram
             ax.hist(lab, bins=bins, density=True, alpha=0.4, color="#1f77b4", edgecolor="black", label="LAB")
             ax.hist(line, bins=bins, density=True, alpha=0.4, color="#ff7f0e", edgecolor="black", label="LINE")
-    
-            # ---- normal curves
             xs = np.linspace(x_min, x_max, 400)
             ys_lab = (1/(std_lab*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_lab)/std_lab)**2)
             ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
             ax.plot(xs, ys_lab, linewidth=2.5, label="LAB Normal (±3σ)", color="#1f77b4")
             ax.plot(xs, ys_line, linewidth=2.5, linestyle="--", label="LINE Normal (±3σ)", color="#ff7f0e")
-    
-            # ---- spec limits
             ax.axvline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
             ax.axvline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
-    
-            # ---- mean lines
             ax.axvline(mean_lab, linestyle=":", linewidth=2, color="#0b3d91", label=f"LAB Mean {mean_lab:.2f}")
             ax.axvline(mean_line, linestyle=":", linewidth=2, color="#b25e00", label=f"LINE Mean {mean_line:.2f}")
-    
-            # ---- Ca, Cp, Cpk
-            target = (hi + lo)/2
-            ca_lab = abs(mean_lab - target)/((hi-lo)/2)
-            ca_line = abs(mean_line - target)/((hi-lo)/2)
-            cp_lab = (hi - lo)/(6*std_lab)
-            cp_line = (hi - lo)/(6*std_line)
-            cpk_lab = min((hi-mean_lab)/(3*std_lab), (mean_lab-lo)/(3*std_lab))
-            cpk_line = min((hi-mean_line)/(3*std_line), (mean_line-lo)/(3*std_line))
-    
-            # ---- note box
             note = (
                 f"LAB:\n  N={len(lab)}  Mean={mean_lab:.2f}  Std={std_lab:.2f}\n"
-                f"  Ca={ca_lab:.2f}  Cp={cp_lab:.2f}  Cpk={cpk_lab:.2f}\n\n"
+                f"  Ca={abs(mean_lab-(hi+lo)/2)/((hi-lo)/2):.2f}  Cp={(hi-lo)/(6*std_lab):.2f}  Cpk={min((hi-mean_lab)/(3*std_lab),(mean_lab-lo)/(3*std_lab)):.2f}\n\n"
                 f"LINE:\n  N={len(line)}  Mean={mean_line:.2f}  Std={std_line:.2f}\n"
-                f"  Ca={ca_line:.2f}  Cp={cp_line:.2f}  Cpk={cpk_line:.2f}"
+                f"  Ca={abs(mean_line-(hi+lo)/2)/((hi-lo)/2):.2f}  Cp={(hi-lo)/(6*std_line):.2f}  Cpk={min((hi-mean_line)/(3*std_line),(mean_line-lo)/(3*std_line)):.2f}"
             )
             ax.text(1.02, 0.4, note, transform=ax.transAxes, va="center",
                     bbox=dict(boxstyle="round,pad=0.4", facecolor="white", alpha=0.2, edgecolor="gray"))
-    
-            # ---- style
             ax.set_title("Hardness Distribution – LAB vs LINE (3σ)", weight="bold")
             ax.set_xlabel("Hardness (HRB)")
             ax.set_ylabel("Density")
             ax.grid(alpha=0.3)
             ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.85), frameon=False)
-        plt.tight_layout()
-        st.pyplot(fig)
-        # ==== DOWNLOAD BUTTON ====
-        buf = fig_to_png(fig)
-        st.download_button(
-           label="📥 Download Distribution Chart",
-           data=buf,
-           file_name=f"distribution_{g['Material']}_{g['Gauge_Range']}.png",
-           mime="image/png"
-        )
-elif view_mode == "🛠 Hardness → TS/YS/EL":
+            plt.tight_layout()
+            st.pyplot(fig)
+            buf = fig_to_png(fig)
+            st.download_button(
+               label="📥 Download Distribution Chart",
+               data=buf,
+               file_name=f"distribution_{g['Material']}_{g['Gauge_Range']}.png",
+               mime="image/png"
+            )
+
+# ================================
+# (Các view còn lại như Hardness → TS/YS/EL, TS/YS/EL Trend & Distribution, Predict TS/YS/EL)
+# ================================
+# Mình giữ nguyên code của bạn, chỉ fix indentation + GE<88 filter
+# ================================
+
+
+    elif view_mode == "🛠 Hardness → TS/YS/EL":
 
         # ================================
         # 1️⃣ Chuẩn bị dữ liệu
@@ -456,7 +421,7 @@ elif view_mode == "🛠 Hardness → TS/YS/EL":
                            file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
                            mime="image/png")
 
-elif view_mode == "📊 TS/YS/EL Trend & Distribution":
+    elif view_mode == "📊 TS/YS/EL Trend & Distribution":
         import re, uuid
     
         # ===== 1️⃣ Binning Hardness
@@ -576,7 +541,7 @@ elif view_mode == "📊 TS/YS/EL Trend & Distribution":
                     f"**📌 Quick Conclusion:** HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | " +
                     " | ".join(conclusion)
                 )
-elif view_mode == "🧮 Predict TS/YS/EL":
+    elif view_mode == "🧮 Predict TS/YS/EL":
         
         # ----- Use LINE hardness as predictor
         sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
