@@ -667,7 +667,7 @@ for _, g in valid.iterrows():
             "- EL unit is **%**, TS/YS units are **MPa**.\n"
             "- Table shows predicted values for selected LINE Hardness range."
         )
-   elif view_mode == "📊 Hardness → Mechanical Range":
+    elif view_mode == "📊 Hardness → Mechanical Range":
         st.markdown("## 📊 Mechanical Properties Range by Hardness Interval")
     
         # ===== Sidebar input =====
