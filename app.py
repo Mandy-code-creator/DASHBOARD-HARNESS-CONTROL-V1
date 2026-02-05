@@ -207,13 +207,13 @@ for _, g in valid.iterrows():
 
     qa = "FAIL" if sub["NG"].any() else "PASS"
     specs = ", ".join(sorted(sub["Product_Spec"].unique()))
-sub = df[
-    (df["Rolling_Type"] == g["Rolling_Type"]) &
-    (df["Metallic_Type"] == g["Metallic_Type"]) &
-    (df["Quality_Group"] == g["Quality_Group"]) &
-    (df["Gauge_Range"] == g["Gauge_Range"]) &
-    (df["Material"] == g["Material"])
-].sort_values("COIL_NO")
+    sub = df[
+        (df["Rolling_Type"] == g["Rolling_Type"]) &
+        (df["Metallic_Type"] == g["Metallic_Type"]) &
+        (df["Quality_Group"] == g["Quality_Group"]) &
+        (df["Gauge_Range"] == g["Gauge_Range"]) &
+        (df["Material"] == g["Material"])
+    ].sort_values("COIL_NO")
 
 # ================================
 # LOẠI BỎ GE* <88 NGAY TỪ ĐẦU
