@@ -313,7 +313,7 @@ for _, g in valid.iterrows():
            mime="image/png"
         )
     elif view_mode == "🛠 Hardness → TS/YS/EL":
-    
+        
         # ================================
         # 1️⃣ Chuẩn bị dữ liệu
         # ================================
@@ -327,10 +327,10 @@ for _, g in valid.iterrows():
             )]
     
         # ================================
-        # 2️⃣ Binning Hardness
+        # 2️⃣ Binning Hardness (chi tiết 62–88)
         # ================================
-        bins = [0,56,58,60,62,88,92,97,100]
-        labels = ["<56","56-58","58-60","60-62","62-88","88-92","92-97","≥97"]
+        bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
+        labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
         sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
     
         # ================================
@@ -425,7 +425,7 @@ for _, g in valid.iterrows():
                            data=buf,
                            file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
                            mime="image/png")
-     
+
 
     elif view_mode == "📊 TS/YS/EL Trend & Distribution":
         import re, uuid
