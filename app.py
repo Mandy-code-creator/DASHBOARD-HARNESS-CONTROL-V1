@@ -569,40 +569,44 @@ for _, g in valid.iterrows():
                     " | ".join(conclusion)
                 )
     elif view_mode == "🧮 Predict TS/YS/EL":
-        
-        # ----- Use LINE hardness as predictor
+
+        # ================================
+        # 1️⃣ Chuẩn bị dữ liệu để fit
+        # ================================
         sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         N_coils = len(sub_fit)
         if N_coils < 5:
-            st.warning(f"⚠️ Not enough data to perform prediction (N={N_coils})")
+            st.warning(f"⚠️ Not enough data to perform prediction (need ≥5 coils, current N={N_coils})")
             continue
     
         coils = np.arange(1, N_coils + 1)
     
-        # ----- Linear regression for each property
+        # ================================
+        # 2️⃣ Fit linear regression + 95% CI
+        # ================================
         pred_values = {}
         ci_upper = {}
         ci_lower = {}
+    
         for prop in ["TS", "YS", "EL"]:
             x = sub_fit["Hardness_LINE"].values
             y = sub_fit[prop].values
-    
-            # Linear regression
+            # Fit linear regression
             a, b = np.polyfit(x, y, 1)
             y_pred = a * x + b
             pred_values[prop] = y_pred
-    
-            # 95% CI approximation: mean ± 1.96*std(residuals)
-            resid = y - y_pred
-            resid_std = np.std(resid, ddof=1)
+            # Residual std
+            resid_std = np.std(y - y_pred, ddof=1)
             ci_upper[prop] = y_pred + 1.96 * resid_std
             ci_lower[prop] = y_pred - 1.96 * resid_std
     
-        # ----- Plot observed vs predicted
+        # ================================
+        # 3️⃣ Trend chart Observed vs Predicted
+        # ================================
         fig, axes = plt.subplots(2, 2, figsize=(16, 10), gridspec_kw={'height_ratios':[1,1]})
         ax_ts, ax_ys = axes[0, 0], axes[0, 1]
         ax_el = axes[1, 0]
-        axes[1, 1].axis('off')  # empty subplot
+        axes[1, 1].axis('off')
     
         # TS
         ax_ts.plot(coils, sub_fit["TS"], linestyle="-", marker="o", color="#003f5c", label="Observed TS")
@@ -636,9 +640,85 @@ for _, g in valid.iterrows():
         fig.suptitle("Predicted vs Observed Mechanical Properties based on LINE Hardness", fontsize=14, fontweight="bold", y=1.02)
         st.pyplot(fig)
     
-        # ----- Automatic conclusion
+        # ================================
+        # 4️⃣ User Input: Custom HRB Prediction
+        # ================================
+        st.sidebar.markdown("### 🧮 Predict Mechanical Properties for Custom Hardness")
+        user_hrb = st.sidebar.number_input(
+            "Enter desired LINE Hardness (HRB) to predict TS/YS/EL",
+            min_value=0.0, max_value=120.0, value=90.0, step=0.1
+        )
+    
+        # Hàm dự báo
+        def predict_for_hrb(sub, hrb_value):
+            sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
+            if len(sub_fit) < 5:
+                return None, None, None
+    
+            pred_vals, ci_upper, ci_lower = {}, {}, {}
+            for prop in ["TS","YS","EL"]:
+                x = sub_fit["Hardness_LINE"].values
+                y = sub_fit[prop].values
+                a, b = np.polyfit(x, y, 1)
+                y_pred = a * hrb_value + b
+                resid_std = np.std(y - (a*x+b), ddof=1)
+                pred_vals[prop] = y_pred
+                ci_upper[prop] = y_pred + 1.96*resid_std
+                ci_lower[prop] = y_pred - 1.96*resid_std
+    
+            return pred_vals, ci_lower, ci_upper
+    
+        pred_vals, ci_l, ci_u = predict_for_hrb(sub, user_hrb)
+    
+        if pred_vals:
+            st.markdown(f"### 📌 Predicted Mechanical Properties for LINE Hardness = {user_hrb:.1f} HRB")
+            for prop in ["TS","YS","EL"]:
+                st.markdown(
+                    f"- **{prop}:** {pred_vals[prop]:.1f} MPa "
+                    f"(95% CI: {ci_l[prop]:.1f} – {ci_u[prop]:.1f})"
+                )
+    
+            # ================================
+            # 5️⃣ Trend chart with marker dự báo
+            # ================================
+            fig_pred, ax_pred = plt.subplots(figsize=(14,4))
+            x = np.arange(1, len(sub_fit)+1)
+    
+            # Vẽ trend TS/YS/EL hiện tại
+            for col, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
+                ax_pred.plot(x, sub_fit[col], marker=marker, linestyle="-", label=f"Observed {col}", color=color)
+                ax_pred.plot(x, pred_values[col], linestyle="--", marker=marker, label=f"Predicted {col}", color="#ffa600")
+                ax_pred.fill_between(x, ci_lower[col], ci_upper[col], color="#ffa600", alpha=0.1)
+    
+            # Marker dự báo cho HRB nhập từ người dùng
+            for idx, prop in enumerate(["TS","YS","EL"]):
+                ax_pred.scatter(len(sub_fit)+1, pred_vals[prop], color="red", s=120, zorder=10,
+                                label=f"Custom HRB {user_hrb:.1f} → {prop}: {pred_vals[prop]:.1f}")
+                # CI marker
+                ax_pred.vlines(len(sub_fit)+1, ci_l[prop], ci_u[prop], color="red", linewidth=3, alpha=0.4)
+    
+            ax_pred.set_xlabel("Coil Sequence")
+            ax_pred.set_ylabel("Mechanical Properties (MPa / %)")
+            ax_pred.set_title(f"Trend: TS/YS/EL with Predicted Point for LINE HRB {user_hrb:.1f}")
+            ax_pred.grid(True, linestyle="--", alpha=0.3)
+            ax_pred.legend(loc="upper left", bbox_to_anchor=(1.02,1))
+            plt.tight_layout()
+            st.pyplot(fig_pred)
+    
+            # Download chart
+            buf_custom = fig_to_png(fig_pred)
+            st.download_button(
+                label=f"📥 Download Trend + Predicted Marker (HRB {user_hrb:.1f})",
+                data=buf_custom,
+                file_name=f"trend_with_prediction_{user_hrb:.1f}.png",
+                mime="image/png"
+            )
+    
+        # ================================
+        # 6️⃣ Automatic conclusion
+        # ================================
         conclusion = []
-        for prop in ["TS", "YS", "EL"]:
+        for prop in ["TS","YS","EL"]:
             observed = sub_fit[prop].values
             predicted = pred_values[prop]
             upper = ci_upper[prop]
