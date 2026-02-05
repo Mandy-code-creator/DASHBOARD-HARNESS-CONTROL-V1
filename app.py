@@ -255,7 +255,7 @@ st.markdown(
 if view_mode == "📋 Data Table":
         st.dataframe(sub, use_container_width=True)
 
-    elif view_mode == "📈 Trend (LAB / LINE)":
+elif view_mode == "📈 Trend (LAB / LINE)":
         x = np.arange(1, len(sub)+1)
         fig, ax = plt.subplots(figsize=(8,4))
         ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB")
@@ -277,7 +277,7 @@ if view_mode == "📋 Data Table":
            file_name=f"trend_{g['Material']}_{g['Gauge_Range']}.png",
            mime="image/png"
         )
-    elif view_mode == "📊 Distribution (LAB + LINE)":
+elif view_mode == "📊 Distribution (LAB + LINE)":
         lab = sub["Hardness_LAB"].dropna()
         line = sub["Hardness_LINE"].dropna()
         if len(lab) >= 10 and len(line) >= 10:
@@ -342,7 +342,7 @@ if view_mode == "📋 Data Table":
            file_name=f"distribution_{g['Material']}_{g['Gauge_Range']}.png",
            mime="image/png"
         )
-    elif view_mode == "🛠 Hardness → TS/YS/EL":
+elif view_mode == "🛠 Hardness → TS/YS/EL":
 
         # ================================
         # 1️⃣ Chuẩn bị dữ liệu
@@ -456,7 +456,7 @@ if view_mode == "📋 Data Table":
                            file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
                            mime="image/png")
 
-    elif view_mode == "📊 TS/YS/EL Trend & Distribution":
+elif view_mode == "📊 TS/YS/EL Trend & Distribution":
         import re, uuid
     
         # ===== 1️⃣ Binning Hardness
@@ -576,7 +576,7 @@ if view_mode == "📋 Data Table":
                     f"**📌 Quick Conclusion:** HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | " +
                     " | ".join(conclusion)
                 )
-    elif view_mode == "🧮 Predict TS/YS/EL":
+elif view_mode == "🧮 Predict TS/YS/EL":
         
         # ----- Use LINE hardness as predictor
         sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
