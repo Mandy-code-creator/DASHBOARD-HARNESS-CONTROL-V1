@@ -420,6 +420,25 @@ for _, g in valid.iterrows():
                            data=buf,
                            file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
                            mime="image/png")
+        # ===== Quick Conclusion tự động theo HRB bin =====
+        conclusion_lines = []
+        for idx, row in summary.iterrows():
+            hrb_bin = row["HRB_bin"]
+            ts_ng = "⚠️" if row["TS_min"] < row["Standard TS min"] or row["TS_max"] > row["Standard TS max"] else "✅"
+            ys_ng = "⚠️" if row["YS_min"] < row["Standard YS min"] or row["YS_max"] > row["Standard YS max"] else "✅"
+            el_ng = "⚠️" if row["EL_min"] < row["Standard EL min"] or row["EL_max"] > row["Standard EL max"] else "✅"
+            
+            line = (
+                f"HRB bin {hrb_bin}: "
+                f"TS={ts_ng} ({row['TS_min']:.1f}-{row['TS_max']:.1f}), "
+                f"YS={ys_ng} ({row['YS_min']:.1f}-{row['YS_max']:.1f}), "
+                f"EL={el_ng} ({row['EL_min']:.1f}-{row['EL_max']:.1f})"
+            )
+            conclusion_lines.append(line)
+        
+        st.markdown("### 📌 Quick Conclusion per HRB bin")
+        for line in conclusion_lines:
+            st.markdown(line)
 
     elif view_mode == "📊 TS/YS/EL Trend & Distribution":
         import re, uuid
