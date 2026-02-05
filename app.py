@@ -736,10 +736,14 @@ for _, g in valid.iterrows():
     
         for hrb in hrb_values:
             # Chọn tất cả coils trong khoảng ±0.5 HRB
-            delta = 0.5
+            delta = max(1, step/2)  # đảm bảo luôn có ít nhất ±1 HRB
             subset = sub_risk[(sub_risk["Hardness_LINE"] >= hrb - delta) & (sub_risk["Hardness_LINE"] <= hrb + delta)]
+            
             if subset.empty:
-                continue
+                # fallback: lấy nearest HRB
+                nearest_idx = (sub_risk["Hardness_LINE"] - hrb).abs().idxmin()
+                subset = sub_risk.loc[[nearest_idx]]
+
     
             TS_min, TS_max = subset["TS"].min(), subset["TS"].max()
             YS_min, YS_max = subset["YS"].min(), subset["YS"].max()
