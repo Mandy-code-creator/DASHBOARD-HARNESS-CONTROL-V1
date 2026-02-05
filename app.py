@@ -425,8 +425,8 @@ for _, g in valid.iterrows():
         import re, uuid
     
         # ===== 1️⃣ Binning Hardness
-        bins = [0, 56, 58, 60, 62, 100]
-        labels = ["<56", "56-58", "58-60", "60-62", "≥62"]
+        bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
+        labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
         sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
     
         mech_cols = ["Standard TS min","Standard TS max",
