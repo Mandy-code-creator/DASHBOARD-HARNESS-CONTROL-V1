@@ -207,6 +207,36 @@ for _, g in valid.iterrows():
 
     qa = "FAIL" if sub["NG"].any() else "PASS"
     specs = ", ".join(sorted(sub["Product_Spec"].unique()))
+sub = df[
+    (df["Rolling_Type"] == g["Rolling_Type"]) &
+    (df["Metallic_Type"] == g["Metallic_Type"]) &
+    (df["Quality_Group"] == g["Quality_Group"]) &
+    (df["Gauge_Range"] == g["Gauge_Range"]) &
+    (df["Material"] == g["Material"])
+].sort_values("COIL_NO")
+
+# ================================
+# LOẠI BỎ GE* <88 NGAY TỪ ĐẦU
+# ================================
+if "Quality_Code" in sub.columns:
+    sub = sub[~(
+        sub["Quality_Code"].astype(str).str.startswith("GE") &
+        ((sub["Hardness_LAB"] < 88) | (sub["Hardness_LINE"] < 88))
+    )]
+
+# ================================
+# TIẾP TỤC TÍNH LO/HI, NG, QA
+# ================================
+if sub.empty:
+    st.warning("⚠️ All coils filtered out (GE* <88)")
+    continue
+
+lo, hi = sub.iloc[0][["Std_Min","Std_Max"]]
+sub["NG_LAB"]  = (sub["Hardness_LAB"] < lo) | (sub["Hardness_LAB"] > hi)
+sub["NG_LINE"] = (sub["Hardness_LINE"] < lo) | (sub["Hardness_LINE"] > hi)
+sub["NG"] = sub["NG_LAB"] | sub["NG_LINE"]
+qa = "FAIL" if sub["NG"].any() else "PASS"
+specs = ", ".join(sorted(sub["Product_Spec"].unique()))
 
     st.markdown(
     f"""
