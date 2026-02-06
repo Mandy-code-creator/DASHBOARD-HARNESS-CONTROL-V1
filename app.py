@@ -589,7 +589,7 @@ for _, g in valid.iterrows():
         # ===============================
         # FORM (anti duplicate key)
         # ===============================
-        with st.form("predict_custom_hardness_form"):
+        with st.form(f"predict_custom_hardness_form_{st.session_state.get('view_mode','default')}"):
     
             pred_type = st.radio(
                 "Select input type for prediction:",
