@@ -943,7 +943,16 @@ for _, g in valid.iterrows():
                 with c_chart:
                     st.bar_chart(filtered_df['Hardness_LINE'].value_counts().sort_index())
                 with c_data:
-                    st.dataframe(filtered_df[['coil_id', 'Hardness_LINE', 'YS', 'TS', 'EL']], height=300)
+                    st.markdown(f"**Detailed List ({sample_size} coils)**")
+                    
+                    # CẬP NHẬT: Dùng đúng tên cột 'COIL_NO' có trong dữ liệu của bạn
+                    # Các cột YS, TS, EL, Hardness_LINE code đã xử lý từ trước nên giữ nguyên
+                    cols_to_show = ['COIL_NO', 'Hardness_LINE', 'YS', 'TS', 'EL']
+                    
+                    # Kiểm tra an toàn: Chỉ hiện những cột thực sự có
+                    final_cols = [c for c in cols_to_show if c in filtered_df.columns]
+                    
+                    st.dataframe(filtered_df[final_cols], height=300)
                 
         else:
             st.error("❌ No coils found within these ranges.")
