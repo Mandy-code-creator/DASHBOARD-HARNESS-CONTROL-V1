@@ -788,8 +788,7 @@ for _, g in valid.iterrows():
                     buf = fig_to_png(fig)
                     st.download_button("📥 Download Distribution Chart", data=buf, 
                                        file_name=f"Lookup_{input_min}_{input_max}_{g['Material']}.png",
-                                       mime="image/png", key=f"dl_lookup_{_}"
-                    )
+                                       mime="image/png", key=f"dl_lookup_{_}")
 # ========================================================
 elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
     # --- HEADER ---
