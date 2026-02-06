@@ -571,7 +571,7 @@ for _, g in valid.iterrows():
     # ================================
     elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
             
-            st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
+            st.markdown("## 🧮 Predict Mechanical Properties (Auto-Update)")
             
             # ===============================
             # Prepare data
@@ -581,14 +581,14 @@ for _, g in valid.iterrows():
             
             if N < 5:
                 st.warning(f"⚠️ Not enough data for prediction (N={N})")
-            else: # Chỉ hiện widget dự báo nếu đủ dữ liệu
+            else:
                 hrb_min_data = float(sub_fit["Hardness_LINE"].min())
                 hrb_max_data = float(sub_fit["Hardness_LINE"].max())
                 
                 # ===============================
-                # INPUT AREA (NO FORM – SAFE)
+                # INPUT AREA (AUTO UPDATE - NO BUTTON)
                 # ===============================
-                # FIX: Thêm _{_} vào key để tránh lỗi Duplicate Key trong vòng lặp
+                # Thêm _{_} vào key để tránh lỗi Duplicate Key
                 pred_type = st.radio(
                     "Select input type for prediction:",
                     ["Single Value", "Range"],
@@ -596,50 +596,52 @@ for _, g in valid.iterrows():
                     key=f"pred_type_custom_{_}" 
                 )
                 
+                hrb_values = []
+                
                 if pred_type == "Single Value":
-                    hrb_values = [
-                        st.number_input(
-                            "Enter desired LINE Hardness (HRB):",
-                            value=round((hrb_min_data + hrb_max_data) / 2, 1),
-                            step=0.1,
-                            key=f"hrb_single_{_}"
-                        )
-                    ]
+                    val = st.number_input(
+                        "Enter desired LINE Hardness (HRB):",
+                        value=round((hrb_min_data + hrb_max_data) / 2, 1),
+                        step=0.1,
+                        key=f"hrb_single_{_}"
+                    )
+                    hrb_values = [val]
                 else:
-                    hrb_min = st.number_input(
-                        "Minimum LINE Hardness (HRB):",
-                        value=round(hrb_min_data, 1),
-                        step=0.1,
-                        key=f"hrb_min_{_}"
-                    )
-                    hrb_max = st.number_input(
-                        "Maximum LINE Hardness (HRB):",
-                        value=round(hrb_max_data, 1),
-                        step=0.1,
-                        key=f"hrb_max_{_}"
-                    )
-                    step = st.number_input(
-                        "Step:",
-                        value=1.0,
-                        step=0.1,
-                        key=f"hrb_step_{_}"
-                    )
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        hrb_min = st.number_input(
+                            "Min Hardness:",
+                            value=round(hrb_min_data, 1),
+                            step=0.1,
+                            key=f"hrb_min_{_}"
+                        )
+                    with c2:
+                        hrb_max = st.number_input(
+                            "Max Hardness:",
+                            value=round(hrb_max_data, 1),
+                            step=0.1,
+                            key=f"hrb_max_{_}"
+                        )
+                    with c3:
+                        step = st.number_input(
+                            "Step:",
+                            value=1.0,
+                            step=0.1,
+                            key=f"hrb_step_{_}"
+                        )
                     
-                    # Sửa logic range một chút để tránh lỗi nếu min > max do user nhập
                     if hrb_min > hrb_max:
-                        st.error("Min Hardness cannot be greater than Max Hardness")
-                        hrb_values = []
+                        st.error("⚠️ Min > Max! Please adjust.")
                     else:
                         hrb_values = list(np.arange(hrb_min, hrb_max + 0.001, step))
                 
                 # ===============================
-                # PREDICT BUTTON (ĐÚNG CHỖ)
+                # CALCULATION & PLOT (ALWAYS RUN)
                 # ===============================
-                # FIX: Thêm _{_} vào key button nếu cần, hoặc để mặc định (button ít khi lỗi key nếu không có tham số key)
-                if hrb_values and st.button("🔮 Predict", use_container_width=True, key=f"btn_predict_{_}"):
-                    
+                if len(hrb_values) > 0:
                     pred_values = {}
                     
+                    # Fit & Predict Logic
                     for prop in ["TS", "YS", "EL"]:
                         try:
                             a, b = np.polyfit(
@@ -651,9 +653,7 @@ for _, g in valid.iterrows():
                         except:
                             pred_values[prop] = np.zeros(len(hrb_values))
                     
-                    # ===============================
                     # Plot
-                    # ===============================
                     fig, ax = plt.subplots(figsize=(14, 5))
                     coils = np.arange(1, N + 1)
                     
@@ -662,29 +662,32 @@ for _, g in valid.iterrows():
                         ("YS", "#2ca02c", "s", "MPa"),
                         ("EL", "#ff7f0e", "^", "%")
                     ]:
+                        # Vẽ dữ liệu thực tế
                         obs = sub_fit[prop].values
-                        ax.plot(coils, obs, marker=marker, color=color, label=f"{prop} Observed")
+                        ax.plot(coils, obs, marker=marker, color=color, alpha=0.6, label=f"{prop} Observed")
                         
+                        # Vẽ dữ liệu dự báo
                         pred = pred_values[prop]
-                        # Vẽ phần dự báo tiếp theo sau chuỗi hiện tại
                         pred_x = coils[-1] + np.arange(1, len(pred) + 1)
                         
                         ax.scatter(
                             pred_x, pred,
                             color="red", s=100, marker="X",
-                            label=f"{prop} Predicted ({unit})"
+                            label=f"{prop} Predicted ({unit})" if prop == "TS" else "" # Chỉ hiện label 1 lần cho gọn
                         )
                         
-                        # Nối nét đứt từ điểm cuối thực tế đến điểm dự báo đầu tiên
+                        # Nối nét đứt
                         if len(pred) > 0:
-                             ax.plot(
+                            ax.plot(
                                 [coils[-1], pred_x[0]],
                                 [obs[-1], pred[0]],
                                 linestyle=":",
                                 color="red",
                                 alpha=0.5
                             )
-                    
+                            if len(pred) > 1:
+                                ax.plot(pred_x, pred, linestyle="--", color=color, alpha=0.8)
+    
                     ax.set_xlabel("Coil Sequence")
                     ax.set_ylabel("Mechanical Properties")
                     ax.set_title("Observed vs Predicted TS / YS / EL")
@@ -692,19 +695,18 @@ for _, g in valid.iterrows():
                     ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
                     st.pyplot(fig)
                     
-                    # ===============================
-                    # Table
-                    # ===============================
-                    pred_table = pd.DataFrame({"HRB": hrb_values})
+                    # Table Result
+                    pred_table = pd.DataFrame({"HRB Input": hrb_values})
                     for prop in ["TS", "YS", "EL"]:
                         pred_table[prop] = pred_values[prop]
                     
-                    with st.expander("📋 Predicted Mechanical Properties", expanded=True):
+                    with st.expander("📋 Predicted Values Table", expanded=True):
                         st.dataframe(
                             pred_table.style.format({
+                                "HRB Input": "{:.1f}",
                                 "TS": "{:.1f}",
                                 "YS": "{:.1f}",
                                 "EL": "{:.1f}"
                             }),
                             use_container_width=True
-                        )  
+                        )
