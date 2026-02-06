@@ -486,7 +486,8 @@ for _, g in valid.iterrows():
 # ========================================================
 # ========================================================
 # ========================================================
-    # MODE: MECH PROPS ANALYSIS (LONG TAIL NORMAL CURVE + 3 SIGMA)
+# ========================================================
+    # MODE: MECH PROPS ANALYSIS (FIXED DATAFRAME FORMAT ERROR)
     # ========================================================
     elif view_mode == "⚙️ Mech Props Analysis":
         import uuid
@@ -551,7 +552,7 @@ for _, g in valid.iterrows():
                 buf = fig_to_png(fig)
                 st.download_button("📥 Download Trend", data=buf, file_name=f"Trend_{g['Material']}.png", mime="image/png", key=f"dl_tr_{_}_{uuid.uuid4()}")
 
-            # --- TAB 2: DISTRIBUTION (CẬP NHẬT ĐUÔI DÀI + GIỚI HẠN) ---
+            # --- TAB 2: DISTRIBUTION (CẬP NHẬT ĐUÔI DÀI + SỬA LỖI FORMAT BẢNG) ---
             with tab_dist:
                 # Bảng thống kê
                 stats_data = []
@@ -563,11 +564,25 @@ for _, g in valid.iterrows():
                             "Property": col, "Count": len(series), "Mean": m, "Std Dev": s,
                             "UCL (3σ)": m + 3*s, "LCL (3σ)": m - 3*s
                         })
-                st.dataframe(pd.DataFrame(stats_data).style.format("{:.1f}"), use_container_width=True)
+                
+                # FIX LỖI Ở ĐÂY: Chỉ format các cột số, bỏ qua cột Property
+                if stats_data:
+                    df_stats = pd.DataFrame(stats_data)
+                    st.dataframe(
+                        df_stats.style.format({
+                            "Mean": "{:.1f}", 
+                            "Std Dev": "{:.2f}", 
+                            "UCL (3σ)": "{:.1f}", 
+                            "LCL (3σ)": "{:.1f}"
+                        }), 
+                        use_container_width=True
+                    )
+                else:
+                    st.info("Not enough data for statistics.")
 
                 # Biểu đồ Distribution
                 st.markdown("#### 📉 Extended Distribution Charts")
-                fig, axes = plt.subplots(1, 3, figsize=(15, 6)) # Cao hơn xíu
+                fig, axes = plt.subplots(1, 3, figsize=(15, 6))
                 
                 for i, (col, color, _) in enumerate(props):
                     ax = axes[i]
@@ -576,13 +591,12 @@ for _, g in valid.iterrows():
                     if len(data) > 1:
                         mean, std = data.mean(), data.std(ddof=1)
                         if std > 0:
-                            # 1. TẠO KHUNG TRỤC X RỘNG (Mean ± 5 Sigma) -> TẠO HIỆU ỨNG ĐUÔI DÀI
+                            # 1. TẠO KHUNG TRỤC X RỘNG (Mean ± 5 Sigma)
                             x_min_plot = mean - 5 * std
                             x_max_plot = mean + 5 * std
                             x_plot = np.linspace(x_min_plot, x_max_plot, 200)
                             
-                            # 2. Vẽ Histogram (tự động khớp với trục X mới)
-                            # range=(x_min_plot, x_max_plot) ép histogram không bị co cụm
+                            # 2. Vẽ Histogram
                             ax.hist(data, bins=20, range=(x_min_plot, x_max_plot), 
                                     color=color, alpha=0.4, edgecolor="black", density=True)
                             
@@ -590,19 +604,16 @@ for _, g in valid.iterrows():
                             y_plot = (1/(std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_plot - mean) / std)**2)
                             ax.plot(x_plot, y_plot, color=color, linewidth=2.5, label="Normal Fit")
                             
-                            # 4. Vẽ các đường giới hạn thống kê (UCL/LCL) - Màu Tím
+                            # 4. Vẽ các đường giới hạn thống kê (UCL/LCL)
                             ucl = mean + 3*std
                             lcl = mean - 3*std
                             
-                            # UCL
                             ax.axvline(ucl, color="purple", linestyle="--", linewidth=1.5)
                             ax.text(ucl, y_plot.max()*0.8, f" UCL\n {ucl:.0f}", color="purple", fontsize=8)
                             
-                            # LCL
                             ax.axvline(lcl, color="purple", linestyle="--", linewidth=1.5)
                             ax.text(lcl, y_plot.max()*0.8, f" LCL\n {lcl:.0f}", color="purple", fontsize=8, ha="right")
                             
-                            # Mean
                             ax.axvline(mean, color="black", linestyle="-", linewidth=1, alpha=0.5, label="Mean")
 
                             # 5. Ép trục X hiển thị hết đuôi
@@ -626,148 +637,6 @@ for _, g in valid.iterrows():
                 else:
                     st.success("✅ Clean Data")
     # ================================
-    elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
-            
-            st.markdown("## 🧮 Predict Mechanical Properties (Auto-Update)")
-            
-            # ===============================
-            # Prepare data
-            # ===============================
-            sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
-            N = len(sub_fit)
-            
-            if N < 5:
-                st.warning(f"⚠️ Not enough data for prediction (N={N})")
-            else:
-                hrb_min_data = float(sub_fit["Hardness_LINE"].min())
-                hrb_max_data = float(sub_fit["Hardness_LINE"].max())
-                
-                # ===============================
-                # INPUT AREA (AUTO UPDATE - NO BUTTON)
-                # ===============================
-                # Thêm _{_} vào key để tránh lỗi Duplicate Key
-                pred_type = st.radio(
-                    "Select input type for prediction:",
-                    ["Single Value", "Range"],
-                    index=0,
-                    key=f"pred_type_custom_{_}" 
-                )
-                
-                hrb_values = []
-                
-                if pred_type == "Single Value":
-                    val = st.number_input(
-                        "Enter desired LINE Hardness (HRB):",
-                        value=round((hrb_min_data + hrb_max_data) / 2, 1),
-                        step=0.1,
-                        key=f"hrb_single_{_}"
-                    )
-                    hrb_values = [val]
-                else:
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        hrb_min = st.number_input(
-                            "Min Hardness:",
-                            value=round(hrb_min_data, 1),
-                            step=0.1,
-                            key=f"hrb_min_{_}"
-                        )
-                    with c2:
-                        hrb_max = st.number_input(
-                            "Max Hardness:",
-                            value=round(hrb_max_data, 1),
-                            step=0.1,
-                            key=f"hrb_max_{_}"
-                        )
-                    with c3:
-                        step = st.number_input(
-                            "Step:",
-                            value=1.0,
-                            step=0.1,
-                            key=f"hrb_step_{_}"
-                        )
-                    
-                    if hrb_min > hrb_max:
-                        st.error("⚠️ Min > Max! Please adjust.")
-                    else:
-                        hrb_values = list(np.arange(hrb_min, hrb_max + 0.001, step))
-                
-                # ===============================
-                # CALCULATION & PLOT (ALWAYS RUN)
-                # ===============================
-                if len(hrb_values) > 0:
-                    pred_values = {}
-                    
-                    # Fit & Predict Logic
-                    for prop in ["TS", "YS", "EL"]:
-                        try:
-                            a, b = np.polyfit(
-                                sub_fit["Hardness_LINE"].values,
-                                sub_fit[prop].values,
-                                1
-                            )
-                            pred_values[prop] = a * np.array(hrb_values) + b
-                        except:
-                            pred_values[prop] = np.zeros(len(hrb_values))
-                    
-                    # Plot
-                    fig, ax = plt.subplots(figsize=(14, 5))
-                    coils = np.arange(1, N + 1)
-                    
-                    for prop, color, marker, unit in [
-                        ("TS", "#1f77b4", "o", "MPa"),
-                        ("YS", "#2ca02c", "s", "MPa"),
-                        ("EL", "#ff7f0e", "^", "%")
-                    ]:
-                        # Vẽ dữ liệu thực tế
-                        obs = sub_fit[prop].values
-                        ax.plot(coils, obs, marker=marker, color=color, alpha=0.6, label=f"{prop} Observed")
-                        
-                        # Vẽ dữ liệu dự báo
-                        pred = pred_values[prop]
-                        pred_x = coils[-1] + np.arange(1, len(pred) + 1)
-                        
-                        ax.scatter(
-                            pred_x, pred,
-                            color="red", s=100, marker="X",
-                            label=f"{prop} Predicted ({unit})" if prop == "TS" else "" # Chỉ hiện label 1 lần cho gọn
-                        )
-                        
-                        # Nối nét đứt
-                        if len(pred) > 0:
-                            ax.plot(
-                                [coils[-1], pred_x[0]],
-                                [obs[-1], pred[0]],
-                                linestyle=":",
-                                color="red",
-                                alpha=0.5
-                            )
-                            if len(pred) > 1:
-                                ax.plot(pred_x, pred, linestyle="--", color=color, alpha=0.8)
-    
-                    ax.set_xlabel("Coil Sequence")
-                    ax.set_ylabel("Mechanical Properties")
-                    ax.set_title("Observed vs Predicted TS / YS / EL")
-                    ax.grid(True, linestyle="--", alpha=0.3)
-                    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
-                    st.pyplot(fig)
-                    
-                    # Table Result
-                    pred_table = pd.DataFrame({"HRB Input": hrb_values})
-                    for prop in ["TS", "YS", "EL"]:
-                        pred_table[prop] = pred_values[prop]
-                    
-                    with st.expander("📋 Predicted Values Table", expanded=True):
-                        st.dataframe(
-                            pred_table.style.format({
-                                "HRB Input": "{:.1f}",
-                                "TS": "{:.1f}",
-                                "YS": "{:.1f}",
-                                "EL": "{:.1f}"
-                            }),
-                            use_container_width=True
-                        )
-# ========================================================
 # ========================================================
     # MODE: HARDNESS LOOKUP -> ACTUAL MECHANICAL PROPERTIES
     # ========================================================
@@ -919,3 +788,145 @@ for _, g in valid.iterrows():
                     st.download_button("📥 Download Distribution Chart", data=buf, 
                                        file_name=f"Lookup_{input_min}_{input_max}_{g['Material']}.png",
                                        mime="image/png", key=f"dl_lookup_{_}")
+    elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
+            
+            st.markdown("## 🧮 Predict Mechanical Properties (Auto-Update)")
+            
+            # ===============================
+            # Prepare data
+            # ===============================
+            sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+            N = len(sub_fit)
+            
+            if N < 5:
+                st.warning(f"⚠️ Not enough data for prediction (N={N})")
+            else:
+                hrb_min_data = float(sub_fit["Hardness_LINE"].min())
+                hrb_max_data = float(sub_fit["Hardness_LINE"].max())
+                
+                # ===============================
+                # INPUT AREA (AUTO UPDATE - NO BUTTON)
+                # ===============================
+                # Thêm _{_} vào key để tránh lỗi Duplicate Key
+                pred_type = st.radio(
+                    "Select input type for prediction:",
+                    ["Single Value", "Range"],
+                    index=0,
+                    key=f"pred_type_custom_{_}" 
+                )
+                
+                hrb_values = []
+                
+                if pred_type == "Single Value":
+                    val = st.number_input(
+                        "Enter desired LINE Hardness (HRB):",
+                        value=round((hrb_min_data + hrb_max_data) / 2, 1),
+                        step=0.1,
+                        key=f"hrb_single_{_}"
+                    )
+                    hrb_values = [val]
+                else:
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        hrb_min = st.number_input(
+                            "Min Hardness:",
+                            value=round(hrb_min_data, 1),
+                            step=0.1,
+                            key=f"hrb_min_{_}"
+                        )
+                    with c2:
+                        hrb_max = st.number_input(
+                            "Max Hardness:",
+                            value=round(hrb_max_data, 1),
+                            step=0.1,
+                            key=f"hrb_max_{_}"
+                        )
+                    with c3:
+                        step = st.number_input(
+                            "Step:",
+                            value=1.0,
+                            step=0.1,
+                            key=f"hrb_step_{_}"
+                        )
+                    
+                    if hrb_min > hrb_max:
+                        st.error("⚠️ Min > Max! Please adjust.")
+                    else:
+                        hrb_values = list(np.arange(hrb_min, hrb_max + 0.001, step))
+                
+                # ===============================
+                # CALCULATION & PLOT (ALWAYS RUN)
+                # ===============================
+                if len(hrb_values) > 0:
+                    pred_values = {}
+                    
+                    # Fit & Predict Logic
+                    for prop in ["TS", "YS", "EL"]:
+                        try:
+                            a, b = np.polyfit(
+                                sub_fit["Hardness_LINE"].values,
+                                sub_fit[prop].values,
+                                1
+                            )
+                            pred_values[prop] = a * np.array(hrb_values) + b
+                        except:
+                            pred_values[prop] = np.zeros(len(hrb_values))
+                    
+                    # Plot
+                    fig, ax = plt.subplots(figsize=(14, 5))
+                    coils = np.arange(1, N + 1)
+                    
+                    for prop, color, marker, unit in [
+                        ("TS", "#1f77b4", "o", "MPa"),
+                        ("YS", "#2ca02c", "s", "MPa"),
+                        ("EL", "#ff7f0e", "^", "%")
+                    ]:
+                        # Vẽ dữ liệu thực tế
+                        obs = sub_fit[prop].values
+                        ax.plot(coils, obs, marker=marker, color=color, alpha=0.6, label=f"{prop} Observed")
+                        
+                        # Vẽ dữ liệu dự báo
+                        pred = pred_values[prop]
+                        pred_x = coils[-1] + np.arange(1, len(pred) + 1)
+                        
+                        ax.scatter(
+                            pred_x, pred,
+                            color="red", s=100, marker="X",
+                            label=f"{prop} Predicted ({unit})" if prop == "TS" else "" # Chỉ hiện label 1 lần cho gọn
+                        )
+                        
+                        # Nối nét đứt
+                        if len(pred) > 0:
+                            ax.plot(
+                                [coils[-1], pred_x[0]],
+                                [obs[-1], pred[0]],
+                                linestyle=":",
+                                color="red",
+                                alpha=0.5
+                            )
+                            if len(pred) > 1:
+                                ax.plot(pred_x, pred, linestyle="--", color=color, alpha=0.8)
+    
+                    ax.set_xlabel("Coil Sequence")
+                    ax.set_ylabel("Mechanical Properties")
+                    ax.set_title("Observed vs Predicted TS / YS / EL")
+                    ax.grid(True, linestyle="--", alpha=0.3)
+                    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
+                    st.pyplot(fig)
+                    
+                    # Table Result
+                    pred_table = pd.DataFrame({"HRB Input": hrb_values})
+                    for prop in ["TS", "YS", "EL"]:
+                        pred_table[prop] = pred_values[prop]
+                    
+                    with st.expander("📋 Predicted Values Table", expanded=True):
+                        st.dataframe(
+                            pred_table.style.format({
+                                "HRB Input": "{:.1f}",
+                                "TS": "{:.1f}",
+                                "YS": "{:.1f}",
+                                "EL": "{:.1f}"
+                            }),
+                            use_container_width=True
+                        )
+# ========================================================
