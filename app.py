@@ -1095,49 +1095,42 @@ for _, g in valid.iterrows():
                 model = LinearRegression().fit(X_train, train_df[col].values)
                 preds[col] = model.predict([[target_h]])[0]
 
-            # 4. VẼ BIỂU ĐỒ TRỤC Y KÉP (DÙNG MAKE_SUBPLOTS)
-            from plotly.subplots import make_subplots
-            import plotly.graph_objects as go
-
-            # Khởi tạo trục Y phụ (secondary_y=True)
-            fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-            colors = {"TS": "#004BA0", "YS": "#1B5E20", "EL": "#B71C1C"} 
-            indices = list(range(len(train_df)))
-            next_idx = len(train_df)
+            # ... (Phần tính toán preds giữ nguyên)
 
             for col in ["TS", "YS", "EL"]:
-                # EL dùng trục bên phải (secondary_y=True), TS/YS dùng trục bên trái
                 is_secondary = True if col == "EL" else False
                 
-                # A. Đường lịch sử (Nét mảnh)
+                # A. Đường lịch sử: Thêm hovertemplate để hiện tên rõ ràng
                 fig.add_trace(go.Scatter(
                     x=indices, y=train_df[col],
-                    mode='lines+markers', name=f"History {col}",
+                    mode='lines+markers', name=f"Lịch sử {col}",
                     line=dict(color=colors[col], width=1.5, dash='dot'),
-                    marker=dict(size=4, opacity=0.4)
+                    marker=dict(size=4, opacity=0.4),
+                    hovertemplate=f"Cuộn thực tế<br>{col}: %{{y:.1f}}<extra></extra>"
                 ), secondary_y=is_secondary)
 
-                # B. BƯỚC NHẢY DỰ BÁO (NỐI TIẾP - NÉT CỰC ĐẬM)
+                # B. Bước nhảy dự báo: Ẩn khỏi Legend và Hover để không bị trùng lặp
                 fig.add_trace(go.Scatter(
                     x=[indices[-1], next_idx],
                     y=[train_df[col].iloc[-1], preds[col]],
-                    mode='lines+markers',
-                    name=f"Trend {col}",
-                    line=dict(color=colors[col], width=6), 
-                    marker=dict(color='yellow', size=10, line=dict(color='black', width=1), symbol='star'),
+                    mode='lines',
+                    line=dict(color=colors[col], width=6),
+                    hoverinfo='skip', # Bỏ qua hover cho đường nối
                     showlegend=False
                 ), secondary_y=is_secondary)
 
-                # C. ĐIỂM ĐÍCH DỰ BÁO (Marker lớn)
+                # C. Điểm đích dự báo: Đặt tên cụ thể để thay thế "trace X"
                 fig.add_trace(go.Scatter(
                     x=[next_idx], y=[preds[col]],
                     mode='markers+text',
+                    name=f"Dự báo {col}", # Tên này sẽ thay thế chữ 'trace'
                     text=[f"<b>{preds[col]:.1f}</b>"],
                     textposition="top center",
                     marker=dict(color=colors[col], size=16, symbol='diamond', line=dict(color='white', width=2)),
-                    showlegend=False
+                    hovertemplate=f"<b>MỤC TIÊU DỰ BÁO</b><br>{col}: %{{y:.1f}}<extra></extra>"
                 ), secondary_y=is_secondary)
+
+            # ... (Phần Layout giữ nguyên)
 
             # 5. CẤU HÌNH GIAO DIỆN (LAYOUT CHỐNG LỖI)
             fig.update_layout(
