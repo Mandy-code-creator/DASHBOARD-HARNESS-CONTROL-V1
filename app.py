@@ -571,106 +571,117 @@ for _, g in valid.iterrows():
     # ================================
     elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
     
-        def predict_custom_hardness(sub):
-            st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
+        st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
     
-            # Chuẩn bị dữ liệu
-            sub_fit = sub.dropna(subset=["Hardness_LINE","TS","YS","EL"]).copy()
-            N_coils = len(sub_fit)
-            if N_coils < 5:
-                st.warning(f"⚠️ Not enough data to perform prediction (N={N_coils})")
-                return
+        # ===============================
+        # Prepare data
+        # ===============================
+        sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+        N = len(sub_fit)
     
-            # Lấy min/max thực tế
-            hrb_min_data = float(sub_fit["Hardness_LINE"].min())
-            hrb_max_data = float(sub_fit["Hardness_LINE"].max())
-            hrb_step_default = max((hrb_max_data - hrb_min_data)/10, 0.1)
+        if N < 5:
+            st.warning(f"⚠️ Not enough data for prediction (N={N})")
+            st.stop()
     
-            # --- Chọn kiểu dự báo ---
+        hrb_min_data = float(sub_fit["Hardness_LINE"].min())
+        hrb_max_data = float(sub_fit["Hardness_LINE"].max())
+    
+        # ===============================
+        # FORM (anti duplicate key)
+        # ===============================
+        with st.form("predict_custom_hardness_form"):
+    
             pred_type = st.radio(
                 "Select input type for prediction:",
-                ["Single Value","Range"],
-                key="predict_type_custom_hardness_final"
+                ["Single Value", "Range"]
             )
     
-            if pred_type=="Single Value":
+            if pred_type == "Single Value":
                 user_hrb = st.number_input(
                     "Enter desired LINE Hardness (HRB):",
-                    min_value=0.0, max_value=120.0,
-                    value=round((hrb_min_data+hrb_max_data)/2,1),
-                    step=0.1,
-                    key="predict_hrb_single_custom_hardness_final"
+                    value=round((hrb_min_data + hrb_max_data) / 2, 1),
+                    step=0.1
                 )
                 hrb_values = [user_hrb]
+    
             else:
                 hrb_min = st.number_input(
-                    "Enter minimum LINE Hardness (HRB):",
-                    min_value=0.0, max_value=120.0,
-                    value=round(hrb_min_data,1),
-                    step=0.1,
-                    key="predict_hrb_min_custom_hardness_final"
+                    "Minimum LINE Hardness (HRB):",
+                    value=round(hrb_min_data, 1),
+                    step=0.1
                 )
                 hrb_max = st.number_input(
-                    "Enter maximum LINE Hardness (HRB):",
-                    min_value=0.0, max_value=120.0,
-                    value=round(hrb_max_data,1),
-                    step=0.1,
-                    key="predict_hrb_max_custom_hardness_final"
+                    "Maximum LINE Hardness (HRB):",
+                    value=round(hrb_max_data, 1),
+                    step=0.1
                 )
                 step = st.number_input(
-                    "Step for prediction:",
-                    min_value=0.1, max_value=10.0,
-                    value=round(hrb_step_default,1),
-                    step=0.1,
-                    key="predict_hrb_step_custom_hardness_final"
+                    "Step:",
+                    value=1.0,
+                    step=0.1
                 )
-                hrb_values = list(np.arange(hrb_min, hrb_max+0.01, step))
+                hrb_values = list(np.arange(hrb_min, hrb_max + 0.01, step))
     
-            # --- Fit TS/YS/EL ---
+            submitted = st.form_submit_button("🔮 Predict")
+    
+        # ===============================
+        # PREDICTION
+        # ===============================
+        if submitted:
+    
             pred_values = {}
-            for prop in ["TS","YS","EL"]:
-                x = sub_fit["Hardness_LINE"].values
-                y = sub_fit[prop].values
-                a,b = np.polyfit(x,y,1)
-                pred_values[prop] = a*np.array(hrb_values)+b
+            for prop in ["TS", "YS", "EL"]:
+                a, b = np.polyfit(
+                    sub_fit["Hardness_LINE"].values,
+                    sub_fit[prop].values,
+                    1
+                )
+                pred_values[prop] = a * np.array(hrb_values) + b
     
-            # --- Vẽ chart ---
-            fig, ax = plt.subplots(figsize=(14,5))
-            coils = np.arange(1,N_coils+1)
-            for prop,color,marker,unit in [("TS","#1f77b4","o","MPa"),
-                                           ("YS","#2ca02c","s","MPa"),
-                                           ("EL","#ff7f0e","^","%")]:
-                vals = sub_fit[prop].values
-                ax.plot(coils, vals, marker=marker, color=color, label=f"{prop} Observed")
+            # ===============================
+            # Plot
+            # ===============================
+            fig, ax = plt.subplots(figsize=(14, 5))
+            coils = np.arange(1, N + 1)
+    
+            for prop, color, marker, unit in [
+                ("TS", "#1f77b4", "o", "MPa"),
+                ("YS", "#2ca02c", "s", "MPa"),
+                ("EL", "#ff7f0e", "^", "%")
+            ]:
+                obs = sub_fit[prop].values
+                ax.plot(coils, obs, marker=marker, color=color, label=f"{prop} Observed")
+    
                 pred = pred_values[prop]
-                pred_x = [coils[-1]+1+i for i in range(len(pred))]
-                ax.scatter(pred_x,pred,color="red",s=100,marker="X",label=f"{prop} Predicted ({unit})")
-                for j in range(len(pred)):
-                    ax.plot([coils[-1],pred_x[j]],[vals[-1],pred[j]],linestyle=":",color="red",linewidth=2)
+                pred_x = coils[-1] + np.arange(1, len(pred) + 1)
+    
+                ax.scatter(pred_x, pred, color="red", s=100, marker="X",
+                           label=f"{prop} Predicted ({unit})")
+    
+                for i in range(len(pred)):
+                    ax.plot(
+                        [coils[-1], pred_x[i]],
+                        [obs[-1], pred[i]],
+                        linestyle=":",
+                        color="red"
+                    )
     
             ax.set_xlabel("Coil Sequence")
-            ax.set_ylabel("Mechanical Properties (TS/YS in MPa, EL in %)")
-            ax.set_title("Trend: Observed TS/YS/EL with Predicted Hardness")
-            ax.grid(True,linestyle="--",alpha=0.3)
-            ax.legend(loc='center left',bbox_to_anchor=(1.02,0.5))
-            plt.tight_layout()
+            ax.set_ylabel("Mechanical Properties")
+            ax.set_title("Observed vs Predicted TS / YS / EL")
+            ax.grid(True, linestyle="--", alpha=0.3)
+            ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
             st.pyplot(fig)
     
-            # --- Bảng dự báo ---
-            pred_table = pd.DataFrame({"HRB":[round(h,1) for h in hrb_values]})
-            for prop in ["TS","YS","EL"]:
+            # ===============================
+            # Table
+            # ===============================
+            pred_table = pd.DataFrame({"HRB": hrb_values})
+            for prop in ["TS", "YS", "EL"]:
                 pred_table[prop] = pred_values[prop]
     
-            with st.expander("📋 Predicted Mechanical Properties (click to expand)", expanded=True):
-                st.dataframe(pred_table.style.format("{:.1f}", subset=["TS","YS","EL"]), use_container_width=True)
-    
-            st.markdown("### 📌 Notes")
-            st.markdown(
-                "- Red 'X' markers indicate predicted values.\n"
-                "- Dashed lines connect last observed coil to predicted values.\n"
-                "- EL unit is %, TS/YS units are MPa.\n"
-                "- Table shows predicted values for selected LINE Hardness range."
-            )
-    
-        # gọi function
-        predict_custom_hardness(sub)
+            with st.expander("📋 Predicted Mechanical Properties", expanded=True):
+                st.dataframe(
+                    pred_table.style.format({"TS": "{:.1f}", "YS": "{:.1f}", "EL": "{:.1f}"}),
+                    use_container_width=True
+                )
