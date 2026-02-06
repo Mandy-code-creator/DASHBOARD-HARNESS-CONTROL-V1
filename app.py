@@ -1066,40 +1066,41 @@ for _, g in valid.iterrows():
             """)
 # ========================================================
 # ========================================================
-    # VIEW MODE: BIỂU ĐỒ 3 ĐƯỜNG NỐI TIẾP (PHIÊN BẢN PREMIUM)
+# ========================================================
+    # VIEW MODE: BIỂU ĐỒ 3 ĐƯỜNG NỐI TIẾP (PHIÊN BẢN CHUẨN HÓA)
     # ========================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown(f"#### 🤖 AI Prediction & Sequential Trend: {g['Material']}")
         
-        # 1. Làm sạch dữ liệu và đảm bảo sắp xếp đúng trình tự sản xuất
+        # 1. Làm sạch dữ liệu và sắp xếp theo trình tự sản xuất
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
-        train_df = train_df.sort_values(by="COIL_NO")
+        train_df = train_df.sort_values(by="COIL_NO") #
         
         if len(train_df) < 5:
             st.warning("⚠️ Không đủ dữ liệu lịch sử để xây dựng mô hình dự báo.")
         else:
-            # 2. Ô nhập Hardness mục tiêu (Thiết kế gọn gàng)
+            # 2. Ô nhập Hardness mục tiêu
             mean_h = float(train_df["Hardness_LINE"].mean())
-            input_key = f"premium_v3_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
+            input_key = f"v4_premium_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
             
             col_in, _ = st.columns([1, 2])
             with col_in:
                 target_h = st.number_input(f"Target Hardness (HRB):", 
                                            value=round(mean_h, 1), step=0.1, key=input_key)
 
-            # 3. Tính toán AI (Sử dụng Linear Regression)
+            # 3. Tính toán AI (Linear Regression)
             X_train = train_df[["Hardness_LINE"]].values
             preds = {}
             for col in ["TS", "YS", "EL"]:
-                model = LinearRegression().fit(X_train, train_df[col].values)
-                preds[col] = model.predict([[target_h]])[0]
+                model = LinearRegression().fit(X_train, train_df[col].values) #
+                preds[col] = model.predict([[target_h]])[0] #
 
-            # 4. VẼ BIỂU ĐỒ CAO CẤP (PLOTLY GRAPH OBJECTS)
+            # 4. VẼ BIỂU ĐỒ (DÙNG CẤU TRÚC AN TOÀN)
             import plotly.graph_objects as go
             fig = go.Figure()
 
-            # Bảng màu Kỹ thuật chuyên sâu
-            colors = {"TS": "#1F77B4", "YS": "#2CA02C", "EL": "#D62728"} # Blue, Green, Red
+            # Bảng màu kỹ thuật
+            colors = {"TS": "#1F77B4", "YS": "#2CA02C", "EL": "#D62728"} 
             indices = list(range(len(train_df)))
             next_idx = len(train_df)
 
@@ -1107,68 +1108,53 @@ for _, g in valid.iterrows():
                 is_el = (col == "EL")
                 y_axis = "y2" if is_el else "y"
                 
-                # A. Vẽ đường lịch sử (Line mảnh, Marker mờ để giảm nhiễu)
+                # A. Đường lịch sử (Nét mảnh, Marker mờ)
                 fig.add_trace(go.Scatter(
                     x=indices, y=train_df[col],
                     mode='lines+markers', name=f"History {col}",
                     line=dict(color=colors[col], width=1, dash='dot'),
                     marker=dict(size=4, opacity=0.3),
-                    yaxis=y_axis,
-                    hovertemplate="Coil Seq: %{x}<br>Value: %{y:.1f}<extra></extra>"
+                    yaxis=y_axis
                 ))
 
-                # B. VẼ BƯỚC NHẢY DỰ BÁO (Nối tiếp đậm nét để thấy 'Phương hướng')
+                # B. Bước nhảy dự báo (Nối tiếp từ điểm cuối - Nét đậm)
                 fig.add_trace(go.Scatter(
                     x=[indices[-1], next_idx],
                     y=[train_df[col].iloc[-1], preds[col]],
                     mode='lines+markers',
-                    line=dict(color=colors[col], width=4), # Nét cực đậm
+                    line=dict(color=colors[col], width=4),
                     marker=dict(color='white', size=10, line=dict(color=colors[col], width=2), symbol='star-diamond'),
-                    yaxis=y_axis,
-                    showlegend=False
+                    yaxis=y_axis, showlegend=False
                 ))
 
-                # C. ĐIỂM ĐÍCH DỰ BÁO (Marker lớn nhất, hiển thị giá trị)
+                # C. Điểm đích dự báo (Hexagon lớn, hiển thị số)
                 fig.add_trace(go.Scatter(
                     x=[next_idx], y=[preds[col]],
                     mode='markers+text',
                     text=[f"<b>{preds[col]:.1f}</b>"],
                     textposition="top center",
                     marker=dict(color=colors[col], size=15, symbol='hexagon', line=dict(color='white', width=2)),
-                    yaxis=y_axis,
-                    showlegend=False
+                    yaxis=y_axis, showlegend=False
                 ))
 
-            # 5. TINH CHỈNH GIAO DIỆN (LAYOUT CHUẨN R&D)
+            # 5. LAYOUT (FIXED VALUEERROR)
             fig.update_layout(
-                title=dict(text="<b>Mechanical Properties: Historical Path & AI Prediction</b>", font=dict(size=18)),
-                xaxis=dict(
-                    title="Sequential Production Coils",
-                    gridcolor='#F0F0F0', zeroline=False
-                ),
-                yaxis=dict(
-                    title="<b>Strength (TS/YS) [MPa]</b>",
-                    titlefont=dict(color="#1F77B4"),
-                    gridcolor='#F0F0F0', zeroline=False, side="left"
-                ),
-                yaxis2=dict(
-                    title="<b>Elongation (EL) [%]</b>",
-                    titlefont=dict(color="#D62728"),
-                    overlaying="y", side="right", showgrid=False, zeroline=False
-                ),
+                title="<b>Mechanical Properties: Evolution & AI Prediction Path</b>",
+                xaxis=dict(title="Production Sequence (Last point = Forecast)", gridcolor='#F5F5F5'),
+                yaxis=dict(title="Strength (TS/YS) [MPa]", side="left", gridcolor='#F5F5F5'),
+                yaxis2=dict(title="Elongation (EL) [%]", side="right", overlaying="y", showgrid=False),
                 template="plotly_white",
                 height=600,
                 hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
+                legend=dict(orientation="h", x=0.5, xanchor="center", y=1.1)
             )
 
-            # Thêm vùng highlight xám nhạt cho khu vực dự báo (Forecast Zone)
-            fig.add_vrect(x0=indices[-1], x1=next_idx, fillcolor="#E0E0E0", opacity=0.2, layer="below", line_width=0)
-            fig.add_annotation(x=next_idx, y=1.05, yref="paper", text="FORECAST ZONE", showarrow=False, font=dict(color="gray"))
-
+            # Vùng Forecast Shading
+            fig.add_vrect(x0=indices[-1], x1=next_idx, fillcolor="#808080", opacity=0.1, layer="below", line_width=0)
+            
             st.plotly_chart(fig, use_container_width=True)
 
-            # Hiển thị Metric gọn gàng bên dưới
+            # Hiển thị số liệu dự báo
             c1, c2, c3 = st.columns(3)
             c1.metric("Predicted TS", f"{preds['TS']:.1f} MPa")
             c2.metric("Predicted YS", f"{preds['YS']:.1f} MPa")
