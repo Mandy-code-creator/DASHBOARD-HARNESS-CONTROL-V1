@@ -798,28 +798,76 @@ for _, g in valid.iterrows():
         st.subheader("🎯 Target Hardness Calculator")
         st.markdown("""
         > **This tool helps identify the Target Hardness range required to achieve the desired mechanical property limits.**
+        > *Defaults are calculated based on the stricter value between Specification and Statistical Limit (3-Sigma).*
         """)
         st.divider()
 
-        # 1. INPUT: Define Desired Mechanical Properties
+        # --- 0. PRE-CALCULATE DEFAULTS (SMART LOGIC) ---
+        # Logic: Default = Max(Spec Min, 3-Sigma Min)
+        
+        # Giá trị khởi tạo (fallback)
+        def_ys, def_ts, def_el = 250.0, 350.0, 30.0
+        logic_msg = [] # Để lưu thông báo giải thích cho user
+        
+        if not sub.empty:
+            try:
+                # --- Helper Function: Smart Min Calculation ---
+                def get_smart_min(col_val, col_spec, name, round_step=1.0):
+                    # 1. Tính 3-Sigma Min (Statistical Limit)
+                    mean_val = sub[col_val].mean()
+                    std_val = sub[col_val].std() if len(sub) > 1 else 0
+                    stat_min = mean_val - (3 * std_val)
+                    
+                    # 2. Lấy Spec Min (Nếu có cột Spec, lấy max vì thường Spec giống nhau cho cả Group)
+                    spec_min = 0.0
+                    if col_spec in sub.columns:
+                        spec_min = float(sub[col_spec].max()) # Lấy max để bắt TH có dòng bị lỗi 0
+                    
+                    # 3. So sánh: Lấy giá trị LỚN HƠN (Chặt chẽ hơn)
+                    final_min = max(stat_min, spec_min)
+                    
+                    # Làm tròn
+                    final_min = max(0.0, float(round(final_min / round_step) * round_step))
+                    
+                    # Ghi chú logic để hiện tooltip
+                    source = "Spec" if spec_min > stat_min else "3-Sigma"
+                    return final_min, source
+
+                # Áp dụng cho 3 chỉ số (Giả sử tên cột Spec trong file bạn là như bên dưới)
+                # Bạn cần thay 'Standard YS min' bằng tên cột thực tế trong file Excel
+                def_ys, src_ys = get_smart_min('YS', 'Standard YS min', 'Yield Strength', 5.0)
+                def_ts, src_ts = get_smart_min('TS', 'Standard TS min', 'Tensile Strength', 5.0)
+                def_el, src_el = get_smart_min('EL', 'Standard EL min', 'Elongation', 1.0)
+                
+                # Tạo thông báo hiển thị
+                st.info(f"""
+                ℹ️ **Auto-Optimization Logic Applied:**
+                - **YS Min:** {def_ys} ({src_ys})
+                - **TS Min:** {def_ts} ({src_ts})
+                - **EL Min:** {def_el} ({src_el})
+                *(Taking the stricter value between Official Spec and Process 3-Sigma)*
+                """)
+                
+            except Exception as e:
+                # Nếu lỗi (ví dụ không tìm thấy cột), giữ nguyên mặc định
+                pass
+
+        # --- 1. INPUT: Define Desired Mechanical Properties ---
         st.markdown("### 1. Define Desired Mechanical Properties")
         
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            # SỬA: Thêm _{_} vào key để nó không bị trùng khi chạy vòng lặp
-            req_ys_min = st.number_input("Min Yield Strength (MPa)", min_value=0.0, value=250.0, step=5.0, key=f"rev_ys_{_}")
+            req_ys_min = st.number_input("Min Yield Strength (MPa)", min_value=0.0, value=def_ys, step=5.0, key=f"rev_ys_{_}")
         
         with col2:
-            # SỬA: Thêm _{_}
-            req_ts_min = st.number_input("Min Tensile Strength (MPa)", min_value=0.0, value=350.0, step=5.0, key=f"rev_ts_{_}")
+            req_ts_min = st.number_input("Min Tensile Strength (MPa)", min_value=0.0, value=def_ts, step=5.0, key=f"rev_ts_{_}")
             
         with col3:
-            # SỬA: Thêm _{_}
-            req_el_min = st.number_input("Min Elongation (%)", min_value=0.0, value=30.0, step=1.0, key=f"rev_el_{_}")
+            req_el_min = st.number_input("Min Elongation (%)", min_value=0.0, value=def_el, step=1.0, key=f"rev_el_{_}")
 
-        # 2. PROCESSING: Filter Data
-        # Sử dụng biến 'sub' (hoặc 'df') và tên cột chuẩn (YS, TS, EL)
+        # --- 2. PROCESSING: Filter Data ---
+        # (Đoạn này giữ nguyên như cũ)
         clean_df = sub.dropna(subset=['YS', 'TS', 'EL', 'Hardness_LINE'])
         
         filtered_df = clean_df[
@@ -830,7 +878,7 @@ for _, g in valid.iterrows():
 
         st.divider()
 
-        # 3. OUTPUT: Recommended Target Hardness
+        # --- 3. OUTPUT: Recommended Target Hardness ---
         st.markdown("### 2. Recommended Target Hardness")
 
         if not filtered_df.empty:
@@ -843,8 +891,9 @@ for _, g in valid.iterrows():
             m1.metric(label="Min Hardness (HRB)", value=f"{rec_min_hrb:.1f}")
             m2.metric(label="Max Hardness (HRB)", value=f"{rec_max_hrb:.1f}")
             m3.metric(label="Samples Found", value=f"{sample_size} coils")
-
-            st.success(f"✅ To meet requirements, keep Hardness between **{rec_min_hrb:.1f}** and **{rec_max_hrb:.1f} HRB**.")
+            
+            # Logic đưa ra khuyến nghị màu sắc
+            st.success(f"✅ To achieve specific properties, keep Hardness between **{rec_min_hrb:.1f}** and **{rec_max_hrb:.1f} HRB**.")
 
             with st.expander("View Distribution & Details", expanded=True):
                 c_chart, c_data = st.columns([1, 1])
@@ -861,4 +910,4 @@ for _, g in valid.iterrows():
                 
         else:
             st.error("❌ No historical data found matching these constraints.")
-            st.info("💡 **Suggestion:** Try lowering the requirements slightly.")
+            st.warning(f"💡 **Suggestion:** The calculated limits (based on {source if 'source' in locals() else 'Logic'}) might be too strict. Try lowering the 'Min' values manually.")
