@@ -352,267 +352,168 @@ for _, g in valid.iterrows():
 # ================================
 
 
-    elif view_mode == "🛠 Hardness → TS/YS/EL":
+# ========================================================
+    # MODE: MECHANICAL PROPERTIES ANALYSIS (TS / YS / EL)
+    # ========================================================
+    elif view_mode == "⚙️ Mech Props Analysis":
+        
+        st.markdown("### ⚙️ Mechanical Properties Analysis (TS / YS / EL)")
+        
+        # 1. Lọc dữ liệu có cơ tính
+        # Sắp xếp theo thứ tự cuộn để vẽ Trend cho đúng
+        sub_mech = sub.dropna(subset=["TS", "YS", "EL"]).sort_values("COIL_NO")
+        N = len(sub_mech)
 
-        # ================================
-        # 1️⃣ Chuẩn bị dữ liệu
-        # ================================
-        sub = sub.dropna(subset=["Hardness_LAB","Hardness_LINE","TS","YS","EL"])
-    
-        # Loại bỏ hoàn toàn coil GE* <88
-        if "Quality_Code" in sub.columns:
-            sub = sub[~(
-                sub["Quality_Code"].astype(str).str.startswith("GE") &
-                ((sub["Hardness_LAB"] < 88) | (sub["Hardness_LINE"] < 88))
-            )]
-    
-        # ================================
-        # 2️⃣ Binning Hardness (chi tiết 62–88)
-        # ================================
-        bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
-        labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
-        sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
-    
-        # ================================
-        # 3️⃣ Lấy giới hạn cơ tính
-        # ================================
-        mech_cols = ["Standard TS min","Standard TS max",
-                     "Standard YS min","Standard YS max",
-                     "Standard EL min","Standard EL max"]
-        sub = sub.dropna(subset=mech_cols)
-    
-        # ================================
-        # 4️⃣ Summary thống kê
-        # ================================
-        summary = (sub.groupby("HRB_bin").agg(
-            N_coils=("COIL_NO","count"),
-            TS_mean=("TS","mean"), TS_min=("TS","min"), TS_max=("TS","max"),
-            YS_mean=("YS","mean"), YS_min=("YS","min"), YS_max=("YS","max"),
-            EL_mean=("EL","mean"), EL_min=("EL","min"), EL_max=("EL","max"),
-            EL_spec_min=("Standard EL min","min")
-        ).reset_index())
-        summary = summary[summary["N_coils"]>0]
-    
-        # ================================
-        # 5️⃣ Vẽ biểu đồ
-        # ================================
-        x = np.arange(len(summary))
-        fig, ax = plt.subplots(figsize=(16,6))
-    
-        # TS
-        ax.plot(x, summary["TS_mean"], marker="o", linewidth=2, markersize=8, label="TS Mean")
-        ax.fill_between(x, summary["TS_min"], summary["TS_max"], alpha=0.15)
-    
-        # YS
-        ax.plot(x, summary["YS_mean"], marker="s", linewidth=2, markersize=8, label="YS Mean")
-        ax.fill_between(x, summary["YS_min"], summary["YS_max"], alpha=0.15)
-    
-        # EL
-        ax.plot(x, summary["EL_mean"], marker="^", linewidth=2, markersize=8, label="EL Mean (%)")
-        ax.fill_between(x, summary["EL_min"], summary["EL_max"], alpha=0.15)
-    
-        # ================================
-        # 6️⃣ Annotation (EL < spec → đỏ + ❌)
-        # ================================
-        for idx, row in enumerate(summary.itertuples()):
-            # TS
-            ax.annotate(f"{row.TS_mean:.1f}", (x[idx], row.TS_mean),
-                        xytext=(0,12), textcoords="offset points",
-                        ha="center", va="bottom", fontsize=10, fontweight="bold")
-            # YS
-            ax.annotate(f"{row.YS_mean:.1f}", (x[idx], row.YS_mean),
-                        xytext=(0,-18), textcoords="offset points",
-                        ha="center", va="top", fontsize=10, fontweight="bold")
-            # EL
-            el_fail = row.EL_mean < row.EL_spec_min
-            ax.annotate(f"{row.EL_mean:.1f}%" + (" ❌" if el_fail else ""),
-                        (x[idx], row.EL_mean),
-                        xytext=(0,20), textcoords="offset points",
-                        ha="center", va="bottom", fontsize=10, fontweight="bold",
-                        color="red" if el_fail else None)
-    
-        # ================================
-        # 7️⃣ Trục & style
-        # ================================
-        ax.set_xticks(x)
-        ax.set_xticklabels(summary["HRB_bin"].astype(str), fontweight="bold", fontsize=12)
-        ax.set_xlabel("Hardness Range (HRB)", fontsize=12, fontweight="bold")
-        ax.set_ylabel("Mechanical Properties (MPa)", fontsize=12, fontweight="bold")
-        ax.set_title("Correlation: Hardness vs TS/YS/EL", fontsize=14, fontweight="bold")
-    
-        # Đường phân cách FULL HARD
-        if "88-92" in summary["HRB_bin"].astype(str).values:
-            idx88 = summary.index[summary["HRB_bin"].astype(str)=="88-92"][0]
-            ax.axvline(idx88-0.5, linestyle="--", alpha=0.5)
-    
-        ax.legend(loc='upper left', bbox_to_anchor=(1.02,1), fontsize=10)
-        ax.grid(True, linestyle='--', alpha=0.5)
-        plt.tight_layout()
-        st.pyplot(fig)
-    
-        # ================================
-        # 8️⃣ Bảng dữ liệu
-        # ================================
-        with st.expander("🔹 Mechanical Properties per Hardness Range", expanded=False):
-            st.dataframe(summary.style.format("{:.1f}", subset=summary.columns[2:]),
-                         use_container_width=True, height=300)
-    
-        # ================================
-        # 9️⃣ Download
-        # ================================
-        buf = fig_to_png(fig)
-        st.download_button("📥 Download Hardness → TS/YS/EL Chart",
-                           data=buf,
-                           file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
-                           mime="image/png")
-        
-        # ================================
-        # 🔹 Quick Conclusion per HRB bin (mới)
-        # ================================
-        st.markdown("### 📌 Quick Conclusion per HRB bin")
-        
-        qc_list = []
-        for hrb_bin, group in sub.groupby("HRB_bin"):
-            if group.empty:
-                continue
-            TS_min = group["TS"].min()
-            TS_max = group["TS"].max()
-            YS_min = group["YS"].min()
-            YS_max = group["YS"].max()
-            EL_min = group["EL"].min()
-            EL_max = group["EL"].max()
-        
-            TS_flag = "⚠️" if (TS_min < group["Standard TS min"].min() or TS_max > group["Standard TS max"].max()) else "✅"
-            YS_flag = "⚠️" if (YS_min < group["Standard YS min"].min() or YS_max > group["Standard YS max"].max()) else "✅"
-            EL_flag = "⚠️" if (EL_min < group["Standard EL min"].min() or EL_max > group["Standard EL max"].max()) else "✅"
-        
-            qc_list.append(f"**{hrb_bin}**: TS={TS_flag} ({TS_min:.1f}-{TS_max:.1f}), "
-                           f"YS={YS_flag} ({YS_min:.1f}-{YS_max:.1f}), "
-                           f"EL={EL_flag} ({EL_min:.1f}-{EL_max:.1f})")
-        
-        for line in qc_list:
-            st.markdown(line)
-
-    elif view_mode == "📊 TS/YS/EL Trend & Distribution":
-        import re, uuid
-    
-        # ===== 1️⃣ Binning Hardness
-        bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
-        labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
-        sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
-    
-        mech_cols = ["Standard TS min","Standard TS max",
-                     "Standard YS min","Standard YS max",
-                     "Standard EL min","Standard EL max"]
-        sub = sub.dropna(subset=mech_cols)
-    
-        hrb_bins = [b for b in labels if b in sub["HRB_bin"].unique()]
-    
-        # ===== 2️⃣ Safe NG check
-        def check_ng(series, lsl, usl):
-            series = series.fillna(np.nan)
-            mask = pd.Series(False, index=series.index)
-            if pd.notna(lsl) and pd.notna(usl):
-                mask = (series < lsl) | (series > usl)
-            elif pd.notna(lsl):
-                mask = series < lsl
-            elif pd.notna(usl):
-                mask = series > usl
-            return mask
-    
-        # ===== 3️⃣ Loop HRB bin
-        for i, hrb in enumerate(hrb_bins):
-            df_bin = sub[sub["HRB_bin"] == hrb].sort_values("COIL_NO")
-            N = len(df_bin)
-            if N == 0:
-                continue
-    
-            # Giới hạn cơ tính
-            TS_LSL, TS_USL = df_bin["Standard TS min"].iloc[0], df_bin["Standard TS max"].iloc[0]
-            YS_LSL, YS_USL = df_bin["Standard YS min"].iloc[0], df_bin["Standard YS max"].iloc[0]
-            EL_LSL, EL_USL = df_bin["Standard EL min"].iloc[0], df_bin["Standard EL max"].iloc[0]
-    
-            # Tạo cột NG safe
-            df_bin["NG_TS"] = check_ng(df_bin["TS"], TS_LSL, TS_USL)
-            df_bin["NG_YS"] = check_ng(df_bin["YS"], YS_LSL, YS_USL)
-            df_bin["NG_EL"] = check_ng(df_bin["EL"], EL_LSL, EL_USL)
-    
-            st.markdown(f"### HRB bin: {hrb} | N_coils={N}")
-    
-            # ===== 4️⃣ Trend Chart
-            fig, ax = plt.subplots(figsize=(14,4))
-            x = np.arange(1, N+1)
-            for col, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
-                ax.plot(x, df_bin[col], marker=marker, label=col, color=color)
-                ax.fill_between(x, df_bin[col].min(), df_bin[col].max(), color=color, alpha=0.1)
-                ng_idx = df_bin.index[df_bin[f"NG_{col}"]].to_list()
-                ax.scatter([x[j] for j in range(N) if df_bin.index[j] in ng_idx],
-                           df_bin.loc[ng_idx, col], color="red", s=50, zorder=5)
-    
-            # Spec lines
-            for val, col in [(TS_LSL,"#1f77b4"),(TS_USL,"#1f77b4"),
-                             (YS_LSL,"#2ca02c"),(YS_USL,"#2ca02c"),
-                             (EL_LSL,"#ff7f0e"),(EL_USL,"#ff7f0e")]:
-                if pd.notna(val):
-                    ax.axhline(val, color=col, linestyle="--", alpha=0.5)
-    
-            ax.set_xlabel("Coil Sequence")
-            ax.set_ylabel("Mechanical Properties (MPa / %)")
-            ax.set_title(f"Trend: TS/YS/EL for HRB {hrb}")
-            ax.grid(True, linestyle="--", alpha=0.5)
-            ax.legend(loc="best")
-            plt.tight_layout()
-            st.pyplot(fig)
-    
-            safe_hrb = re.sub(r"[<≥]", "", str(hrb))
-            buf_trend = fig_to_png(fig)
-            st.download_button(label=f"📥 Download Trend HRB {hrb}", data=buf_trend,
-                               file_name=f"trend_{safe_hrb}_{i}.png", mime="image/png",
-                               key=str(uuid.uuid4()))
-    
-            # ===== 5️⃣ Distribution Chart
-            fig, ax = plt.subplots(figsize=(14,4))
-            for col, color in [("TS","#1f77b4"),("YS","#2ca02c"),("EL","#ff7f0e")]:
-                series = df_bin[col].dropna()
-                ax.hist(series, bins=10, alpha=0.4, color=color, edgecolor="black", label=col)
-                # Mean ± Std
-                mean, std = series.mean(), series.std(ddof=1)
-                ax.axvline(mean, color=color, linestyle=":", label=f"{col} Mean {mean:.1f} ±{std:.1f}")
-            ax.set_title(f"Distribution: TS/YS/EL for HRB {hrb}")
-            ax.set_xlabel("Value"); ax.set_ylabel("Count"); ax.grid(alpha=0.3, linestyle="--"); ax.legend()
-            plt.tight_layout()
-            st.pyplot(fig)
-    
-            buf_dist = fig_to_png(fig)
-            st.download_button(label=f"📥 Download Distribution HRB {hrb}", data=buf_dist,
-                               file_name=f"dist_{safe_hrb}_{i}.png", mime="image/png",
-                               key=str(uuid.uuid4()))
-    
-            # ===== 6️⃣ Mechanical Properties Table
-            summary_bin = df_bin[["COIL_NO","TS","YS","EL","HRB_bin","NG_TS","NG_YS","NG_EL"]].copy()
-            with st.expander(f"📋 Mechanical Properties Table (HRB {hrb})", expanded=False):
-                st.dataframe(summary_bin.style.format("{:.1f}", subset=["TS","YS","EL"]),
-                             use_container_width=True)
-    
-            # ===== Quick Conclusion Safe & Gọn (HRB limit 1 lần)
-            if "Std_Min" in sub.columns and "Std_Max" in sub.columns:
-                lsl, usl = sub["Std_Min"].iloc[0], sub["Std_Max"].iloc[0]
-                observed_min, observed_max = sub["Hardness_LAB"].min(), sub["Hardness_LAB"].max()
-                
-                conclusion = []
-                for prop, ng_col in [("TS","NG_TS"), ("YS","NG_YS"), ("EL","NG_EL")]:
-                    if prop not in sub.columns:
-                        continue
-                    n_ng = sub[ng_col].fillna(False).sum() if ng_col in sub.columns else 0
-                    N = len(sub)
-                    val_min, val_max = sub[prop].min(), sub[prop].max()
-                    status = "✅ OK" if n_ng==0 else f"⚠️ {n_ng}/{N} out of spec"
-                    conclusion.append(f"{prop}: {status} | {val_min:.1f}-{val_max:.1f}")
+        if sub_mech.empty:
+            st.warning("⚠️ No mechanical property data available.")
+        else:
+            # 2. Logic kiểm tra NG (Fail) cho từng cuộn (dựa trên Spec riêng của từng dòng)
+            # Vì trong 1 Group có thể có nhiều Spec khác nhau, nên ta check vector hóa
             
-                st.markdown(
-                    f"**📌 Quick Conclusion:** HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | " +
-                    " | ".join(conclusion)
+            # Hàm check nhanh
+            def get_ng_mask(col_val, col_min, col_max):
+                # Thay 0 bằng NaN để không bị lỗi so sánh sai
+                lo = col_min.replace(0, np.nan)
+                hi = col_max.replace(0, np.nan)
+                
+                is_fail = pd.Series(False, index=col_val.index)
+                
+                # Fail nếu < Min
+                mask_lo = lo.notna()
+                is_fail[mask_lo] |= (col_val[mask_lo] < lo[mask_lo])
+                
+                # Fail nếu > Max
+                mask_hi = hi.notna()
+                is_fail[mask_hi] |= (col_val[mask_hi] > hi[mask_hi])
+                
+                return is_fail
+
+            sub_mech["NG_TS"] = get_ng_mask(sub_mech["TS"], sub_mech["Standard TS min"], sub_mech["Standard TS max"])
+            sub_mech["NG_YS"] = get_ng_mask(sub_mech["YS"], sub_mech["Standard YS min"], sub_mech["Standard YS max"])
+            sub_mech["NG_EL"] = get_ng_mask(sub_mech["EL"], sub_mech["Standard EL min"], sub_mech["Standard EL max"])
+
+            # 3. Tạo Tabs
+            tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution Analysis"])
+
+            # --- TAB 1: TREND CHART ---
+            with tab_trend:
+                st.markdown(f"**Total Coils:** {N}")
+                
+                fig, ax = plt.subplots(figsize=(12, 5))
+                x = np.arange(1, N + 1)
+                
+                # Vẽ 3 đường
+                props = [
+                    ("TS", "#1f77b4", "o"), # Blue
+                    ("YS", "#2ca02c", "s"), # Green
+                    ("EL", "#ff7f0e", "^")  # Orange
+                ]
+                
+                for col, color, marker in props:
+                    # Line chart
+                    ax.plot(x, sub_mech[col], marker=marker, color=color, label=col, alpha=0.7, linewidth=1.5)
+                    
+                    # Highlight NG points (Chấm đỏ to)
+                    ng_indices = np.where(sub_mech[f"NG_{col}"])[0]
+                    if len(ng_indices) > 0:
+                        ax.scatter(x[ng_indices], sub_mech[col].iloc[ng_indices], 
+                                   color="red", s=80, zorder=10, edgecolors="white", linewidth=1)
+
+                # Vẽ giới hạn (Lấy giới hạn của cuộn đầu tiên làm tham chiếu hiển thị)
+                # Lưu ý: Nếu trong nhóm có nhiều Spec khác nhau, đường này chỉ mang tính tham khảo
+                ref_row = sub_mech.iloc[0]
+                for col, color, _ in props:
+                    lsl = ref_row.get(f"Standard {col} min", np.nan)
+                    usl = ref_row.get(f"Standard {col} max", np.nan)
+                    
+                    if pd.notna(lsl) and lsl > 0:
+                        ax.axhline(lsl, color=color, linestyle="--", alpha=0.3)
+                    if pd.notna(usl) and usl > 0:
+                        ax.axhline(usl, color=color, linestyle="--", alpha=0.3)
+
+                ax.set_title("Mechanical Properties Trend (TS / YS / EL)", weight="bold")
+                ax.set_xlabel("Coil Sequence")
+                ax.set_ylabel("Value (MPa / %)")
+                ax.grid(True, linestyle="--", alpha=0.5)
+                ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=3)
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # Download
+                buf = fig_to_png(fig)
+                st.download_button(
+                    label="📥 Download Mech Trend",
+                    data=buf,
+                    file_name=f"Mech_Trend_{g['Material']}.png",
+                    mime="image/png",
+                    key=f"dl_mech_trend_{_}"
                 )
+
+            # --- TAB 2: DISTRIBUTION CHART ---
+            with tab_dist:
+                fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+                
+                for i, (col, color, _) in enumerate(props):
+                    ax = axes[i]
+                    data = sub_mech[col].dropna()
+                    
+                    # Histogram
+                    ax.hist(data, bins=15, color=color, alpha=0.5, edgecolor="black", density=True)
+                    
+                    # Density Curve (KDE or Normal fit)
+                    if len(data) > 1:
+                        mean, std = data.mean(), data.std()
+                        if std > 0:
+                            xmin, xmax = ax.get_xlim()
+                            x_plot = np.linspace(xmin, xmax, 100)
+                            y_plot = (1/(std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_plot - mean) / std)**2)
+                            ax.plot(x_plot, y_plot, color=color, linewidth=2)
+                            ax.axvline(mean, color="black", linestyle="--", label=f"Mean: {mean:.1f}")
+
+                    # Spec Lines (Reference)
+                    lsl = ref_row.get(f"Standard {col} min", np.nan)
+                    usl = ref_row.get(f"Standard {col} max", np.nan)
+                    if pd.notna(lsl) and lsl > 0:
+                        ax.axvline(lsl, color="red", linestyle=":", linewidth=2, label="Min")
+                    if pd.notna(usl) and usl > 0:
+                        ax.axvline(usl, color="red", linestyle=":", linewidth=2, label="Max")
+
+                    ax.set_title(f"{col} Distribution", weight="bold")
+                    ax.legend()
+                    ax.grid(alpha=0.3)
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+
+                # Download
+                buf = fig_to_png(fig)
+                st.download_button(
+                    label="📥 Download Mech Dist",
+                    data=buf,
+                    file_name=f"Mech_Dist_{g['Material']}.png",
+                    mime="image/png",
+                    key=f"dl_mech_dist_{_}"
+                )
+            
+            # --- SUMMARY TABLE (Dưới cùng cho tiện theo dõi) ---
+            with st.expander("📋 Detailed Statistics & NG List", expanded=False):
+                # Thống kê cơ bản
+                stats = sub_mech[["TS", "YS", "EL"]].describe().T[["count", "mean", "std", "min", "max"]]
+                st.dataframe(stats.style.format("{:.1f}"), use_container_width=True)
+                
+                # Danh sách cuộn lỗi (NG)
+                ng_rows = sub_mech[sub_mech["NG_TS"] | sub_mech["NG_YS"] | sub_mech["NG_EL"]]
+                if not ng_rows.empty:
+                    st.markdown(f"**⚠️ Found {len(ng_rows)} Out-of-Spec Coils:**")
+                    st.dataframe(
+                        ng_rows[["COIL_NO", "Hardness_LINE", "TS", "YS", "EL", "Product_Spec"]].style.format({
+                            "Hardness_LINE": "{:.1f}", "TS": "{:.1f}", "YS": "{:.1f}", "EL": "{:.1f}"
+                        }),
+                        use_container_width=True
+                    )
+                else:
+                    st.success("✅ No Out-of-Spec coils found in this group.")
     # ================================
     elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
             
