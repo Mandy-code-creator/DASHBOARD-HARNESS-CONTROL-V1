@@ -1064,47 +1064,7 @@ for _, g in valid.iterrows():
             1. Try widening the **Max YS** or **Max TS** slightly.
             2. Check the 'Debug Info' above to see if data is missing.
             """)
-# --- TÍNH NĂNG MỚI: PREDICTION ---
-    elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
-        st.markdown("#### 🤖 AI Prediction (Linear Regression)")
-        
-        # [SỬA LỖI] Dùng biến 'sub' thay vì 'g_sub'
-        train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
-        
-        if len(train_df) < 30:
-            st.warning(f"⚠️ Not enough data points ({len(train_df)}) for reliable prediction. Need at least 30.")
-        else:
-            # [SỬA LỖI] Tính trung bình để thanh kéo tự động nhận diện
-            mean_hardness = float(train_df["Hardness_LINE"].mean())
 
-            # Input Slider
-            # Cách mới (Đúng):
-            # Dùng tên vật liệu và gauge để làm ID cố định, slider sẽ không bị nhảy
-            slider_key = f"predict_slider_{g['Material']}_{g['Gauge_Range']}"
-            
-            target_h = st.slider(
-                "Target Hardness (HRB)", 
-                min_value=float(train_df["Hardness_LINE"].min()), 
-                max_value=float(train_df["Hardness_LINE"].max()), 
-                value=mean_hardness,
-                key=slider_key # <--- Đây là điểm mấu chốt
-            )
-            
-            # Xây dựng Model
-            X = train_df[["Hardness_LINE"]].values
-            cols_pred = st.columns(3)
-            
-            metrics = [("YS", "Yield Strength"), ("TS", "Tensile Strength"), ("EL", "Elongation")]
-            
-            for idx, (col_name, label) in enumerate(metrics):
-                y = train_df[col_name].values
-                
-                # Train
-                model = LinearRegression()
-                model.fit(X, y)
-                y_pred_all = model.predict(X)
-                r2 = r2_score(y, y_pred_all)
-                
 # --- TÍNH NĂNG DỰ BÁO: DÙNG Ô NHẬP SỐ (NUMBER INPUT) ---
 if view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
     st.markdown("### 🤖 AI Prediction (Global Model)")
