@@ -807,16 +807,16 @@ for _, g in valid.iterrows():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            # SỬA: Thêm key="rev_ys" để không bị trùng
-            req_ys_min = st.number_input("Min Yield Strength (MPa)", min_value=0.0, value=250.0, step=5.0, key="rev_ys")
+            # SỬA: Thêm _{_} vào key để nó không bị trùng khi chạy vòng lặp
+            req_ys_min = st.number_input("Min Yield Strength (MPa)", min_value=0.0, value=250.0, step=5.0, key=f"rev_ys_{_}")
         
         with col2:
-            # SỬA: Thêm key="rev_ts"
-            req_ts_min = st.number_input("Min Tensile Strength (MPa)", min_value=0.0, value=350.0, step=5.0, key="rev_ts")
+            # SỬA: Thêm _{_}
+            req_ts_min = st.number_input("Min Tensile Strength (MPa)", min_value=0.0, value=350.0, step=5.0, key=f"rev_ts_{_}")
             
         with col3:
-            # SỬA: Thêm key="rev_el"
-            req_el_min = st.number_input("Min Elongation (%)", min_value=0.0, value=30.0, step=1.0, key="rev_el")
+            # SỬA: Thêm _{_}
+            req_el_min = st.number_input("Min Elongation (%)", min_value=0.0, value=30.0, step=1.0, key=f"rev_el_{_}")
 
         # 2. PROCESSING: Filter Data
         # Sử dụng biến 'sub' (hoặc 'df') và tên cột chuẩn (YS, TS, EL)
