@@ -212,5 +212,3 @@ for _, g in valid_groups.iterrows():
             st.dataframe(safe[["COIL_NO", "Hardness_LINE", "YS", "TS", "EL"]])
         else:
             st.error("No coils match these specs.")
-
-   "
