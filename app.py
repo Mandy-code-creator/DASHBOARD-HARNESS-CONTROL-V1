@@ -174,7 +174,7 @@ view_mode = st.sidebar.radio(
         "🔗 Correlation: Hardness vs Mech Props", # <--- Tên mới cho Hardness -> TS/YS/EL
         "⚙️ Mech Props Analysis",                 # <--- Tên mới cho TS/YS/EL Trend
         "🔍 Lookup: Hardness Range → Actual Mech Props", # <--- Tính năng tra cứu
-        "🎯 Target Hardness Calculator (Reverse Lookup)",
+        "🎯 Find Target Hardness (Reverse Lookup)",
     ]
 )
 
