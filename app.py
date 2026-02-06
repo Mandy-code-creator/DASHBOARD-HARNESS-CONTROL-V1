@@ -1078,10 +1078,17 @@ for _, g in valid.iterrows():
             mean_hardness = float(train_df["Hardness_LINE"].mean())
 
             # Input Slider
-            target_h = st.slider(f"Target Hardness (HRB) {uuid.uuid4()}", 
-                                 min_value=float(train_df["Hardness_LINE"].min()), 
-                                 max_value=float(train_df["Hardness_LINE"].max()), 
-                                 value=mean_hardness) # Đặt mặc định là trung bình
+            # Cách mới (Đúng):
+            # Dùng tên vật liệu và gauge để làm ID cố định, slider sẽ không bị nhảy
+            slider_key = f"predict_slider_{g['Material']}_{g['Gauge_Range']}"
+            
+            target_h = st.slider(
+                "Target Hardness (HRB)", 
+                min_value=float(train_df["Hardness_LINE"].min()), 
+                max_value=float(train_df["Hardness_LINE"].max()), 
+                value=mean_hardness,
+                key=slider_key # <--- Đây là điểm mấu chốt
+            )
             
             # Xây dựng Model
             X = train_df[["Hardness_LINE"]].values
