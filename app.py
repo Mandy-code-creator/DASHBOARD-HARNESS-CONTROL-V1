@@ -155,171 +155,127 @@ df = df.dropna(subset=["Gauge_Range"])
 # ================================
 # SIDEBAR FILTER
 # ==============================================================================
-# ==============================================================================
-# 🎨 SIDEBAR DESIGN: FILTER & CONTROL PANEL (Full Version)
+# 🎨 SIDEBAR DESIGN: ORIGINAL LOGIC + NEW UI
 # ==============================================================================
 with st.sidebar:
     # --- 1. BRANDING & LOGO ---
-    # Đảm bảo file image_4.png nằm cùng thư mục với file app.py
+    # (Giữ lại phần Logo mới thêm theo yêu cầu của bạn)
     try:
         st.image("image_4.png", use_container_width=True)
     except:
-        st.warning("⚠️ Chưa tìm thấy file 'image_4.png'.")
-    
+        st.warning("⚠️ Chưa tìm thấy file 'image_4.png'")
+        
     st.title("🎛️ Control Panel")
-    st.caption("version 1.2.0 | 🚀 Engine: Hybrid Analysis")
     st.divider()
 
-    # --- 2. TIME FILTER (Robust Fix: Sửa lỗi StreamlitAPIException) ---
+    # --- 2. TIME FILTER (Layout mới gọn hơn, nhưng logic cũ) ---
     st.markdown("### 📅 Production Period")
     
-    # B1: Chuyển đổi sang datetime và ép lỗi thành NaT (nếu dữ liệu rác)
+    # Xử lý ngày tháng cơ bản để tránh lỗi
     if not pd.api.types.is_datetime64_any_dtype(df["PRODUCTION DATE"]):
         df["PRODUCTION DATE"] = pd.to_datetime(df["PRODUCTION DATE"], errors='coerce')
+
+    min_date = df["PRODUCTION DATE"].min().date()
+    max_date = df["PRODUCTION DATE"].max().date()
     
-    # B2: Lấy danh sách ngày hợp lệ (bỏ qua NaT)
-    valid_dates = df["PRODUCTION DATE"].dropna()
-
-    # B3: Tính toán min/max an toàn (dùng .date() cho Streamlit)
-    import datetime
-    if not valid_dates.empty:
-        min_date = valid_dates.min().date()
-        max_date = valid_dates.max().date()
-    else:
-        min_date = datetime.date.today()
-        max_date = datetime.date.today()
-
-    # Layout 2 cột gọn gàng
+    # Đặt trên 2 cột cho gọn (như bạn thích)
     c_date1, c_date2 = st.columns(2)
     with c_date1:
         start_date = st.date_input("From", value=min_date, min_value=min_date, max_value=max_date)
     with c_date2:
         end_date = st.date_input("To", value=max_date, min_value=min_date, max_value=max_date)
 
-    # Tạo mask lọc ngày (dùng .dt.date để so sánh)
+    # Lọc Date
     mask_date = (df["PRODUCTION DATE"].dt.date >= start_date) & (df["PRODUCTION DATE"].dt.date <= end_date)
-    
-    # Tạo dataframe tạm đã lọc ngày để dùng cho các dropdown bên dưới (Dynamic Filtering)
     df_date_filtered = df[mask_date]
 
-    # --- 3. CATEGORY FILTERS (Grouped) ---
+    # --- 3. ORIGINAL FILTERS (Quay lại đúng tên cột cũ của bạn) ---
     
-    # GROUP A: MATERIAL SPECS (Sửa lỗi KeyError)
     with st.expander("🏗️ Material & Grade Specs", expanded=True):
+        # 1. Grade (Dùng đúng 'HR STEEL GRADE' như ban đầu)
+        all_grades = sorted(df_date_filtered["HR STEEL GRADE"].unique())
+        selected_grades = st.multiselect(
+            "Select Grade", 
+            options=all_grades,
+            default=all_grades
+        )
         
-        # 1. Grade Filter (Tự động tìm cột Grade đúng)
-        possible_grade_cols = ['HR STEEL GRADE', 'PRODUCT SPECIFICATION CODE', 'STEEL GRADE', 'Grade']
-        grade_col = next((c for c in possible_grade_cols if c in df.columns), None)
+        # 2. Material Class (Dùng đúng 'Claasify material')
+        all_class = sorted(df_date_filtered["Claasify material"].unique())
+        selected_class = st.multiselect(
+            "Material Class",
+            options=all_class,
+            default=all_class
+        )
+
+    with st.expander("📏 Dimensions", expanded=False):
+        # 3. Gauge
+        min_g = float(df_date_filtered["ORDER GAUGE"].min())
+        max_g = float(df_date_filtered["ORDER GAUGE"].max())
+        if min_g == max_g: max_g += 0.1
         
-        selected_grades = []
-        if grade_col:
-            # Lấy list grade từ dữ liệu đã lọc ngày
-            all_grades = sorted(df_date_filtered[grade_col].dropna().unique())
-            selected_grades = st.multiselect(
-                f"Select Grade", 
-                options=all_grades,
-                default=all_grades,
-                help=f"Chọn mác thép (Cột gốc: {grade_col})"
-            )
-        else:
-            st.error("⚠️ Không tìm thấy cột Grade!")
+        selected_gauge = st.slider(
+            "Gauge Range (mm)",
+            min_value=min_g, max_value=max_g,
+            value=(min_g, max_g)
+        )
+        
+        # 4. Width
+        min_w = float(df_date_filtered["ORDER WIDTH"].min())
+        max_w = float(df_date_filtered["ORDER WIDTH"].max())
+        if min_w == max_w: max_w += 10.0
+        
+        selected_width = st.slider(
+            "Width Range (mm)",
+            min_value=min_w, max_value=max_w,
+            value=(min_w, max_w)
+        )
 
-        # 2. Material Classification
-        selected_class = []
-        if 'Claasify material' in df.columns:
-            all_class = sorted(df_date_filtered["Claasify material"].dropna().unique())
-            selected_class = st.multiselect(
-                "Material Class",
-                options=all_class,
-                default=all_class
-            )
-
-    # GROUP B: DIMENSIONS
-    with st.expander("📏 Dimensions (Gauge & Width)", expanded=False):
-        # Gauge Slider
-        if 'ORDER GAUGE' in df.columns:
-            min_g = float(df_date_filtered["ORDER GAUGE"].min()) if not df_date_filtered.empty else 0.0
-            max_g = float(df_date_filtered["ORDER GAUGE"].max()) if not df_date_filtered.empty else 10.0
-            
-            # Xử lý trường hợp min = max
-            if min_g == max_g: max_g += 0.1
-                
-            selected_gauge = st.slider(
-                "Gauge Range (mm)",
-                min_value=min_g, max_value=max_g,
-                value=(min_g, max_g),
-                step=0.01
-            )
-        else:
-            selected_gauge = (0.0, 99.9)
-
-        # Width Slider
-        if 'ORDER WIDTH' in df.columns:
-            min_w = float(df_date_filtered["ORDER WIDTH"].min()) if not df_date_filtered.empty else 0.0
-            max_w = float(df_date_filtered["ORDER WIDTH"].max()) if not df_date_filtered.empty else 2000.0
-            
-            if min_w == max_w: max_w += 10.0
-            
-            selected_width = st.slider(
-                "Width Range (mm)",
-                min_value=min_w, max_value=max_w,
-                value=(min_w, max_w),
-                step=10.0
-            )
-        else:
-            selected_width = (0.0, 9999.0)
-
-    # GROUP C: PROCESS & COATING
     with st.expander("🧪 Coating & Process", expanded=False):
-        # Coating Type
-        selected_coating = []
-        if 'METALLIC COATING TYPE' in df.columns:
-            all_coating = sorted(df_date_filtered["METALLIC COATING TYPE"].astype(str).unique())
-            selected_coating = st.multiselect("Coating Type", options=all_coating, default=all_coating)
+        # 5. Coating Type
+        all_coating = sorted(df_date_filtered["METALLIC COATING TYPE"].astype(str).unique())
+        selected_coating = st.multiselect(
+            "Coating Type",
+            options=all_coating,
+            default=all_coating
+        )
         
-        # Quality Code
-        selected_qc = []
-        if 'QUALITY_CODE' in df.columns:
-            all_qc = sorted(df_date_filtered["QUALITY_CODE"].astype(str).unique())
-            selected_qc = st.multiselect("Quality Code", options=all_qc, default=all_qc)
+        # 6. Quality Code
+        all_qc = sorted(df_date_filtered["QUALITY_CODE"].astype(str).unique())
+        selected_qc = st.multiselect(
+            "Quality Code",
+            options=all_qc,
+            default=all_qc
+        )
 
-    # --- 4. APPLY FILTER LOGIC ---
+    # --- 4. APPLY FILTER LOGIC (Logic nguyên bản) ---
+    # Kết hợp các điều kiện
     mask_final = mask_date
     
-    if grade_col and selected_grades:
-        mask_final &= df[grade_col].isin(selected_grades)
+    if selected_grades:
+        mask_final &= df["HR STEEL GRADE"].isin(selected_grades)
     
-    if 'Claasify material' in df.columns and selected_class:
+    if selected_class:
         mask_final &= df["Claasify material"].isin(selected_class)
         
-    if 'METALLIC COATING TYPE' in df.columns and selected_coating:
+    if selected_coating:
         mask_final &= df["METALLIC COATING TYPE"].astype(str).isin(selected_coating)
         
-    if 'QUALITY_CODE' in df.columns and selected_qc:
+    if selected_qc:
         mask_final &= df["QUALITY_CODE"].astype(str).isin(selected_qc)
         
-    # Lọc Range
-    if 'ORDER GAUGE' in df.columns:
-        mask_final &= (df["ORDER GAUGE"] >= selected_gauge[0]) & (df["ORDER GAUGE"] <= selected_gauge[1])
-    if 'ORDER WIDTH' in df.columns:
-        mask_final &= (df["ORDER WIDTH"] >= selected_width[0]) & (df["ORDER WIDTH"] <= selected_width[1])
+    # Lọc Slider
+    mask_final &= (df["ORDER GAUGE"] >= selected_gauge[0]) & (df["ORDER GAUGE"] <= selected_gauge[1])
+    mask_final &= (df["ORDER WIDTH"] >= selected_width[0]) & (df["ORDER WIDTH"] <= selected_width[1])
 
-    # TẠO DATAFRAME 'sub' (Biến này sẽ được dùng cho toàn bộ Dashboard)
+    # Tạo biến 'sub'
     sub = df[mask_final]
 
-    # --- 5. DATA SUMMARY & INFO ---
+    # --- 5. SUMMARY ---
     st.divider()
-    
-    total_count = len(df)
-    filtered_count = len(sub)
-    percent = (filtered_count / total_count * 100) if total_count > 0 else 0
-    
     c_met1, c_met2 = st.columns(2)
-    c_met1.metric("Total Coils", f"{filtered_count:,}", delta=f"{percent:.1f}%")
-    c_met2.metric("Hidden", f"{total_count - filtered_count:,}", delta_color="inverse")
-    
-    if filtered_count == 0:
-        st.error("❌ No data matches filters!")
+    c_met1.metric("Total Coils", f"{len(sub):,}")
+    c_met2.metric("Hidden", f"{len(df) - len(sub):,}", delta_color="inverse")
     
     if st.button("🔄 Reset Filters", use_container_width=True):
         st.rerun()
