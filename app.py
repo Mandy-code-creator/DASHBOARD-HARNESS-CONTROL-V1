@@ -169,13 +169,11 @@ df = df[
 view_mode = st.sidebar.radio(
     "📊 View Mode",
     [
-        "📋 Data Table",
-        "📈 Trend (LAB / LINE)",
-        "📊 Distribution (LAB + LINE)",
-        "🛠 Hardness → TS/YS/EL",
-        "📊 TS/YS/EL Trend & Distribution",
-        "🧮 Predict TS/YS/EL (Custom Hardness)",
-        "🔍 Lookup: Hardness Range → Actual Mech Props",
+        "📋 Data Inspection",
+        "📉 Hardness Analysis (Trend & Dist)",     # <--- Đã gộp 2 cái cũ vào đây
+        "🔗 Correlation: Hardness vs Mech Props", # <--- Tên mới cho Hardness -> TS/YS/EL
+        "⚙️ Mech Props Analysis",                 # <--- Tên mới cho TS/YS/EL Trend
+        "🔍 Lookup: Hardness Range → Actual Mech Props", # <--- Tính năng tra cứu
     ]
 )
 
