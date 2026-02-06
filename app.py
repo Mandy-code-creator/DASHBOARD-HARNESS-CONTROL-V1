@@ -58,8 +58,7 @@ def load_main():
     return pd.read_csv(StringIO(r.text))
 
 raw = load_main()
-# THÊM DÒNG NÀY NGAY BÊN DƯỚI:
-df.columns = df.columns.str.strip() # Xóa toàn bộ khoảng trắng thừa ở tên cột
+
 # ================================
 # METALLIC TYPE AUTO
 # ================================
