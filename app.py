@@ -1066,34 +1066,34 @@ for _, g in valid.iterrows():
             """)
 # ========================================================
 # ========================================================
-    # VIEW MODE: BIỂU ĐỒ NỐI TIẾP ĐẬM NÉT (INDUSTRIAL BOLD)
+    # VIEW MODE: BIỂU ĐỒ NỐI TIẾP ĐẬM NÉT (INDUSTRIAL BOLD V7)
     # ========================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown(f"#### 🚀 Mechanical Properties: Sequential Path & AI Forecast")
         
-        # 1. Chuẩn bị dữ liệu và sắp xếp trình tự
+        # 1. Chuẩn bị dữ liệu và sắp xếp trình tự sản xuất
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         train_df = train_df.sort_values(by="COIL_NO")
         
         if len(train_df) < 5:
-            st.warning("⚠️ Cần tối thiểu 5 cuộn dữ liệu để vẽ xu hướng.")
+            st.warning("⚠️ Cần tối thiểu 5 cuộn dữ liệu lịch sử để xây dựng mô hình dự báo.")
         else:
             # 2. Input Section
             mean_h = float(train_df["Hardness_LINE"].mean())
-            input_key = f"industrial_v6_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
+            input_key = f"indus_v7_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
             
             c_in, _ = st.columns([1, 2])
             with c_in:
                 target_h = st.number_input(f"Target Hardness (HRB):", value=round(mean_h, 1), step=0.1, key=input_key)
 
-            # 3. AI Prediction logic
+            # 3. AI Prediction logic (Linear Regression)
             X_train = train_df[["Hardness_LINE"]].values
             preds = {}
             for col in ["TS", "YS", "EL"]:
                 model = LinearRegression().fit(X_train, train_df[col].values)
                 preds[col] = model.predict([[target_h]])[0]
 
-            # 4. VẼ BIỂU ĐỒ (SỬ DỤNG CÚ PHÁP PHẲNG ĐỂ TRÁNH LỖI)
+            # 4. VẼ BIỂU ĐỒ (DÙNG CẤU TRÚC DICT CHUẨN ĐỂ TRÁNH LỖI)
             import plotly.graph_objects as go
             fig = go.Figure()
 
@@ -1135,26 +1135,17 @@ for _, g in valid.iterrows():
                     yaxis=y_axis, showlegend=False
                 ))
 
-            # 5. LAYOUT (CẤU TRÚC PHẲNG - CHỐNG VALUEERROR)
+            # 5. LAYOUT (CẤU TRÚC DICT CHUẨN - FIX VALUEERROR)
             fig.update_layout(
-                title_text="<b>MECHANICAL PROPERTIES EVOLUTION & AI PREDICTION</b>",
-                xaxis_title="Sequential Production Coils",
-                xaxis_gridcolor="#E0E0E0",
-                yaxis_title="<b>Strength (TS/YS) [MPa]</b>",
-                yaxis_gridcolor="#E0E0E0",
-                yaxis_titlefont_color=colors["TS"],
-                yaxis2_title="<b>Elongation (EL) [%]</b>",
-                yaxis2_titlefont_color=colors["EL"],
-                yaxis2_overlaying="y",
-                yaxis2_side="right",
-                yaxis2_showgrid=False,
+                title=dict(text="<b>MECHANICAL PROPERTIES EVOLUTION & AI PREDICTION</b>"),
+                xaxis=dict(title="Sequential Production Coils", gridcolor="#E0E0E0"),
+                yaxis=dict(title="<b>Strength (TS/YS) [MPa]</b>", gridcolor="#E0E0E0", titlefont=dict(color=colors["TS"])),
+                yaxis2=dict(title="<b>Elongation (EL) [%]</b>", titlefont=dict(color=colors["EL"]), 
+                            overlaying="y", side="right", showgrid=False),
                 template="plotly_white",
                 height=650,
                 hovermode="x unified",
-                legend_orientation="h",
-                legend_y=1.1,
-                legend_x=0.5,
-                legend_xanchor="center"
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
             )
 
             # Đổ bóng khu vực dự báo
