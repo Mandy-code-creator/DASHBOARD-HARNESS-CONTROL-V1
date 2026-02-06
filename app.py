@@ -1067,21 +1067,21 @@ for _, g in valid.iterrows():
 # ========================================================
 # ========================================================
 # ========================================================
-    # VIEW MODE: BIỂU ĐỒ NỐI TIẾP ĐẬM NÉT (STEEL-MASTER PRO V9)
+    # VIEW MODE: BIỂU ĐỒ NỐI TIẾP ĐẬM NÉT (STEEL-MASTER ULTIMATE V10)
     # ========================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown(f"#### 🚀 Mechanical Properties: Sequential Path & AI Forecast")
         
-        # 1. Làm sạch dữ liệu và sắp xếp trình tự sản xuất
+        # 1. Chuẩn bị dữ liệu và sắp xếp trình tự sản xuất
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         train_df = train_df.sort_values(by="COIL_NO")
         
         if len(train_df) < 5:
-            st.warning("⚠️ Cần tối thiểu 5 cuộn dữ liệu để xây dựng mô hình dự báo.")
+            st.warning("⚠️ Cần tối thiểu 5 cuộn dữ liệu lịch sử để xây dựng mô hình dự báo.")
         else:
             # 2. Input Section
             mean_h = float(train_df["Hardness_LINE"].mean())
-            input_key = f"final_v9_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
+            input_key = f"final_v10_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
             
             c_in, _ = st.columns([1, 2])
             with c_in:
@@ -1094,7 +1094,7 @@ for _, g in valid.iterrows():
                 model = LinearRegression().fit(X_train, train_df[col].values)
                 preds[col] = model.predict([[target_h]])[0]
 
-            # 4. VẼ BIỂU ĐỒ (DÙNG CÚ PHÁP PHẲNG - CỰC KỲ AN TOÀN)
+            # 4. VẼ BIỂU ĐỒ (SỬ DỤNG CÁC PHƯƠNG THỨC CẬP NHẬT RIÊNG LẺ ĐỂ TRÁNH LỖI)
             import plotly.graph_objects as go
             fig = go.Figure()
 
@@ -1121,7 +1121,7 @@ for _, g in valid.iterrows():
                     x=[indices[-1], next_idx],
                     y=[train_df[col].iloc[-1], preds[col]],
                     mode='lines+markers',
-                    line=dict(color=colors[col], width=6), # Độ dày tối đa
+                    line=dict(color=colors[col], width=7), # Tăng độ đậm lên 7 cho cực rõ
                     marker=dict(color='yellow', size=12, line=dict(color='black', width=1), symbol='star'),
                     yaxis=y_axis, showlegend=False
                 ))
@@ -1132,36 +1132,29 @@ for _, g in valid.iterrows():
                     mode='markers+text',
                     text=[f"<b>{preds[col]:.1f}</b>"],
                     textposition="top center",
-                    marker=dict(color=colors[col], size=18, symbol='diamond', line=dict(color='white', width=2)),
+                    marker=dict(color=colors[col], size=20, symbol='diamond', line=dict(color='white', width=2)),
                     yaxis=y_axis, showlegend=False
                 ))
 
-            # 5. LAYOUT (CÚ PHÁP PHẲNG - FIX TRIỆT ĐỂ LỖI VALUEERROR)
+            # 5. CẤU HÌNH GIAO DIỆN (DÙNG UPDATE_AXES ĐỂ FIX LỖI TRIỆT ĐỂ)
             fig.update_layout(
                 height=650,
                 template="plotly_white",
                 hovermode="x unified",
                 title_text="<b>MECHANICAL PROPERTIES EVOLUTION & AI PREDICTION</b>",
-                # Trục X
-                xaxis_title="Production Sequence (Last point = Forecast)",
-                xaxis_gridcolor="#E0E0E0",
-                # Trục Y trái (MPa)
-                yaxis_title="<b>Strength (TS/YS) [MPa]</b>",
-                yaxis_titlefont_color=colors["TS"],
-                yaxis_gridcolor="#E0E0E0",
-                # Trục Y phải (%)
-                yaxis2_title="<b>Elongation (EL) [%]</b>",
-                yaxis2_titlefont_color=colors["EL"],
-                yaxis2_overlaying="y",
-                yaxis2_side="right",
-                yaxis2_showgrid=False,
-                # Legend
-                legend_orientation="h",
-                legend_yanchor="bottom",
-                legend_y=1.05,
-                legend_xanchor="center",
-                legend_x=0.5
+                legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="center", x=0.5)
             )
+
+            # Cấu hình trục X
+            fig.update_xaxes(title_text="Production Sequence (Last point = Forecast)", gridcolor="#E0E0E0")
+            
+            # Cấu hình trục Y trái (MPa)
+            fig.update_yaxes(title_text="<b>Strength (TS/YS) [MPa]</b>", gridcolor="#E0E0E0", 
+                             title_font=dict(color=colors["TS"]), side="left")
+            
+            # Cấu hình trục Y phải (%)
+            fig.update_yaxes(title_text="<b>Elongation (EL) [%]</b>", title_font=dict(color=colors["EL"]), 
+                             side="right", overlaying="y", showgrid=False)
 
             # Vùng Shaded Area (Forecast Zone)
             fig.add_vrect(x0=indices[-1], x1=next_idx, fillcolor="#BDBDBD", opacity=0.2, layer="below", line_width=0)
