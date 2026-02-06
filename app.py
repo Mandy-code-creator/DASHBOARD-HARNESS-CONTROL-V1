@@ -1066,83 +1066,87 @@ for _, g in valid.iterrows():
             """)
 # ========================================================
 # ========================================================
-    # VIEW MODE: BIỂU ĐỒ XU HƯỚNG (TRENDLINE) & DỰ BÁO
+    # VIEW MODE: BIỂU ĐỒ LINE WITH MARKERS (XU HƯỚNG DỊCH CHUYỂN)
     # ========================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
-        st.markdown(f"#### 📉 Trendline Analysis & Prediction: {g['Material']}")
+        st.markdown(f"#### 📈 Line with Markers Trend Analysis: {g['Material']}")
         
-        # 1. Làm sạch dữ liệu
+        # 1. Làm sạch và sắp xếp dữ liệu theo Hardness để vẽ line không bị rối
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+        train_df = train_df.sort_values(by="Hardness_LINE")
         
         if len(train_df) < 5:
-            st.warning("⚠️ Không đủ dữ liệu để vẽ biểu đồ xu hướng.")
+            st.warning("⚠️ Không đủ dữ liệu lịch sử để vẽ biểu đồ line.")
         else:
             # 2. Ô nhập Hardness mục tiêu
             mean_h = float(train_df["Hardness_LINE"].mean())
-            input_key = f"trend_input_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
+            input_key = f"line_marker_in_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
             target_h = st.number_input(f"Nhập Hardness mục tiêu (HRB):", 
                                        value=round(mean_h, 1), step=0.5, key=input_key)
 
-            # 3. Tính toán Hồi quy Tuyến tính (Linear Regression)
+            # 3. Tính toán Hồi quy (Mô hình AI)
             X = train_df[["Hardness_LINE"]].values
             y_ts = train_df["TS"].values
             model = LinearRegression().fit(X, y_ts)
-            
-            # Dự báo điểm mới
             pred_ts = model.predict([[target_h]])[0]
-            r2 = r2_score(y_ts, model.predict(X))
 
-            # 4. Vẽ biểu đồ Trendline bằng Plotly
+            # 4. VẼ BIỂU ĐỒ LINE WITH MARKERS (PLOTLY)
             import plotly.graph_objects as go
-            
-            # Tính toán dải đường Trendline bao gồm cả điểm dự báo
-            x_min = min(train_df["Hardness_LINE"].min(), target_h) - 3
-            x_max = max(train_df["Hardness_LINE"].max(), target_h) + 3
+            fig = go.Figure()
+
+            # --- TRACE 1: LINE + MARKERS DỮ LIỆU QUÁ KHỨ ---
+            fig.add_trace(go.Scatter(
+                x=train_df["Hardness_LINE"], 
+                y=train_df["TS"],
+                mode='lines+markers',
+                name='Lịch sử sản xuất',
+                line=dict(color='rgba(31, 119, 180, 0.3)', width=1),
+                marker=dict(color='#1f77b4', size=6, opacity=0.6),
+                hovertemplate="Hardness: %{x}<br>TS thực tế: %{y}<extra></extra>"
+            ))
+
+            # --- TRACE 2: ĐƯỜNG DẪN HƯỚNG (TRENDLINE) ---
+            # Vẽ đường thẳng nối từ điểm bắt đầu đến điểm dự báo
+            x_min = min(train_df["Hardness_LINE"].min(), target_h)
+            x_max = max(train_df["Hardness_LINE"].max(), target_h)
             x_trend = np.array([x_min, x_max]).reshape(-1, 1)
             y_trend = model.predict(x_trend)
 
-            fig = go.Figure()
-
-            # --- Trace 1: Dữ liệu quá khứ (Các chấm nhỏ) ---
-            fig.add_trace(go.Scatter(
-                x=train_df["Hardness_LINE"], y=train_df["TS"],
-                mode='markers', name='Dữ liệu thực tế',
-                marker=dict(color='rgba(31, 119, 180, 0.4)', size=6),
-                hovertemplate="Hardness: %{x}<br>Actual TS: %{y}<extra></extra>"
-            ))
-
-            # --- Trace 2: ĐƯỜNG TRENDLINE (Đường xu hướng chính) ---
             fig.add_trace(go.Scatter(
                 x=x_trend.flatten(), y=y_trend,
-                mode='lines', name='Trendline (Xu hướng)',
-                line=dict(color='orange', width=2),
-                hoverinfo='skip'
+                mode='lines',
+                name='Hướng dịch chuyển (AI Trend)',
+                line=dict(color='orange', width=2, dash='solid')
             ))
 
-            # --- Trace 3: ĐIỂM DỰ BÁO (Màu đỏ rực) ---
+            # --- TRACE 3: ĐIỂM DỰ BÁO (MARKER ĐỎ NỔI BẬT) ---
             fig.add_trace(go.Scatter(
                 x=[target_h], y=[pred_ts],
-                mode='markers+text', name='DỰ BÁO',
-                text=[f"Đích đến: {pred_ts:.1f}"],
+                mode='markers+text',
+                name='ĐIỂM DỰ BÁO ĐÍCH',
+                text=[f"Đích: {pred_ts:.1f}"],
                 textposition="top center",
-                marker=dict(color='red', size=14, symbol='diamond',
-                            line=dict(color='white', width=2)),
+                marker=dict(color='red', size=15, symbol='circle',
+                            line=dict(color='black', width=2)),
                 hovertemplate="Target Hardness: %{x}<br>Predicted TS: %{y:.1f}<extra></extra>"
             ))
 
-            # Cấu hình giao diện
+            # Cấu hình giao diện biểu đồ
             fig.update_layout(
-                title=f"Trendline Tensile Strength theo Hardness ({g['Material']})",
+                title=f"Biểu đồ Line with Markers: Xu hướng TS theo Hardness ({g['Material']})",
                 xaxis_title="Hardness (HRB)",
                 yaxis_title="Tensile Strength (MPa)",
                 template="plotly_white",
-                height=500,
-                xaxis=dict(range=[x_min, x_max], gridcolor='lightgrey'),
-                yaxis=dict(gridcolor='lightgrey'),
+                height=550,
+                xaxis=dict(gridcolor='whitesmoke'),
+                yaxis=dict(gridcolor='whitesmoke'),
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
 
             st.plotly_chart(fig, use_container_width=True)
             
-            # Hiển thị kết quả dạng số bên dưới
-            st.info(f"💡 **Phân tích:** Với độ cứng **{target_h} HRB**, Tensile Strength dự kiến đạt **{pred_ts:.1f} MPa**. Độ tin cậy của xu hướng này là **{r2*100:.1f}%** (R²={r2:.2f}).")
+            # Kết quả dự báo nhanh cho 3 chỉ số
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Dự báo TS", f"{pred_ts:.1f}")
+            c2.metric("Dự báo YS", f"{LinearRegression().fit(X, train_df['YS'].values).predict([[target_h]])[0]:.1f}")
+            c3.metric("Dự báo EL", f"{LinearRegression().fit(X, train_df['EL'].values).predict([[target_h]])[0]:.1f}")
