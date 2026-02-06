@@ -487,7 +487,7 @@ for _, g in valid.iterrows():
     # MODE: MECH PROPS ANALYSIS (FIXED DUPLICATE KEY ERROR)
     # ========================================================
     elif view_mode == "⚙️ Mech Props Analysis":
-        
+        import uuid
         st.markdown("### ⚙️ Mechanical Properties Analysis (TS / YS / EL)")
         
         # 1. Lọc dữ liệu có cơ tính & Sắp xếp
