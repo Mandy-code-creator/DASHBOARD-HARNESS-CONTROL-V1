@@ -485,12 +485,14 @@ for _, g in valid.iterrows():
 # ========================================================
 # ========================================================
 # ========================================================
-    # MODE: MECH PROPS ANALYSIS (WITH STATS TABLE)
+# ========================================================
+    # MODE: MECH PROPS ANALYSIS (LONG TAIL NORMAL CURVE + 3 SIGMA)
     # ========================================================
     elif view_mode == "⚙️ Mech Props Analysis":
-        import uuid # Đảm bảo có thư viện này
+        import uuid
         
-        st.markdown("### ⚙️ Mechanical Properties Analysis (TS / YS / EL)")
+        st.markdown("### ⚙️ Mechanical Properties Analysis (SPC)")
+        st.info("💡 Biểu đồ phân bố (Distribution) đã được mở rộng trục X (±5 Sigma) để hiển thị trọn vẹn đường cong chuẩn. Các đường nét đứt màu tím là giới hạn kiểm soát thống kê (UCL/LCL).")
         
         # 1. Lọc dữ liệu
         sub_mech = sub.dropna(subset=["TS", "YS", "EL"]).sort_values("COIL_NO")
@@ -515,102 +517,114 @@ for _, g in valid.iterrows():
             # 3. Tabs
             tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & Stats"])
 
-            # --- TAB 1: TREND CHART ---
+            # --- TAB 1: TREND CHART (Giữ nguyên) ---
             with tab_trend:
                 st.markdown(f"**Total Coils:** {N}")
-                fig, ax = plt.subplots(figsize=(12, 5))
+                fig, ax = plt.subplots(figsize=(12, 6))
                 x = np.arange(1, N + 1)
                 props = [("TS", "#1f77b4", "o"), ("YS", "#2ca02c", "s"), ("EL", "#ff7f0e", "^")]
                 
                 for col, color, marker in props:
-                    ax.plot(x, sub_mech[col], marker=marker, color=color, label=col, alpha=0.7, linewidth=1.5)
+                    series = sub_mech[col]
+                    ax.plot(x, series, marker=marker, color=color, label=col, alpha=0.6, linewidth=1.5)
                     ng_indices = np.where(sub_mech[f"NG_{col}"])[0]
                     if len(ng_indices) > 0:
-                        ax.scatter(x[ng_indices], sub_mech[col].iloc[ng_indices], color="red", s=80, zorder=10, edgecolors="white", linewidth=1)
+                        ax.scatter(x[ng_indices], series.iloc[ng_indices], color="red", s=80, zorder=10, edgecolors="white", linewidth=1)
+                    
+                    # Trend Control Limits
+                    mean_val, std_val = series.mean(), series.std()
+                    ax.axhline(mean_val + 3*std_val, color=color, linestyle="--", linewidth=1, alpha=0.4)
+                    ax.axhline(mean_val - 3*std_val, color=color, linestyle="--", linewidth=1, alpha=0.4)
 
                 ref_row = sub_mech.iloc[0]
                 for col, color, _ in props:
                     lsl = ref_row.get(f"Standard {col} min", 0)
                     usl = ref_row.get(f"Standard {col} max", 0)
-                    if lsl > 0: ax.axhline(lsl, color=color, linestyle="--", alpha=0.3)
-                    if usl > 0: ax.axhline(usl, color=color, linestyle="--", alpha=0.3)
+                    if lsl > 0: ax.axhline(lsl, color="red", linestyle="-", linewidth=1.5, alpha=0.3)
+                    if usl > 0: ax.axhline(usl, color="red", linestyle="-", linewidth=1.5, alpha=0.3)
 
-                ax.set_title("Mechanical Properties Trend (TS / YS / EL)", weight="bold")
+                ax.set_title("Mechanical Properties Trend", weight="bold")
                 ax.set_xlabel("Coil Sequence"); ax.set_ylabel("Value (MPa / %)")
                 ax.grid(True, linestyle="--", alpha=0.5); ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=3)
                 plt.tight_layout()
                 st.pyplot(fig)
-                
                 buf = fig_to_png(fig)
-                st.download_button(label="📥 Download Mech Trend", data=buf, file_name=f"Mech_Trend_{g['Material']}.png", mime="image/png", key=f"dl_trend_{_}_{uuid.uuid4()}")
+                st.download_button("📥 Download Trend", data=buf, file_name=f"Trend_{g['Material']}.png", mime="image/png", key=f"dl_tr_{_}_{uuid.uuid4()}")
 
-            # --- TAB 2: DISTRIBUTION & STATS (CẬP NHẬT MỚI) ---
+            # --- TAB 2: DISTRIBUTION (CẬP NHẬT ĐUÔI DÀI + GIỚI HẠN) ---
             with tab_dist:
-                # 1️⃣ TÍNH TOÁN BẢNG THỐNG KÊ
+                # Bảng thống kê
                 stats_data = []
                 for col in ["TS", "YS", "EL"]:
                     series = sub_mech[col].dropna()
                     if len(series) > 0:
+                        m, s = series.mean(), series.std(ddof=1)
                         stats_data.append({
-                            "Property": col,
-                            "Count": len(series),
-                            "Mean": series.mean(),
-                            "Std Dev": series.std(ddof=1),
-                            "Min": series.min(),
-                            "Max": series.max(),
-                            "Range": series.max() - series.min()
+                            "Property": col, "Count": len(series), "Mean": m, "Std Dev": s,
+                            "UCL (3σ)": m + 3*s, "LCL (3σ)": m - 3*s
                         })
-                
-                # Hiển thị bảng
-                st.markdown("#### 📊 Statistical Summary Table")
-                df_stats = pd.DataFrame(stats_data)
-                st.dataframe(
-                    df_stats.style.format({
-                        "Mean": "{:.1f}", "Std Dev": "{:.2f}", 
-                        "Min": "{:.1f}", "Max": "{:.1f}", "Range": "{:.1f}"
-                    }),
-                    use_container_width=True
-                )
+                st.dataframe(pd.DataFrame(stats_data).style.format("{:.1f}"), use_container_width=True)
 
-                # 2️⃣ VẼ BIỂU ĐỒ (Giữ nguyên logic Normal Fit an toàn)
-                st.markdown("#### 📉 Distribution Charts")
-                fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+                # Biểu đồ Distribution
+                st.markdown("#### 📉 Extended Distribution Charts")
+                fig, axes = plt.subplots(1, 3, figsize=(15, 6)) # Cao hơn xíu
+                
                 for i, (col, color, _) in enumerate(props):
                     ax = axes[i]
                     data = sub_mech[col].dropna()
                     
-                    # Histogram
-                    ax.hist(data, bins=15, color=color, alpha=0.5, edgecolor="black", density=True)
-                    
-                    # Normal Curve (Numpy)
                     if len(data) > 1:
-                        mean, std = data.mean(), data.std()
+                        mean, std = data.mean(), data.std(ddof=1)
                         if std > 0:
-                            xmin, xmax = ax.get_xlim()
-                            x_plot = np.linspace(xmin, xmax, 100)
+                            # 1. TẠO KHUNG TRỤC X RỘNG (Mean ± 5 Sigma) -> TẠO HIỆU ỨNG ĐUÔI DÀI
+                            x_min_plot = mean - 5 * std
+                            x_max_plot = mean + 5 * std
+                            x_plot = np.linspace(x_min_plot, x_max_plot, 200)
+                            
+                            # 2. Vẽ Histogram (tự động khớp với trục X mới)
+                            # range=(x_min_plot, x_max_plot) ép histogram không bị co cụm
+                            ax.hist(data, bins=20, range=(x_min_plot, x_max_plot), 
+                                    color=color, alpha=0.4, edgecolor="black", density=True)
+                            
+                            # 3. Vẽ Normal Curve Mượt
                             y_plot = (1/(std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_plot - mean) / std)**2)
-                            ax.plot(x_plot, y_plot, color=color, linewidth=2, label="Normal Fit")
-                            # Thêm đường Mean
-                            ax.axvline(mean, color="black", linestyle="--", linewidth=1, label=f"Mean: {mean:.1f}")
+                            ax.plot(x_plot, y_plot, color=color, linewidth=2.5, label="Normal Fit")
+                            
+                            # 4. Vẽ các đường giới hạn thống kê (UCL/LCL) - Màu Tím
+                            ucl = mean + 3*std
+                            lcl = mean - 3*std
+                            
+                            # UCL
+                            ax.axvline(ucl, color="purple", linestyle="--", linewidth=1.5)
+                            ax.text(ucl, y_plot.max()*0.8, f" UCL\n {ucl:.0f}", color="purple", fontsize=8)
+                            
+                            # LCL
+                            ax.axvline(lcl, color="purple", linestyle="--", linewidth=1.5)
+                            ax.text(lcl, y_plot.max()*0.8, f" LCL\n {lcl:.0f}", color="purple", fontsize=8, ha="right")
+                            
+                            # Mean
+                            ax.axvline(mean, color="black", linestyle="-", linewidth=1, alpha=0.5, label="Mean")
 
-                    ax.set_title(f"{col} Distribution", weight="bold")
-                    ax.grid(alpha=0.3)
-                    ax.legend(fontsize=8)
+                            # 5. Ép trục X hiển thị hết đuôi
+                            ax.set_xlim(x_min_plot, x_max_plot)
+
+                    ax.set_title(f"{col} Distribution (±5σ View)", weight="bold")
+                    ax.grid(alpha=0.25)
+                    ax.legend(fontsize=8, loc="upper right")
                 
                 plt.tight_layout()
                 st.pyplot(fig)
                 
                 buf = fig_to_png(fig)
-                st.download_button(label="📥 Download Mech Dist", data=buf, file_name=f"Mech_Dist_{g['Material']}.png", mime="image/png", key=f"dl_dist_{_}_{uuid.uuid4()}")
-            
-            # --- NG LIST (Footer) ---
-            with st.expander("📋 Out-of-Spec Coils List", expanded=False):
+                st.download_button("📥 Download Dist", data=buf, file_name=f"Dist_{g['Material']}.png", mime="image/png", key=f"dl_dist_{_}_{uuid.uuid4()}")
+
+            # --- FOOTER ---
+            with st.expander("📋 Out-of-Spec List", expanded=False):
                 ng_rows = sub_mech[sub_mech["NG_TS"] | sub_mech["NG_YS"] | sub_mech["NG_EL"]]
                 if not ng_rows.empty:
-                    st.error(f"⚠️ Found {len(ng_rows)} Out-of-Spec Coils!")
-                    st.dataframe(ng_rows[["COIL_NO", "Hardness_LINE", "TS", "YS", "EL"]].style.format("{:.1f}"), use_container_width=True)
+                    st.dataframe(ng_rows[["COIL_NO", "TS", "YS", "EL"]], use_container_width=True)
                 else:
-                    st.success("✅ All coils passed Mechanical Specs.")
+                    st.success("✅ Clean Data")
     # ================================
     elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
             
