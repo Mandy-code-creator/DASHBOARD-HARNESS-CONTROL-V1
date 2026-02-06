@@ -346,12 +346,142 @@ for _, g in valid.iterrows():
                    key=f"dl_dist_{_}"
                 )
 # ================================
-# (Các view còn lại như Hardness → TS/YS/EL, TS/YS/EL Trend & Distribution, Predict TS/YS/EL)
-# ================================
-# Mình giữ nguyên code của bạn, chỉ fix indentation + GE<88 filter
-# ================================
+# ========================================================
+    # MODE: CORRELATION (HARDNESS vs MECH PROPS)
+    # ========================================================
+    elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
 
+        st.markdown("### 🔗 Correlation: Hardness vs Mechanical Properties")
+        st.info("ℹ️ This chart shows how Mechanical Properties (TS/YS/EL) change as Hardness increases.")
 
+        # ================================
+        # 1️⃣ Chuẩn bị dữ liệu
+        # ================================
+        sub_corr = sub.dropna(subset=["Hardness_LAB","Hardness_LINE","TS","YS","EL"])
+        
+        # Loại bỏ hoàn toàn coil GE* <88 (Logic cũ giữ nguyên)
+        if "Quality_Code" in sub_corr.columns:
+            sub_corr = sub_corr[~(
+                sub_corr["Quality_Code"].astype(str).str.startswith("GE") &
+                ((sub_corr["Hardness_LAB"] < 88) | (sub_corr["Hardness_LINE"] < 88))
+            )]
+        
+        # ================================
+        # 2️⃣ Binning Hardness
+        # ================================
+        bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
+        labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
+        sub_corr["HRB_bin"] = pd.cut(sub_corr["Hardness_LAB"], bins=bins, labels=labels, right=False)
+        
+        # ================================
+        # 3️⃣ Aggregation (Tính toán trung bình theo nhóm)
+        # ================================
+        # Lấy columns spec để check
+        mech_cols = ["Standard TS min","Standard TS max",
+                     "Standard YS min","Standard YS max",
+                     "Standard EL min","Standard EL max"]
+        
+        summary = (sub_corr.groupby("HRB_bin", observed=True).agg(
+            N_coils=("COIL_NO","count"),
+            TS_mean=("TS","mean"), TS_min=("TS","min"), TS_max=("TS","max"),
+            YS_mean=("YS","mean"), YS_min=("YS","min"), YS_max=("YS","max"),
+            EL_mean=("EL","mean"), EL_min=("EL","min"), EL_max=("EL","max"),
+            # Lấy max spec của nhóm để so sánh (đại diện)
+            Std_TS_min=("Standard TS min", "max"), Std_TS_max=("Standard TS max", "max"),
+            Std_YS_min=("Standard YS min", "max"), Std_YS_max=("Standard YS max", "max"),
+            Std_EL_min=("Standard EL min", "max"), Std_EL_max=("Standard EL max", "max"),
+        ).reset_index())
+        
+        summary = summary[summary["N_coils"]>0]
+
+        if summary.empty:
+            st.warning("⚠️ No data available for correlation analysis.")
+        else:
+            # ================================
+            # 4️⃣ Vẽ biểu đồ
+            # ================================
+            x = np.arange(len(summary))
+            fig, ax = plt.subplots(figsize=(16,6))
+            
+            # Hàm vẽ helper
+            def plot_prop(x_vals, y_mean, y_min, y_max, label, color, marker):
+                ax.plot(x_vals, y_mean, marker=marker, linewidth=2, markersize=8, label=label, color=color)
+                ax.fill_between(x_vals, y_min, y_max, alpha=0.15, color=color)
+
+            plot_prop(x, summary["TS_mean"], summary["TS_min"], summary["TS_max"], "TS Mean", "#1f77b4", "o")
+            plot_prop(x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "YS Mean", "#2ca02c", "s")
+            plot_prop(x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "EL Mean (%)", "#ff7f0e", "^")
+
+            # ================================
+            # 5️⃣ Annotations (Check Spec thông minh)
+            # ================================
+            for idx, row in enumerate(summary.itertuples()):
+                # TS Label
+                ax.annotate(f"{row.TS_mean:.0f}", (x[idx], row.TS_mean), xytext=(0,10), 
+                            textcoords="offset points", ha="center", fontsize=9, color="#1f77b4")
+                # YS Label
+                ax.annotate(f"{row.YS_mean:.0f}", (x[idx], row.YS_mean), xytext=(0,-15), 
+                            textcoords="offset points", ha="center", fontsize=9, color="#2ca02c")
+                
+                # EL Check (Chỉ check nếu Spec > 0)
+                el_spec = row.Std_EL_min
+                is_fail = (el_spec > 0) and (row.EL_mean < el_spec)
+                
+                label_text = f"{row.EL_mean:.1f}%" + (" ❌" if is_fail else "")
+                label_color = "red" if is_fail else "#ff7f0e"
+                font_weight = "bold" if is_fail else "normal"
+                
+                ax.annotate(label_text, (x[idx], row.EL_mean), xytext=(0,15), 
+                            textcoords="offset points", ha="center", fontsize=9, 
+                            color=label_color, fontweight=font_weight)
+
+            # Style
+            ax.set_xticks(x)
+            ax.set_xticklabels(summary["HRB_bin"].astype(str), fontweight="bold")
+            ax.set_xlabel("Hardness Range (HRB)", fontweight="bold")
+            ax.set_ylabel("Mechanical Properties (MPa / %)", fontweight="bold")
+            ax.set_title("Correlation: Hardness vs TS/YS/EL", fontweight="bold", fontsize=14)
+            ax.grid(True, linestyle='--', alpha=0.5)
+            ax.legend(loc='upper left', bbox_to_anchor=(1.0, 1))
+            
+            plt.tight_layout()
+            st.pyplot(fig)
+            
+            # Download
+            buf = fig_to_png(fig)
+            st.download_button("📥 Download Chart", data=buf, file_name=f"Correlation_{g['Material']}.png", mime="image/png", key=f"dl_corr_{_}")
+
+            # ================================
+            # 6️⃣ Quick Conclusion (Đã Fix lỗi số 0)
+            # ================================
+            st.markdown("### 📌 Quick Conclusion per Hardness Bin")
+            
+            qc_list = []
+            for row in summary.itertuples():
+                # Helper check function
+                def check_stat(val_min, val_max, spec_min, spec_max):
+                    # Nếu spec = 0 hoặc NaN -> coi như Pass (True)
+                    pass_min = (val_min >= spec_min) if (pd.notna(spec_min) and spec_min > 0) else True
+                    pass_max = (val_max <= spec_max) if (pd.notna(spec_max) and spec_max > 0) else True
+                    return "✅" if (pass_min and pass_max) else "⚠️"
+
+                ts_flag = check_stat(row.TS_min, row.TS_max, row.Std_TS_min, row.Std_TS_max)
+                ys_flag = check_stat(row.YS_min, row.YS_max, row.Std_YS_min, row.Std_YS_max)
+                el_flag = check_stat(row.EL_min, row.EL_max, row.Std_EL_min, row.Std_EL_max)
+                
+                qc_list.append(
+                    f"**{row.HRB_bin}**: "
+                    f"TS={ts_flag} ({row.TS_min:.0f}-{row.TS_max:.0f}) | "
+                    f"YS={ys_flag} ({row.YS_min:.0f}-{row.YS_max:.0f}) | "
+                    f"EL={el_flag} ({row.EL_min:.1f}-{row.EL_max:.1f})"
+                )
+            
+            for line in qc_list:
+                st.markdown(line)
+
+            # Table Expand
+            with st.expander("🔹 View Detailed Data Table"):
+                st.dataframe(summary, use_container_width=True)
 # ========================================================
     # MODE: MECHANICAL PROPERTIES ANALYSIS (TS / YS / EL)
     # ========================================================
