@@ -790,68 +790,79 @@ for _, g in valid.iterrows():
                                        file_name=f"Lookup_{input_min}_{input_max}_{g['Material']}.png",
                                        mime="image/png", key=f"dl_lookup_{_}")
 # ========================================================
+# MODE: REVERSE LOOKUP (TARGET HARDNESS)
+    # ========================================================
     elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
+        
         # --- HEADER ---
         st.subheader("🎯 Target Hardness Calculator")
-        
-        # Câu mô tả tiếng Anh chuẩn kỹ thuật
         st.markdown("""
         > **This tool helps identify the Target Hardness range required to achieve the desired mechanical property limits.**
         """)
-        
         st.divider()
-    
-        # --- INPUT SECTION (Desired Mechanical Properties) ---
+
+        # 1. INPUT: Define Desired Mechanical Properties
         st.markdown("### 1. Define Desired Mechanical Properties")
         
-        # Chia làm 3 cột cho gọn
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            # Giới hạn dưới của YS (Yield Strength)
             req_ys_min = st.number_input("Min Yield Strength (MPa)", min_value=0.0, value=250.0, step=5.0)
         
         with col2:
-            # Giới hạn dưới của TS (Tensile Strength)
             req_ts_min = st.number_input("Min Tensile Strength (MPa)", min_value=0.0, value=350.0, step=5.0)
             
         with col3:
-            # Giới hạn dưới của Elongation
             req_el_min = st.number_input("Min Elongation (%)", min_value=0.0, value=30.0, step=1.0)
-    
-        # --- PROCESSING ---
-        # Lọc dữ liệu thỏa mãn TẤT CẢ điều kiện trên
-        # (Giả sử dataframe chính tên là 'df')
-        filtered_df = df[
-            (df['TENSILE_YIELD'] >= req_ys_min) &
-            (df['TENSILE_TENSILE'] >= req_ts_min) &
-            (df['TENSILE_ELONG'] >= req_el_min)
+
+        # 2. PROCESSING: Filter Data
+        # Sử dụng biến 'sub' (hoặc 'df' tùy code của bạn) và tên cột chuẩn (YS, TS, EL)
+        # Loại bỏ các dòng dữ liệu bị null trước khi so sánh
+        clean_df = sub.dropna(subset=['YS', 'TS', 'EL', 'Hardness_LINE'])
+        
+        filtered_df = clean_df[
+            (clean_df['YS'] >= req_ys_min) &
+            (clean_df['TS'] >= req_ts_min) &
+            (clean_df['EL'] >= req_el_min)
         ]
-    
+
         st.divider()
-    
-        # --- OUTPUT SECTION ---
+
+        # 3. OUTPUT: Recommended Target Hardness
         st.markdown("### 2. Recommended Target Hardness")
-    
+
         if not filtered_df.empty:
-            # Tính toán thống kê độ cứng từ các cuộn thép đạt chuẩn
-            rec_min_hrb = filtered_df['HARDNESS'].min()
-            rec_max_hrb = filtered_df['HARDNESS'].max()
-            rec_avg_hrb = filtered_df['HARDNESS'].mean()
+            # Tính toán thống kê trên cột 'Hardness_LINE'
+            rec_min_hrb = filtered_df['Hardness_LINE'].min()
+            rec_max_hrb = filtered_df['Hardness_LINE'].max()
+            rec_avg_hrb = filtered_df['Hardness_LINE'].mean()
             sample_size = len(filtered_df)
-    
+
             # Hiển thị kết quả bằng Metrics
             m1, m2, m3 = st.columns(3)
             m1.metric(label="Min Hardness (HRB)", value=f"{rec_min_hrb:.1f}")
             m2.metric(label="Max Hardness (HRB)", value=f"{rec_max_hrb:.1f}")
             m3.metric(label="Samples Found", value=f"{sample_size} coils")
-    
+
             st.success(f"✅ To meet the mechanical requirements, keep Hardness between **{rec_min_hrb:.1f}** and **{rec_max_hrb:.1f} HRB**.")
-    
-            # Hiển thị biểu đồ phân bố độ cứng (Optional)
-            with st.expander("View Distribution of Valid Coils"):
-                st.bar_chart(filtered_df['HARDNESS'].value_counts())
-                st.dataframe(filtered_df[['coil_id', 'HARDNESS', 'TENSILE_YIELD', 'TENSILE_TENSILE', 'TENSILE_ELONG']])
+
+            # Hiển thị biểu đồ phân bố và dữ liệu chi tiết
+            with st.expander("View Distribution & Details", expanded=True):
+                c_chart, c_data = st.columns([1, 1])
+                
+                with c_chart:
+                    st.markdown("**Hardness Distribution of Valid Coils**")
+                    # Dùng biểu đồ native của Streamlit cho đơn giản
+                    st.bar_chart(filtered_df['Hardness_LINE'].value_counts().sort_index())
+                
+                with c_data:
+                    st.markdown("**Detailed Data List**")
+                    # Chỉ hiện các cột cần thiết
+                    cols_to_show = ['coil_id', 'Hardness_LINE', 'YS', 'TS', 'EL']
+                    # Kiểm tra xem cột coil_id có tồn tại không, nếu không thì bỏ qua
+                    final_cols = [c for c in cols_to_show if c in filtered_df.columns]
+                    st.dataframe(filtered_df[final_cols], height=300)
                 
         else:
-            st.error("❌ No historical data found matching these mechanical property constraints. Please try widening the limits.")
+            st.error("❌ No historical data found matching these mechanical property constraints.")
+            st.info("💡 **Suggestion:** Try lowering the 'Min' requirements slightly to find a feasible range.")
