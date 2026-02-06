@@ -1067,53 +1067,96 @@ for _, g in valid.iterrows():
 # ========================================================
 # ========================================================
 # ========================================================
-    # BIỂU ĐỒ 3 ĐƯỜNG: FIX LỖI CHỈ HIỆN 1 ĐƯỜNG
+    # VIEW MODE: BIỂU ĐỒ 3 ĐƯỜNG NÉT ĐẬM (FIX NAMEERROR & SCALE)
     # ========================================================
-    import plotly.graph_objects as go
-    from plotly.subplots import make_subplots
-
-    # Tạo biểu đồ có 2 trục Y riêng biệt
-    fig = make_subplots(specs=[[{"secondary_y": True}]])
-
-    colors = {"TS": "#1F77B4", "YS": "#2CA02C", "EL": "#D62728"}
-    indices = list(range(len(train_df)))
-    next_idx = len(train_df)
-
-    for col in ["TS", "YS", "EL"]:
-        # Quyết định trục: EL dùng trục phụ (Phải), TS/YS dùng trục chính (Trái)
-        is_secondary = True if col == "EL" else False
+    elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
+        st.markdown(f"#### 🚀 Mechanical Properties: Sequential Path & AI Forecast")
         
-        # 1. Vẽ đường lịch sử
-        fig.add_trace(go.Scatter(
-            x=indices, y=train_df[col],
-            mode='lines+markers', name=f"History {col}",
-            line=dict(color=colors[col], width=2),
-            marker=dict(size=4, opacity=0.4)
-        ), secondary_y=is_secondary)
+        # 1. ĐỊNH NGHĨA LẠI train_df ĐỂ TRÁNH NAMEERROR
+        # Sử dụng sub (dữ liệu đã lọc của nhóm) và sắp xếp theo trình tự sản xuất
+        train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+        train_df = train_df.sort_values(by="COIL_NO")
+        
+        if len(train_df) < 5:
+            st.warning("⚠️ Cần tối thiểu 5 cuộn dữ liệu lịch sử để xây dựng mô hình.")
+        else:
+            # 2. Input Section
+            mean_h = float(train_df["Hardness_LINE"].mean())
+            input_key = f"final_fix_v11_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
+            
+            c_in, _ = st.columns([1, 2])
+            with c_in:
+                target_h = st.number_input(f"Target Hardness (HRB):", value=round(mean_h, 1), step=0.1, key=input_key)
 
-        # 2. Vẽ Bước nhảy dự báo (Nối tiếp)
-        fig.add_trace(go.Scatter(
-            x=[indices[-1], next_idx],
-            y=[train_df[col].iloc[-1], preds[col]],
-            mode='lines+markers',
-            name=f"Jump {col}",
-            line=dict(color=colors[col], width=5), # Đường nối cực đậm
-            marker=dict(color='white', size=10, line=dict(color=colors[col], width=3), symbol='star-diamond'),
-            showlegend=False
-        ), secondary_y=is_secondary)
+            # 3. Tính toán AI cho cả 3 đường
+            X_train = train_df[["Hardness_LINE"]].values
+            preds = {}
+            for col in ["TS", "YS", "EL"]:
+                model = LinearRegression().fit(X_train, train_df[col].values)
+                preds[col] = model.predict([[target_h]])[0]
 
-    # 3. Cấu hình Layout (Tách riêng để tránh lỗi ValueError)
-    fig.update_layout(
-        title_text="<b>MECHANICAL PROPERTIES EVOLUTION & PREDICTION</b>",
-        height=600,
-        template="plotly_white",
-        hovermode="x unified",
-        legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5)
-    )
+            # 4. VẼ BIỂU ĐỒ TRỤC Y KÉP (DÙNG MAKE_SUBPLOTS)
+            from plotly.subplots import make_subplots
+            import plotly.graph_objects as go
 
-    # Cấu hình tên trục để không bị lẫn
-    fig.update_yaxes(title_text="<b>Strength (TS/YS) [MPa]</b>", secondary_y=False)
-    fig.update_yaxes(title_text="<b>Elongation (EL) [%]</b>", secondary_y=True)
-    fig.update_xaxes(title_text="Production Sequence")
+            # Khởi tạo trục Y phụ (secondary_y=True)
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
 
-    st.plotly_chart(fig, use_container_width=True)
+            colors = {"TS": "#004BA0", "YS": "#1B5E20", "EL": "#B71C1C"} 
+            indices = list(range(len(train_df)))
+            next_idx = len(train_df)
+
+            for col in ["TS", "YS", "EL"]:
+                # EL dùng trục bên phải (secondary_y=True), TS/YS dùng trục bên trái
+                is_secondary = True if col == "EL" else False
+                
+                # A. Đường lịch sử (Nét mảnh)
+                fig.add_trace(go.Scatter(
+                    x=indices, y=train_df[col],
+                    mode='lines+markers', name=f"History {col}",
+                    line=dict(color=colors[col], width=1.5, dash='dot'),
+                    marker=dict(size=4, opacity=0.4)
+                ), secondary_y=is_secondary)
+
+                # B. BƯỚC NHẢY DỰ BÁO (NỐI TIẾP - NÉT CỰC ĐẬM)
+                fig.add_trace(go.Scatter(
+                    x=[indices[-1], next_idx],
+                    y=[train_df[col].iloc[-1], preds[col]],
+                    mode='lines+markers',
+                    name=f"Trend {col}",
+                    line=dict(color=colors[col], width=6), 
+                    marker=dict(color='yellow', size=10, line=dict(color='black', width=1), symbol='star'),
+                    showlegend=False
+                ), secondary_y=is_secondary)
+
+                # C. ĐIỂM ĐÍCH DỰ BÁO (Marker lớn)
+                fig.add_trace(go.Scatter(
+                    x=[next_idx], y=[preds[col]],
+                    mode='markers+text',
+                    text=[f"<b>{preds[col]:.1f}</b>"],
+                    textposition="top center",
+                    marker=dict(color=colors[col], size=16, symbol='diamond', line=dict(color='white', width=2)),
+                    showlegend=False
+                ), secondary_y=is_secondary)
+
+            # 5. CẤU HÌNH GIAO DIỆN (LAYOUT CHỐNG LỖI)
+            fig.update_layout(
+                title_text="<b>MECHANICAL PROPERTIES EVOLUTION & PREDICTION</b>",
+                height=650, template="plotly_white", hovermode="x unified",
+                legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="center", x=0.5)
+            )
+
+            fig.update_xaxes(title_text="Sequential Production Coils", gridcolor="#F0F0F0")
+            fig.update_yaxes(title_text="<b>Strength (MPa)</b>", secondary_y=False, gridcolor="#F0F0F0")
+            fig.update_yaxes(title_text="<b>Elongation (%)</b>", secondary_y=True, showgrid=False)
+
+            # Highlight vùng dự báo
+            fig.add_vrect(x0=indices[-1], x1=next_idx, fillcolor="#BDBDBD", opacity=0.2, layer="below", line_width=0)
+
+            st.plotly_chart(fig, use_container_width=True)
+
+            # Hiển thị số liệu
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Predicted TS", f"{preds['TS']:.1f} MPa")
+            c2.metric("Predicted YS", f"{preds['YS']:.1f} MPa")
+            c3.metric("Predicted EL", f"{preds['EL']:.1f} %")
