@@ -154,29 +154,151 @@ df = df.dropna(subset=["Gauge_Range"])
 
 # ================================
 # SIDEBAR FILTER
-# ================================
-st.sidebar.header("🎛 FILTER")
-rolling = st.sidebar.radio("Rolling Type", sorted(df["Rolling_Type"].unique()))
-metal   = st.sidebar.radio("Metallic Type", sorted(df["Metallic_Type"].unique()))
-qgroup  = st.sidebar.radio("Quality Group", sorted(df["Quality_Group"].unique()))
+# ==============================================================================
+# 🎨 SIDEBAR DESIGN: FILTER & CONTROL PANEL
+# ==============================================================================
+with st.sidebar:
+    # --- 1. BRANDING & LOGO ---
+    # Bạn có thể thay đường dẫn ảnh logo công ty bạn vào đây (URL hoặc file nội bộ)
+    # st.image("https://via.placeholder.com/200x60?text=Company+Logo", use_column_width=True)
+    
+    st.title("🎛️ Control Panel")
+    st.caption("version 1.2.0 | 🚀 Engine: Hybrid Analysis")
+    st.divider()
 
-df = df[
-    (df["Rolling_Type"] == rolling) &
-    (df["Metallic_Type"] == metal) &
-    (df["Quality_Group"] == qgroup)
-]
+    # --- 2. TIME FILTER (Compact Layout) ---
+    st.markdown("### 📅 Production Period")
+    
+    # Đặt ngày bắt đầu và kết thúc nằm trên cùng 1 hàng cho gọn
+    c_date1, c_date2 = st.columns(2)
+    
+    # Lấy min/max date từ dữ liệu gốc để làm default
+    min_date = df["PRODUCTION DATE"].min()
+    max_date = df["PRODUCTION DATE"].max()
+    
+    with c_date1:
+        start_date = st.date_input("From", value=min_date, min_value=min_date, max_value=max_date)
+    with c_date2:
+        end_date = st.date_input("To", value=max_date, min_value=min_date, max_value=max_date)
 
-view_mode = st.sidebar.radio(
-    "📊 View Mode",
-    [
-        "📋 Data Inspection",
-        "📉 Hardness Analysis (Trend & Dist)",     # <--- Đã gộp 2 cái cũ vào đây
-        "🔗 Correlation: Hardness vs Mech Props", # <--- Tên mới cho Hardness -> TS/YS/EL
-        "⚙️ Mech Props Analysis",                 # <--- Tên mới cho TS/YS/EL Trend
-        "🔍 Lookup: Hardness Range → Actual Mech Props", # <--- Tính năng tra cứu
-        "🎯 Find Target Hardness (Reverse Lookup)",
-    ]
-)
+    # Lọc sơ bộ theo ngày
+    mask_date = (df["PRODUCTION DATE"].dt.date >= start_date) & (df["PRODUCTION DATE"].dt.date <= end_date)
+    df_date_filtered = df[mask_date]
+
+    # --- 3. CATEGORY FILTERS (Grouped in Expanders) ---
+    
+    # GROUP A: MATERIAL SPECS (Mác thép, Nhóm, Loại)
+    with st.expander("🏗️ Material & Grade Specs", expanded=True):
+        
+        # 1. Quality Group (Nhóm chất lượng)
+        # Giả sử bạn có cột 'Quality Group' hoặc tạo từ 'HR STEEL GRADE'
+        # Ở đây tôi dùng 'HR STEEL GRADE' làm ví dụ
+        all_grades = sorted(df_date_filtered["HR STEEL GRADE"].unique())
+        selected_grades = st.multiselect(
+            "Select Steel Grade", 
+            options=all_grades,
+            default=all_grades, # Mặc định chọn hết
+            help="Chọn mác thép cần phân tích (VD: G450, G500...)"
+        )
+        
+        # 2. Material Classification (Phân loại)
+        all_class = sorted(df_date_filtered["Claasify material"].unique())
+        selected_class = st.multiselect(
+            "Material Class",
+            options=all_class,
+            default=all_class,
+            help="Phân loại vật liệu (VD: CQ, DQ...)"
+        )
+
+    # GROUP B: DIMENSIONS (Kích thước)
+    with st.expander("📏 Dimensions (Gauge & Width)", expanded=False):
+        # Dùng Slider 2 đầu (Range Slider) để chọn khoảng độ dày
+        min_g = float(df_date_filtered["ORDER GAUGE"].min())
+        max_g = float(df_date_filtered["ORDER GAUGE"].max())
+        
+        selected_gauge = st.slider(
+            "Gauge Range (mm)",
+            min_value=min_g, max_value=max_g,
+            value=(min_g, max_g),
+            step=0.01,
+            help="Kéo để chọn khoảng độ dày mong muốn"
+        )
+        
+        # Width (Chiều rộng) - Tương tự
+        min_w = float(df_date_filtered["ORDER WIDTH"].min())
+        max_w = float(df_date_filtered["ORDER WIDTH"].max())
+        
+        selected_width = st.slider(
+            "Width Range (mm)",
+            min_value=min_w, max_value=max_w,
+            value=(min_w, max_w),
+            step=10.0
+        )
+
+    # GROUP C: PROCESS & COATING (Mạ & Quy trình)
+    with st.expander("🧪 Coating & Process", expanded=False):
+        # Coating Type
+        all_coating = sorted(df_date_filtered["METALLIC COATING TYPE"].astype(str).unique())
+        selected_coating = st.multiselect(
+            "Coating Type",
+            options=all_coating,
+            default=all_coating,
+            help="Loại mạ (GI, GA...)"
+        )
+        
+        # Quality Code (Chỉ chọn hàng Pass hay Fail?)
+        all_qc = sorted(df_date_filtered["QUALITY_CODE"].astype(str).unique())
+        selected_qc = st.multiselect(
+            "Quality Code",
+            options=all_qc,
+            default=all_qc,
+            help="Mã chất lượng (1: Prime, ...)"
+        )
+
+    # --- 4. APPLY FILTER LOGIC ---
+    # Tổng hợp các điều kiện lọc
+    # Lưu ý: Cần xử lý trường hợp user bỏ chọn hết (list rỗng) -> Coi như không lọc
+    
+    mask_final = mask_date # Đã lọc ngày ở trên
+    
+    if selected_grades:
+        mask_final &= df["HR STEEL GRADE"].isin(selected_grades)
+    if selected_class:
+        mask_final &= df["Claasify material"].isin(selected_class)
+    if selected_coating:
+        mask_final &= df["METALLIC COATING TYPE"].astype(str).isin(selected_coating)
+    if selected_qc:
+        mask_final &= df["QUALITY_CODE"].astype(str).isin(selected_qc)
+        
+    # Lọc theo Range (Slider)
+    mask_final &= (df["ORDER GAUGE"] >= selected_gauge[0]) & (df["ORDER GAUGE"] <= selected_gauge[1])
+    mask_final &= (df["ORDER WIDTH"] >= selected_width[0]) & (df["ORDER WIDTH"] <= selected_width[1])
+
+    # TẠO DATAFRAME ĐÃ LỌC (biến 'sub' mà các view bên dưới sẽ dùng)
+    sub = df[mask_final]
+
+    # --- 5. DATA SUMMARY & INFO ---
+    st.divider()
+    
+    # Hiển thị số lượng tìm thấy (Real-time feedback)
+    total_count = len(df)
+    filtered_count = len(sub)
+    percent = (filtered_count / total_count * 100) if total_count > 0 else 0
+    
+    c_met1, c_met2 = st.columns(2)
+    c_met1.metric("Total Coils", f"{filtered_count:,}", delta=f"{percent:.1f}%")
+    c_met2.metric("Hidden", f"{total_count - filtered_count:,}", delta_color="inverse")
+    
+    if filtered_count == 0:
+        st.error("❌ No data matches filters!")
+    
+    # Nút Reset (Mẹo: Dùng st.rerun hoặc clear cache nếu cần, ở đây chỉ là nút UI)
+    if st.button("🔄 Reset Filters", use_container_width=True):
+        st.rerun()
+
+# ==============================================================================
+# KẾT THÚC SIDEBAR - BIẾN 'sub' SẼ ĐƯỢC DÙNG CHO CÁC PHẦN DƯỚI
+# ==============================================================================
 
 # ================================
 # GROUP CONDITION
