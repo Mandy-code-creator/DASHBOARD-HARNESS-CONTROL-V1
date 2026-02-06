@@ -785,33 +785,34 @@ for _, g in valid.iterrows():
     elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
         
         # --- HEADER ---
-        st.subheader("🎯 Target Hardness Calculator (Safe Window)")
+        st.subheader("🎯 Target Hardness Calculator (G500 Support)")
         st.markdown("""
-        > **Find the Target Hardness range that satisfies BOTH Min and Max mechanical property limits.**
+        > **Analyze Process Capability to determine Target Hardness.**
+        > *Supports cases with No Control Spec (Auto-switch to 3-Sigma).*
         """)
         st.divider()
 
         # --- 0. PRE-CALCULATE & DISPLAY REFERENCE TABLE ---
         
-        # Giá trị khởi tạo mặc định
-        d_ys_min, d_ys_max = 250.0, 450.0
-        d_ts_min, d_ts_max = 350.0, 550.0
-        d_el_min, d_el_max = 30.0, 50.0
+        # Giá trị mặc định
+        d_ys_min, d_ys_max = 250.0, 900.0
+        d_ts_min, d_ts_max = 350.0, 900.0
+        d_el_min, d_el_max = 0.0, 50.0
         
-        # List để lưu dữ liệu hiển thị lên bảng
         limit_summary = []
+        missing_spec_warning = False # Cờ báo hiệu nếu thiếu Spec
 
         if not sub.empty:
             try:
-                # Hàm tính toán trả về cả giá trị hiển thị
-                def calculate_and_record(name, col_val, col_spec_min, col_spec_max, step=5.0):
-                    # 1. Process 3-Sigma
+                def calculate_smart_limits(name, col_val, col_spec_min, col_spec_max, step=5.0, is_elongation=False):
+                    # 1. Process 3-Sigma (Thực tế sản xuất)
                     mean = sub[col_val].mean()
                     std = sub[col_val].std() if len(sub) > 1 else 0
                     stat_min = mean - (3 * std)
                     stat_max = mean + (3 * std)
                     
-                    # 2. Customer Spec
+                    # 2. Customer Spec (Lấy từ dữ liệu)
+                    # Kiểm tra xem cột có tồn tại và có giá trị > 0 không
                     has_spec_min = col_spec_min in sub.columns and sub[col_spec_min].max() > 0
                     spec_min = float(sub[col_spec_min].max()) if has_spec_min else 0.0
                     
@@ -819,51 +820,75 @@ for _, g in valid.iterrows():
                     raw_spec_max = sub[col_spec_max].min() if has_spec_max else 0.0
                     spec_max = float(raw_spec_max) if raw_spec_max > 0 else 9999.0
                     
-                    # 3. Logic chọn (Stricter)
-                    final_min = max(stat_min, spec_min)
-                    final_max = min(stat_max, spec_max)
+                    # --- 3. LOGIC XỬ LÝ "NO SPEC" ---
+                    is_no_spec = (spec_min == 0) and (spec_max == 9999.0)
                     
-                    if final_min >= final_max: final_min, final_max = stat_min, stat_max # Fallback
+                    if is_no_spec:
+                        # TRƯỜNG HỢP KHÔNG CÓ SPEC (như G500 bạn đề cập)
+                        # -> Dùng hoàn toàn Thống kê (3-Sigma)
+                        final_min = stat_min
+                        
+                        # Với G500, thường không chặn trên, nên mở rộng Max ra
+                        # (Mean + 3 Sigma) là đủ an toàn cho Process
+                        final_max = stat_max 
+                        
+                        str_spec = "❌ No Spec"
+                        note = "Using 3-Sigma"
+                    else:
+                        # TRƯỜNG HỢP CÓ SPEC
+                        # Min: Lấy cái LỚN HƠN (An toàn)
+                        final_min = max(stat_min, spec_min)
+                        
+                        # Max: Nếu có Spec Max thì chặn, không thì thả lỏng
+                        if spec_max < 9000:
+                            final_max = min(stat_max, spec_max)
+                        else:
+                            final_max = stat_max + (1 * std) # Relax Max if no spec max
 
-                    # Làm tròn cho Input
+                        str_spec = f"{spec_min:.0f}~{spec_max:.0f}" if spec_max < 9000 else f"Min {spec_min:.0f}"
+                        note = "Spec + 3σ"
+
+                    # Fallback
+                    if final_min >= final_max: 
+                        final_min = stat_min
+                        final_max = stat_max + (1 * std)
+
+                    # Làm tròn
                     rec_min = max(0.0, float(round(final_min / step) * step))
                     rec_max = float(round(final_max / step) * step)
                     
-                    # Tạo String hiển thị cho bảng (Format đẹp)
-                    str_spec = f"{spec_min:.0f} ~ {spec_max:.0f}" if spec_max < 9000 else f"Min {spec_min:.0f}"
-                    if not has_spec_min and not has_spec_max: str_spec = "No Spec"
-                    
-                    str_sigma = f"{stat_min:.0f} ~ {stat_max:.0f}"
-                    str_final = f"{rec_min:.0f} ~ {rec_max:.0f}"
-
                     return rec_min, rec_max, {
                         "Property": name,
                         "Customer Spec": str_spec,
-                        "Process (3σ)": str_sigma,
-                        "Recommended Range": str_final
-                    }
+                        "Process (3σ)": f"{stat_min:.0f} ~ {stat_max:.0f}",
+                        "Basis": note, # Cột mới giải thích nguồn gốc
+                        "Recommended": f"{rec_min:.0f} ~ {rec_max:.0f}"
+                    }, is_no_spec
 
                 # Thực hiện tính toán
-                d_ys_min, d_ys_max, row_ys = calculate_and_record('Yield Strength', 'YS', 'Standard YS min', 'Standard YS max', 5.0)
-                d_ts_min, d_ts_max, row_ts = calculate_and_record('Tensile Strength', 'TS', 'Standard TS min', 'Standard TS max', 5.0)
-                d_el_min, d_el_max, row_el = calculate_and_record('Elongation', 'EL', 'Standard EL min', 'Standard EL max', 1.0)
+                d_ys_min, d_ys_max, row_ys, no_spec_ys = calculate_smart_limits('Yield Strength', 'YS', 'Standard YS min', 'Standard YS max', 5.0)
+                d_ts_min, d_ts_max, row_ts, no_spec_ts = calculate_smart_limits('Tensile Strength', 'TS', 'Standard TS min', 'Standard TS max', 5.0)
+                d_el_min, d_el_max, row_el, no_spec_el = calculate_smart_limits('Elongation', 'EL', 'Standard EL min', 'Standard EL max', 1.0, is_elongation=True)
                 
                 limit_summary = [row_ys, row_ts, row_el]
+                if no_spec_ys or no_spec_ts: missing_spec_warning = True
                 
             except Exception as e:
                 st.error(f"Calculation Error: {e}")
 
-        # --- HIỂN THỊ BẢNG THAM CHIẾU (REFERENCE TABLE) ---
+        # --- HIỂN THỊ BẢNG THAM CHIẾU ---
         if limit_summary:
-            st.markdown("#### 📋 Reference: Spec vs. Capability Analysis")
+            st.markdown("#### 📋 Spec vs. Capability Analysis")
+            
+            if missing_spec_warning:
+                st.info("ℹ️ **Note:** Some properties have **No Control Spec**. The tool is using **Statistical Limits (3-Sigma)** based on historical data.")
+            
             df_limits = pd.DataFrame(limit_summary)
-            # Hiển thị bảng static cho dễ nhìn
             st.table(df_limits.set_index("Property"))
-            st.caption("ℹ️ *Recommended Range takes the stricter limit between Customer Spec and Process Capability.*")
         
         st.divider()
 
-        # --- 1. INPUT: Define Desired Mechanical Properties (RANGE) ---
+        # --- 1. INPUT: Define Desired Property Range ---
         st.markdown("### 1. Define Desired Property Range")
         
         c1, c2, c3 = st.columns(3)
@@ -907,28 +932,24 @@ for _, g in valid.iterrows():
             m2.metric(label="Max Hardness Target", value=f"{rec_max_hrb:.1f} HRB")
             m3.metric(label="Safe Coils Found", value=f"{sample_size}")
             
+            # Kiểm tra xem Target tìm được có nằm trong Limit hiện tại (88-97) không
+            # Giả định user biết limit hiện tại, hoặc ta có thể hardcode check nếu cần
             st.success(f"""
-            ✅ **Optimal Process Window Found:**
-            Control Hardness between **{rec_min_hrb:.1f} - {rec_max_hrb:.1f} HRB** to satisfy the requested mechanical range.
+            ✅ **Result:** Control Hardness between **{rec_min_hrb:.1f} - {rec_max_hrb:.1f} HRB** to maintain statistical stability (Avg: {filtered_df['Hardness_LINE'].mean():.1f}).
             """)
 
             with st.expander("View Distribution & Details", expanded=True):
                 c_chart, c_data = st.columns([1, 1])
-                
                 with c_chart:
-                    st.markdown("**Safe Hardness Distribution**")
                     st.bar_chart(filtered_df['Hardness_LINE'].value_counts().sort_index())
-                
                 with c_data:
-                    st.markdown(f"**Detailed List ({sample_size} coils)**")
-                    cols_to_show = ['coil_id', 'Hardness_LINE', 'YS', 'TS', 'EL']
-                    final_cols = [c for c in cols_to_show if c in filtered_df.columns]
-                    st.dataframe(filtered_df[final_cols], height=300)
+                    st.dataframe(filtered_df[['coil_id', 'Hardness_LINE', 'YS', 'TS', 'EL']], height=300)
                 
         else:
-            st.error("❌ No historical coils satisfy ALL these strict ranges.")
-            st.warning("""
-            **Troubleshooting:**
-            1. The overlap between 'Spec' and 'Process Capability' might be too narrow.
-            2. Try widening the **Max YS** or **Max TS** slightly to see if any data appears.
-            """)
+            st.error("❌ No coils found within these ranges.")
+            
+            # --- DEBUG MODE ---
+            st.warning("🕵️ **Analysis:**")
+            st.write(f"- **Scenario:** No Control Spec found for {g.get('Quality Group', 'this group')}.")
+            st.write(f"- **Action:** Using 3-Sigma limits ({d_ys_min:.0f}-{d_ys_max:.0f} MPa).")
+            st.write("- **Suggestion:** Check if the historical data has very wide variation, causing the 3-Sigma range to be weird.")
