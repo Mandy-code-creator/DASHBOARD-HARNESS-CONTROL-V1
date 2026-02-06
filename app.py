@@ -1,3 +1,4 @@
+
 # ================================
 # FULL STREAMLIT APP – FINAL FIXED
 # CQ00 + CQ06 MERGED
@@ -25,7 +26,6 @@ st.title("📊 SPC Hardness – Material / Gauge Level Analysis")
 if st.sidebar.button("🔄 Refresh Data"):
     st.cache_data.clear()
     st.rerun()
-
 
 # ================================
 # UTILS
@@ -154,7 +154,6 @@ df["Gauge_Range"] = df["Order_Gauge"].apply(map_gauge)
 df = df.dropna(subset=["Gauge_Range"])
 
 # ================================
-# SIDEBAR FILTER
 # SIDEBAR FILTER
 # ================================
 st.sidebar.header("🎛 FILTER")
@@ -477,6 +476,9 @@ for _, g in valid.iterrows():
                 st.dataframe(summary, use_container_width=True)
 # ========================================================
 # ========================================================
+# ========================================================
+# ========================================================
+# ========================================================
     # MODE: MECH PROPS ANALYSIS (FIXED DATAFRAME FORMAT ERROR)
     # ========================================================
     elif view_mode == "⚙️ Mech Props Analysis":
@@ -741,10 +743,10 @@ for _, g in valid.iterrows():
                     
                     st.markdown("\n".join(spec_res))
 
- # --- C. BOXPLOT DISTRIBUTION & AUTOMATIC ANALYSIS ---
+                    # --- C. BOXPLOT DISTRIBUTION & AUTOMATIC ANALYSIS ---
                     st.markdown("##### 3. Actual Distribution Charts & Analysis")
 
-                    # Hàm phân tích tự động (Helper Function) - ENGLISH VERSION
+                    # Hàm phân tích tự động (Helper Function)
                     def analyze_distribution(series, name, unit="MPa"):
                         try:
                             # 1. Tính toán thống kê cơ bản
@@ -755,15 +757,13 @@ for _, g in valid.iterrows():
                             # 2. Phân tích độ lệch (Skewness)
                             skew = series.skew()
                             if skew > 0.5:
-                                # Lệch phải -> Dữ liệu tập trung về phía giá trị CAO
-                                skew_text = "Right Skewed (High values dominant)"
+                                skew_text = "Lệch Phải (Thiên về giá trị cao)"
                                 skew_icon = "↗️"
                             elif skew < -0.5:
-                                # Lệch trái -> Dữ liệu tập trung về phía giá trị THẤP
-                                skew_text = "Left Skewed (Low values dominant)"
+                                skew_text = "Lệch Trái (Thiên về giá trị thấp)"
                                 skew_icon = "↙️"
                             else:
-                                skew_text = "Symmetrical (Normal Distribution)"
+                                skew_text = "Đối xứng (Phân bố chuẩn)"
                                 skew_icon = "↔️"
 
                             # 3. Phát hiện Outlier (IQR Method)
@@ -778,16 +778,16 @@ for _, g in valid.iterrows():
                             
                             range_val = series.max() - series.min()
 
-                            # 4. Format nội dung hiển thị (ENGLISH)
+                            # 4. Format nội dung hiển thị
                             return f"""
                             **{name} Statistics:**
                             - **Mean:** {mean:.1f} {unit} | **Median:** {median:.1f} {unit}
-                            - **Distribution:** {skew_icon} {skew_text}
-                            - **Stability (StdDev):** {std:.2f} (Range: {range_val:.1f})
-                            - **Outliers:** {n_outliers} coils (outside {lower_fence:.0f}~{upper_fence:.0f})
+                            - **Phân bố:** {skew_icon} {skew_text}
+                            - **Độ ổn định (StdDev):** {std:.2f} (Range: {range_val:.1f})
+                            - **Điểm dị biệt (Outliers):** {n_outliers} cuộn (ngoài vùng {lower_fence:.0f}~{upper_fence:.0f})
                             """
                         except Exception:
-                            return "Insufficient data for analysis."
+                            return "Không đủ dữ liệu phân tích."
 
                     # Tạo 3 cột layout của Streamlit
                     c_ts, c_ys, c_el = st.columns(3)
@@ -834,7 +834,7 @@ for _, g in valid.iterrows():
                             # Hiển thị biểu đồ
                             st.pyplot(fig)
                             
-                            # 2. Hiển thị bảng phân tích ngay bên dưới (Tiếng Anh)
+                            # 2. Hiển thị bảng phân tích ngay bên dưới
                             analysis_text = analyze_distribution(data, col_name, unit)
                             st.info(analysis_text)
 # ========================================================
