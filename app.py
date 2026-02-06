@@ -1067,22 +1067,21 @@ for _, g in valid.iterrows():
 # ========================================================
 # ========================================================
 # ========================================================
-# ========================================================
-    # VIEW MODE: BIỂU ĐỒ 3 ĐƯỜNG NỐI TIẾP (FIX NAMEERROR & HOVER)
+    # VIEW MODE: 3-PROPERTIES SEQUENTIAL CHART (ENGLISH VERSION)
     # ========================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown(f"#### 🚀 Mechanical Properties: Sequential Path & AI Forecast")
         
-        # 1. ĐỊNH NGHĨA DỮ LIỆU ĐỂ TRÁNH NAMEERROR
+        # 1. Data Preparation
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         train_df = train_df.sort_values(by="COIL_NO")
         
         if len(train_df) < 5:
-            st.warning("⚠️ Cần tối thiểu 5 cuộn dữ liệu để xây dựng mô hình dự báo.")
+            st.warning("⚠️ At least 5 historical coils are required to build the forecast model.")
         else:
             # 2. Input Section
             mean_h = float(train_df["Hardness_LINE"].mean())
-            input_key = f"final_v11_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
+            input_key = f"final_v11_en_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
             
             c_in, _ = st.columns([1, 2])
             with c_in:
@@ -1095,9 +1094,9 @@ for _, g in valid.iterrows():
                 model = LinearRegression().fit(X_train, train_df[col].values)
                 preds[col] = model.predict([[target_h]])[0]
 
-            # 4. KHỞI TẠO BIỂU ĐỒ (DÙNG MAKE_SUBPLOTS ĐỂ TRÁNH NAMEERROR)
+            # 4. Chart Initialization
             from plotly.subplots import make_subplots
-            import plotly.graph_objects as go # Đảm bảo đã import go
+            import plotly.graph_objects as go
 
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             colors = {"TS": "#004BA0", "YS": "#1B5E20", "EL": "#B71C1C"} 
@@ -1107,48 +1106,55 @@ for _, g in valid.iterrows():
             for col in ["TS", "YS", "EL"]:
                 is_secondary = True if col == "EL" else False
                 
-                # A. Đường lịch sử (Dùng <extra></extra> để xóa chữ 'trace')
+                # A. Historical Data
                 fig.add_trace(go.Scatter(
                     x=indices, y=train_df[col],
-                    mode='lines+markers', name=f"Lịch sử {col}",
+                    mode='lines+markers', name=f"Actual {col}",
                     line=dict(color=colors[col], width=1.5, dash='dot'),
                     marker=dict(size=4, opacity=0.4),
-                    hovertemplate=f"Thực tế {col}: %{{y:.1f}}<extra></extra>"
+                    hovertemplate=f"Actual {col}: %{{y:.1f}}<extra></extra>"
                 ), secondary_y=is_secondary)
 
-                # B. Bước nhảy dự báo (Ẩn thông tin hover thừa)
+                # B. Prediction Jump (Bold Line)
                 fig.add_trace(go.Scatter(
                     x=[indices[-1], next_idx],
                     y=[train_df[col].iloc[-1], preds[col]],
                     mode='lines',
                     line=dict(color=colors[col], width=6),
-                    hoverinfo='skip', # Bỏ qua hover cho đường nối này
+                    hoverinfo='skip',
                     showlegend=False
                 ), secondary_y=is_secondary)
 
-                # C. Điểm đích dự báo (Đặt tên rõ ràng thay cho 'trace')
+                # C. Forecast Target (Diamond Marker)
                 fig.add_trace(go.Scatter(
                     x=[next_idx], y=[preds[col]],
                     mode='markers+text',
-                    name=f"Dự báo {col}",
+                    name=f"Forecast {col}",
                     text=[f"<b>{preds[col]:.1f}</b>"],
                     textposition="top center",
                     marker=dict(color=colors[col], size=18, symbol='diamond', line=dict(color='white', width=2)),
-                    hovertemplate=f"<b>MỤC TIÊU DỰ BÁO</b><br>{col}: %{{y:.1f}}<extra></extra>"
+                    hovertemplate=f"<b>TARGET FORECAST</b><br>{col}: %{{y:.1f}}<extra></extra>"
                 ), secondary_y=is_secondary)
 
-            # 5. CẤU HÌNH LAYOUT (CHẮC CHẮN CHẠY)
+            # 5. Professional Layout Configuration
             fig.update_layout(
                 title_text="<b>MECHANICAL PROPERTIES EVOLUTION & AI PREDICTION</b>",
                 height=650, template="plotly_white", hovermode="x unified",
                 legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="center", x=0.5)
             )
 
-            fig.update_xaxes(title_text="Sequential Production Coils", gridcolor="#F0F0F0")
+            fig.update_xaxes(title_text="Production Sequence (Coils)", gridcolor="#F0F0F0")
             fig.update_yaxes(title_text="<b>Strength (MPa)</b>", secondary_y=False, gridcolor="#F0F0F0")
             fig.update_yaxes(title_text="<b>Elongation (%)</b>", secondary_y=True, showgrid=False)
 
-            # Đổ bóng Forecast Zone
+            # Highlight Forecast Zone
             fig.add_vrect(x0=indices[-1], x1=next_idx, fillcolor="#BDBDBD", opacity=0.2, layer="below", line_width=0)
+            fig.add_annotation(x=next_idx, y=1.02, yref="paper", text="FORECAST", showarrow=False, font=dict(color="gray", size=12))
 
             st.plotly_chart(fig, use_container_width=True)
+
+            # Metrics Table
+            c1, c2, c3 = st.columns(3)
+            c1.metric("Predicted TS", f"{preds['TS']:.1f} MPa")
+            c2.metric("Predicted YS", f"{preds['YS']:.1f} MPa")
+            c3.metric("Predicted EL", f"{preds['EL']:.1f} %")
