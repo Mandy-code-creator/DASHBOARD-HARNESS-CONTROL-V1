@@ -1066,87 +1066,95 @@ for _, g in valid.iterrows():
             """)
 # ========================================================
 # ========================================================
-    # VIEW MODE: BIỂU ĐỒ LINE WITH MARKERS (XU HƯỚNG DỊCH CHUYỂN)
+# ========================================================
+    # VIEW MODE: BIỂU ĐỒ 3 ĐƯỜNG CƠ TÍNH & DỰ BÁO NỐI TIẾP
     # ========================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
-        st.markdown(f"#### 📈 Line with Markers Trend Analysis: {g['Material']}")
+        st.markdown(f"#### 📈 Multi-Property Trend & Prediction: {g['Material']}")
         
-        # 1. Làm sạch và sắp xếp dữ liệu theo Hardness để vẽ line không bị rối
+        # 1. Làm sạch và sắp xếp dữ liệu
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         train_df = train_df.sort_values(by="Hardness_LINE")
         
         if len(train_df) < 5:
-            st.warning("⚠️ Không đủ dữ liệu lịch sử để vẽ biểu đồ line.")
+            st.warning("⚠️ Không đủ dữ liệu để vẽ biểu đồ so sánh.")
         else:
             # 2. Ô nhập Hardness mục tiêu
             mean_h = float(train_df["Hardness_LINE"].mean())
-            input_key = f"line_marker_in_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
+            input_key = f"multi_pred_in_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
             target_h = st.number_input(f"Nhập Hardness mục tiêu (HRB):", 
                                        value=round(mean_h, 1), step=0.5, key=input_key)
 
-            # 3. Tính toán Hồi quy (Mô hình AI)
-            X = train_df[["Hardness_LINE"]].values
-            y_ts = train_df["TS"].values
-            model = LinearRegression().fit(X, y_ts)
-            pred_ts = model.predict([[target_h]])[0]
+            # 3. Tính toán Dự báo cho cả 3 đường
+            X_train = train_df[["Hardness_LINE"]].values
+            results = {}
+            for col in ["TS", "YS", "EL"]:
+                model = LinearRegression().fit(X_train, train_df[col].values)
+                results[col] = model.predict([[target_h]])[0]
 
-            # 4. VẼ BIỂU ĐỒ LINE WITH MARKERS (PLOTLY)
+            # 4. VẼ BIỂU ĐỒ LINE WITH MARKERS (3 ĐƯỜNG)
             import plotly.graph_objects as go
             fig = go.Figure()
 
-            # --- TRACE 1: LINE + MARKERS DỮ LIỆU QUÁ KHỨ ---
-            fig.add_trace(go.Scatter(
-                x=train_df["Hardness_LINE"], 
-                y=train_df["TS"],
-                mode='lines+markers',
-                name='Lịch sử sản xuất',
-                line=dict(color='rgba(31, 119, 180, 0.3)', width=1),
-                marker=dict(color='#1f77b4', size=6, opacity=0.6),
-                hovertemplate="Hardness: %{x}<br>TS thực tế: %{y}<extra></extra>"
-            ))
+            # Cấu hình màu sắc
+            colors = {"TS": "#1f77b4", "YS": "#2ca02c", "EL": "#d62728"}
 
-            # --- TRACE 2: ĐƯỜNG DẪN HƯỚNG (TRENDLINE) ---
-            # Vẽ đường thẳng nối từ điểm bắt đầu đến điểm dự báo
-            x_min = min(train_df["Hardness_LINE"].min(), target_h)
-            x_max = max(train_df["Hardness_LINE"].max(), target_h)
-            x_trend = np.array([x_min, x_max]).reshape(-1, 1)
-            y_trend = model.predict(x_trend)
+            for col in ["TS", "YS", "EL"]:
+                # A. Vẽ đường dữ liệu quá khứ
+                is_el = (col == "EL")
+                fig.add_trace(go.Scatter(
+                    x=train_df["Hardness_LINE"], 
+                    y=train_df[col],
+                    mode='lines+markers',
+                    name=f"Lịch sử {col}",
+                    line=dict(color=colors[col], width=1, dash='dot'),
+                    marker=dict(size=5, opacity=0.4),
+                    yaxis="y2" if is_el else "y1"
+                ))
 
-            fig.add_trace(go.Scatter(
-                x=x_trend.flatten(), y=y_trend,
-                mode='lines',
-                name='Hướng dịch chuyển (AI Trend)',
-                line=dict(color='orange', width=2, dash='solid')
-            ))
+                # B. Vẽ ĐƯỜNG NỐI đến điểm dự báo (Màu đậm hơn)
+                # Nối từ điểm cuối của dữ liệu thực tế đến điểm dự báo
+                last_h = train_df["Hardness_LINE"].iloc[-1]
+                last_val = train_df[col].iloc[-1]
+                
+                fig.add_trace(go.Scatter(
+                    x=[last_h, target_h],
+                    y=[last_val, results[col]],
+                    mode='lines+markers',
+                    name=f"Hướng dịch chuyển {col}",
+                    line=dict(color=colors[col], width=3),
+                    marker=dict(color='white', size=8, line=dict(color=colors[col], width=2)),
+                    yaxis="y2" if is_el else "y1",
+                    showlegend=False
+                ))
 
-            # --- TRACE 3: ĐIỂM DỰ BÁO (MARKER ĐỎ NỔI BẬT) ---
-            fig.add_trace(go.Scatter(
-                x=[target_h], y=[pred_ts],
-                mode='markers+text',
-                name='ĐIỂM DỰ BÁO ĐÍCH',
-                text=[f"Đích: {pred_ts:.1f}"],
-                textposition="top center",
-                marker=dict(color='red', size=15, symbol='circle',
-                            line=dict(color='black', width=2)),
-                hovertemplate="Target Hardness: %{x}<br>Predicted TS: %{y:.1f}<extra></extra>"
-            ))
+                # C. Vẽ ĐIỂM DỰ BÁO (Marker đặc biệt)
+                fig.add_trace(go.Scatter(
+                    x=[target_h], y=[results[col]],
+                    mode='markers+text',
+                    name=f"DỰ BÁO {col}",
+                    text=[f"{results[col]:.1f}"],
+                    textposition="top center",
+                    marker=dict(color=colors[col], size=12, symbol='star'),
+                    yaxis="y2" if is_el else "y1"
+                ))
 
-            # Cấu hình giao diện biểu đồ
+            # 5. Cấu hình Trục Y kép (Dual Axis)
             fig.update_layout(
-                title=f"Biểu đồ Line with Markers: Xu hướng TS theo Hardness ({g['Material']})",
+                title=f"So sánh xu hướng dịch chuyển 3 đường cơ tính ({g['Material']})",
                 xaxis_title="Hardness (HRB)",
-                yaxis_title="Tensile Strength (MPa)",
+                yaxis=dict(title="Strength (TS/YS) [MPa]", side="left"),
+                yaxis2=dict(title="Elongation (EL) [%]", side="right", overlaying="y", showgrid=False),
                 template="plotly_white",
-                height=550,
-                xaxis=dict(gridcolor='whitesmoke'),
-                yaxis=dict(gridcolor='whitesmoke'),
+                height=600,
+                hovermode="x unified",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
 
             st.plotly_chart(fig, use_container_width=True)
             
-            # Kết quả dự báo nhanh cho 3 chỉ số
+            # Bảng thông số nhanh
             c1, c2, c3 = st.columns(3)
-            c1.metric("Dự báo TS", f"{pred_ts:.1f}")
-            c2.metric("Dự báo YS", f"{LinearRegression().fit(X, train_df['YS'].values).predict([[target_h]])[0]:.1f}")
-            c3.metric("Dự báo EL", f"{LinearRegression().fit(X, train_df['EL'].values).predict([[target_h]])[0]:.1f}")
+            c1.metric("Dự báo TS", f"{results['TS']:.1f}")
+            c2.metric("Dự báo YS", f"{results['YS']:.1f}")
+            c3.metric("Dự báo EL", f"{results['EL']:.1f}%")
