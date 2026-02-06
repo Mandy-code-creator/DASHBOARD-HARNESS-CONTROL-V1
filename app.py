@@ -155,133 +155,41 @@ df = df.dropna(subset=["Gauge_Range"])
 # ================================
 # SIDEBAR FILTER
 # ==============================================================================
-# 🎨 SIDEBAR DESIGN: ORIGINAL LOGIC + NEW UI
-# ==============================================================================
-with st.sidebar:
-    # --- 1. BRANDING & LOGO ---
-    # (Giữ lại phần Logo mới thêm theo yêu cầu của bạn)
-    try:
-        st.image("image_4.png", use_container_width=True)
-    except:
-        st.warning("⚠️ Chưa tìm thấy file 'image_4.png'")
-        
-    st.title("🎛️ Control Panel")
-    st.divider()
+# ================================
+st.sidebar.header("🎛 FILTER")
+rolling = st.sidebar.radio("Rolling Type", sorted(df["Rolling_Type"].unique()))
+metal   = st.sidebar.radio("Metallic Type", sorted(df["Metallic_Type"].unique()))
+qgroup  = st.sidebar.radio("Quality Group", sorted(df["Quality_Group"].unique()))
 
-    # --- 2. TIME FILTER (Layout mới gọn hơn, nhưng logic cũ) ---
-    st.markdown("### 📅 Production Period")
-    
-    # Xử lý ngày tháng cơ bản để tránh lỗi
-    if not pd.api.types.is_datetime64_any_dtype(df["PRODUCTION DATE"]):
-        df["PRODUCTION DATE"] = pd.to_datetime(df["PRODUCTION DATE"], errors='coerce')
+df = df[
+    (df["Rolling_Type"] == rolling) &
+    (df["Metallic_Type"] == metal) &
+    (df["Quality_Group"] == qgroup)
+]
 
-    min_date = df["PRODUCTION DATE"].min().date()
-    max_date = df["PRODUCTION DATE"].max().date()
-    
-    # Đặt trên 2 cột cho gọn (như bạn thích)
-    c_date1, c_date2 = st.columns(2)
-    with c_date1:
-        start_date = st.date_input("From", value=min_date, min_value=min_date, max_value=max_date)
-    with c_date2:
-        end_date = st.date_input("To", value=max_date, min_value=min_date, max_value=max_date)
+view_mode = st.sidebar.radio(
+    "📊 View Mode",
+    [
+        "📋 Data Table",
+        "📈 Trend (LAB / LINE)",
+        "📊 Distribution (LAB + LINE)",
+        "🛠 Hardness → TS/YS/EL",
+        "📊 TS/YS/EL Trend & Distribution",
+        "🧮 Predict TS/YS/EL (Custom Hardness)",
+        "🔍 Lookup: Hardness Range → Actual Mech Props",
+    ]
+)
 
-    # Lọc Date
-    mask_date = (df["PRODUCTION DATE"].dt.date >= start_date) & (df["PRODUCTION DATE"].dt.date <= end_date)
-    df_date_filtered = df[mask_date]
+with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
+    st.markdown(
+        """
+        - The shaded area around the predicted line represents the **95% Confidence Interval (CI)**.
+        - It means that **approximately 95% of future observations are expected to fall within this range** if the linear model is valid.
+        - Narrow CI → high precision; wide CI → higher uncertainty.
+        - This note is **shown once** for clarity and can be collapsed.
+        """
+    )
 
-    # --- 3. ORIGINAL FILTERS (Quay lại đúng tên cột cũ của bạn) ---
-    
-    with st.expander("🏗️ Material & Grade Specs", expanded=True):
-        # 1. Grade (Dùng đúng 'HR STEEL GRADE' như ban đầu)
-        all_grades = sorted(df_date_filtered["HR STEEL GRADE"].unique())
-        selected_grades = st.multiselect(
-            "Select Grade", 
-            options=all_grades,
-            default=all_grades
-        )
-        
-        # 2. Material Class (Dùng đúng 'Claasify material')
-        all_class = sorted(df_date_filtered["Claasify material"].unique())
-        selected_class = st.multiselect(
-            "Material Class",
-            options=all_class,
-            default=all_class
-        )
-
-    with st.expander("📏 Dimensions", expanded=False):
-        # 3. Gauge
-        min_g = float(df_date_filtered["ORDER GAUGE"].min())
-        max_g = float(df_date_filtered["ORDER GAUGE"].max())
-        if min_g == max_g: max_g += 0.1
-        
-        selected_gauge = st.slider(
-            "Gauge Range (mm)",
-            min_value=min_g, max_value=max_g,
-            value=(min_g, max_g)
-        )
-        
-        # 4. Width
-        min_w = float(df_date_filtered["ORDER WIDTH"].min())
-        max_w = float(df_date_filtered["ORDER WIDTH"].max())
-        if min_w == max_w: max_w += 10.0
-        
-        selected_width = st.slider(
-            "Width Range (mm)",
-            min_value=min_w, max_value=max_w,
-            value=(min_w, max_w)
-        )
-
-    with st.expander("🧪 Coating & Process", expanded=False):
-        # 5. Coating Type
-        all_coating = sorted(df_date_filtered["METALLIC COATING TYPE"].astype(str).unique())
-        selected_coating = st.multiselect(
-            "Coating Type",
-            options=all_coating,
-            default=all_coating
-        )
-        
-        # 6. Quality Code
-        all_qc = sorted(df_date_filtered["QUALITY_CODE"].astype(str).unique())
-        selected_qc = st.multiselect(
-            "Quality Code",
-            options=all_qc,
-            default=all_qc
-        )
-
-    # --- 4. APPLY FILTER LOGIC (Logic nguyên bản) ---
-    # Kết hợp các điều kiện
-    mask_final = mask_date
-    
-    if selected_grades:
-        mask_final &= df["HR STEEL GRADE"].isin(selected_grades)
-    
-    if selected_class:
-        mask_final &= df["Claasify material"].isin(selected_class)
-        
-    if selected_coating:
-        mask_final &= df["METALLIC COATING TYPE"].astype(str).isin(selected_coating)
-        
-    if selected_qc:
-        mask_final &= df["QUALITY_CODE"].astype(str).isin(selected_qc)
-        
-    # Lọc Slider
-    mask_final &= (df["ORDER GAUGE"] >= selected_gauge[0]) & (df["ORDER GAUGE"] <= selected_gauge[1])
-    mask_final &= (df["ORDER WIDTH"] >= selected_width[0]) & (df["ORDER WIDTH"] <= selected_width[1])
-
-    # Tạo biến 'sub'
-    sub = df[mask_final]
-
-    # --- 5. SUMMARY ---
-    st.divider()
-    c_met1, c_met2 = st.columns(2)
-    c_met1.metric("Total Coils", f"{len(sub):,}")
-    c_met2.metric("Hidden", f"{len(df) - len(sub):,}", delta_color="inverse")
-    
-    if st.button("🔄 Reset Filters", use_container_width=True):
-        st.rerun()
-# ==============================================================================
-# KẾT THÚC SIDEBAR - BIẾN 'sub' SẼ ĐƯỢC DÙNG CHO CÁC PHẦN DƯỚI
-# ==============================================================================
 
 # ================================
 # GROUP CONDITION
