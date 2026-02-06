@@ -794,65 +794,67 @@ for _, g in valid.iterrows():
 
         # --- 0. PRE-CALCULATE & DISPLAY REFERENCE TABLE ---
         
-        # 1. Khai báo biến mặc định (Fallback) phòng khi lỗi toàn tập
+        # 1. Khai báo biến mặc định (Fallback)
         d_ys_min, d_ys_max = 250.0, 900.0
         d_ts_min, d_ts_max = 350.0, 900.0
         d_el_min, d_el_max = 0.0, 50.0
         
+        # 2. Khai báo các biến lưu trữ và cờ hiệu (QUAN TRỌNG ĐỂ TRÁNH NAME ERROR)
         limit_summary = []
-        debug_msg = "" # Biến để lưu thông báo lỗi nếu có
+        missing_spec_warning = False 
+        debug_msg = ""
 
         if not sub.empty:
             # Hàm tính toán an toàn (Safe Calculation)
-            def calculate_smart_limits(name, col_val, col_spec_min, col_spec_max, step=5.0, is_elongation=False):
+            def calculate_smart_limits(name, col_val, col_spec_min, col_spec_max, step=5.0):
                 try:
                     # --- A. XỬ LÝ DỮ LIỆU THỰC TẾ (PROCESS) ---
-                    # Lọc bỏ giá trị <=0 để tránh làm sai lệch thống kê (đặc biệt cho EL)
+                    # Lọc bỏ giá trị <=0 để tránh làm sai lệch thống kê (đặc biệt cho EL âm)
                     valid_data = sub[sub[col_val] > 0][col_val]
                     
                     if valid_data.empty:
-                        # Nếu không có dữ liệu hợp lệ -> Trả về mặc định và báo hiệu
+                        # Trả về mặc định nếu không có data hợp lệ
                         return 0.0, 0.0, {
                             "Property": name, "Customer Spec": "N/A", "Process (3σ)": "No Data",
                             "Basis": "Default", "Recommended": "N/A"
-                        }, True # True = Có lỗi/Thiếu data
+                        }, False # Không coi là No Spec, mà là No Data
                     
                     mean = valid_data.mean()
-                    # Nếu chỉ có 1 mẫu, std = 0
                     std = valid_data.std() if len(valid_data) > 1 else 0
                     
                     stat_min = mean - (3 * std)
                     stat_max = mean + (3 * std)
 
                     # --- B. XỬ LÝ SPEC (CUSTOMER STANDARD) ---
-                    # Kiểm tra an toàn: Cột Spec có tồn tại trong Dataframe không?
+                    # Kiểm tra cột Spec có tồn tại không
                     spec_min = 0.0
                     if col_spec_min in sub.columns:
-                        # Lấy max của cột spec để tránh dòng bị null/0
-                        spec_min = float(sub[col_spec_min].max()) 
-                        if np.isnan(spec_min): spec_min = 0.0
+                        temp_min = sub[col_spec_min].max()
+                        if not pd.isna(temp_min): spec_min = float(temp_min)
                     
                     spec_max = 9999.0
                     if col_spec_max in sub.columns:
-                        # Lấy min của cột spec (bỏ qua 0)
-                        temp_max = sub[sub[col_spec_max] > 0][col_spec_max].min()
-                        if not np.isnan(temp_max): spec_max = float(temp_max)
+                        # Lấy min > 0
+                        temp_max_series = sub[sub[col_spec_max] > 0][col_spec_max]
+                        if not temp_max_series.empty:
+                            spec_max = float(temp_max_series.min())
+
+                    # Kiểm tra xem có phải "No Spec" không
+                    is_no_spec = (spec_min == 0) and (spec_max == 9999.0)
 
                     # --- C. LOGIC CHỌN (SMART SELECTION) ---
-                    # Logic: Min thì lấy cái LỚN HƠN (Chặt chẽ)
+                    # Min: Lấy cái LỚN HƠN (Chặt chẽ)
                     final_min = max(stat_min, spec_min)
                     
-                    # Logic: Max
-                    # Nếu Spec Max < 9000 (tức là có quy định), thì dùng Spec Max để chặn
-                    # Nếu Spec Max = 9999 (không quy định), thì dùng Thống kê mở rộng (Mean + 3 Std)
+                    # Max:
                     if spec_max < 9000:
                         final_max = min(stat_max, spec_max)
                         note = "Spec Limit"
                     else:
-                        final_max = stat_max
-                        note = "3-Sigma"
+                        final_max = stat_max + (1 * std) if is_no_spec else stat_max
+                        note = "3-Sigma" if is_no_spec else "Process Only"
 
-                    # Fallback nếu vô lý (Min > Max)
+                    # Fallback
                     if final_min >= final_max:
                         final_min = stat_min
                         final_max = stat_max + std
@@ -863,7 +865,7 @@ for _, g in valid.iterrows():
 
                     # String hiển thị
                     str_spec = f"{spec_min:.0f}~{spec_max:.0f}" if spec_max < 9000 else f"Min {spec_min:.0f}"
-                    if spec_min == 0 and spec_max == 9999.0: str_spec = "❌ No Spec"
+                    if is_no_spec: str_spec = "❌ No Spec"
 
                     return rec_min, rec_max, {
                         "Property": name,
@@ -871,32 +873,45 @@ for _, g in valid.iterrows():
                         "Process (3σ)": f"{stat_min:.0f} ~ {stat_max:.0f}",
                         "Basis": note,
                         "Recommended": f"{rec_min:.0f} ~ {rec_max:.0f}"
-                    }, False # False = Không lỗi
+                    }, is_no_spec
 
                 except Exception as e:
-                    # Nếu lỗi cục bộ từng dòng -> Trả về mặc định
-                    return 0.0, 0.0, {"Property": name, "Recommended": "Error"}, True
+                    return 0.0, 0.0, {"Property": name, "Recommended": "Error"}, False
 
             # --- THỰC HIỆN TÍNH TOÁN ---
             # Yield Strength
-            cal_ys_min, cal_ys_max, row_ys, err_ys = calculate_smart_limits('Yield Strength', 'YS', 'Standard YS min', 'Standard YS max', 5.0)
-            if not err_ys: d_ys_min, d_ys_max = cal_ys_min, cal_ys_max
+            cal_ys_min, cal_ys_max, row_ys, no_spec_ys = calculate_smart_limits('Yield Strength', 'YS', 'Standard YS min', 'Standard YS max', 5.0)
+            if row_ys["Recommended"] != "N/A" and row_ys["Recommended"] != "Error":
+                d_ys_min, d_ys_max = cal_ys_min, cal_ys_max
             
             # Tensile Strength
-            cal_ts_min, cal_ts_max, row_ts, err_ts = calculate_smart_limits('Tensile Strength', 'TS', 'Standard TS min', 'Standard TS max', 5.0)
-            if not err_ts: d_ts_min, d_ts_max = cal_ts_min, cal_ts_max
+            cal_ts_min, cal_ts_max, row_ts, no_spec_ts = calculate_smart_limits('Tensile Strength', 'TS', 'Standard TS min', 'Standard TS max', 5.0)
+            if row_ts["Recommended"] != "N/A" and row_ts["Recommended"] != "Error":
+                d_ts_min, d_ts_max = cal_ts_min, cal_ts_max
 
             # Elongation
-            cal_el_min, cal_el_max, row_el, err_el = calculate_smart_limits('Elongation', 'EL', 'Standard EL min', 'Standard EL max', 1.0, is_elongation=True)
-            if not err_el: d_el_min, d_el_max = cal_el_min, cal_el_max
+            cal_el_min, cal_el_max, row_el, no_spec_el = calculate_smart_limits('Elongation', 'EL', 'Standard EL min', 'Standard EL max', 1.0)
+            if row_el["Recommended"] != "N/A" and row_el["Recommended"] != "Error":
+                d_el_min, d_el_max = cal_el_min, cal_el_max
 
             limit_summary = [row_ys, row_ts, row_el]
             
-            # Nếu có lỗi, hiện thông báo nhỏ
-            if err_ys or err_ts or err_el:
-                debug_msg = "⚠️ Some defaults could not be calculated (missing columns or insufficient data)."
-        else:
-            debug_msg = "⚠️ No data available to calculate defaults."
+            # Cập nhật cờ cảnh báo
+            if no_spec_ys or no_spec_ts or no_spec_el:
+                missing_spec_warning = True
+
+        # --- HIỂN THỊ BẢNG THAM CHIẾU ---
+        if limit_summary:
+            st.markdown("#### 📋 Reference: Spec vs. Capability")
+            
+            # Bây giờ biến missing_spec_warning ĐÃ ĐƯỢC ĐỊNH NGHĨA -> Không còn lỗi
+            if missing_spec_warning:
+                st.info("ℹ️ **Note:** Some properties have **No Control Spec**. Using **3-Sigma Limits** instead.")
+            
+            df_limits = pd.DataFrame(limit_summary)
+            st.table(df_limits.set_index("Property"))
+        
+        st.divider()
         # --- HIỂN THỊ BẢNG THAM CHIẾU ---
         if limit_summary:
             st.markdown("#### 📋 Spec vs. Capability Analysis")
