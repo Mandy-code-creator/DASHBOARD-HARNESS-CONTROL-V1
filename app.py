@@ -1066,40 +1066,39 @@ for _, g in valid.iterrows():
             """)
 # ========================================================
 # ========================================================
-    # VIEW MODE: BIỂU ĐỒ 3 ĐƯỜNG NỐI TIẾP (ULTRA PROFESSIONAL)
+    # VIEW MODE: BIỂU ĐỒ NỐI TIẾP ĐẬM NÉT (INDUSTRIAL BOLD)
     # ========================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown(f"#### 🚀 Mechanical Properties: Sequential Path & AI Forecast")
         
-        # 1. Làm sạch và chuẩn bị dữ liệu
+        # 1. Chuẩn bị dữ liệu và sắp xếp trình tự
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         train_df = train_df.sort_values(by="COIL_NO")
         
         if len(train_df) < 5:
-            st.warning("⚠️ Không đủ dữ liệu lịch sử để xây dựng mô hình chuyên sâu.")
+            st.warning("⚠️ Cần tối thiểu 5 cuộn dữ liệu để vẽ xu hướng.")
         else:
-            # 2. Input Section (Giao diện gọn gàng)
+            # 2. Input Section
             mean_h = float(train_df["Hardness_LINE"].mean())
-            input_key = f"ultra_v5_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
+            input_key = f"industrial_v6_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
             
             c_in, _ = st.columns([1, 2])
             with c_in:
-                target_h = st.number_input(f"Target Hardness (HRB):", 
-                                           value=round(mean_h, 1), step=0.1, key=input_key)
+                target_h = st.number_input(f"Target Hardness (HRB):", value=round(mean_h, 1), step=0.1, key=input_key)
 
-            # 3. Tính toán dự báo AI
+            # 3. AI Prediction logic
             X_train = train_df[["Hardness_LINE"]].values
             preds = {}
             for col in ["TS", "YS", "EL"]:
                 model = LinearRegression().fit(X_train, train_df[col].values)
                 preds[col] = model.predict([[target_h]])[0]
 
-            # 4. VẼ BIỂU ĐỒ (ĐƯỜNG NÉT ĐẬM & RÕ RÀNG)
+            # 4. VẼ BIỂU ĐỒ (SỬ DỤNG CÚ PHÁP PHẲNG ĐỂ TRÁNH LỖI)
             import plotly.graph_objects as go
             fig = go.Figure()
 
-            # Bảng màu High-Contrast
-            colors = {"TS": "#0D47A1", "YS": "#1B5E20", "EL": "#B71C1C"} # Deep Blue, Deep Green, Deep Red
+            # Bảng màu tương phản mạnh (Industrial Palette)
+            colors = {"TS": "#004BA0", "YS": "#1B5E20", "EL": "#B71C1C"} 
             indices = list(range(len(train_df)))
             next_idx = len(train_df)
 
@@ -1107,57 +1106,59 @@ for _, g in valid.iterrows():
                 is_el = (col == "EL")
                 y_axis = "y2" if is_el else "y"
                 
-                # A. Đường lịch sử (Nét liền, mảnh vừa phải)
+                # A. Đường lịch sử (Nét liền rõ ràng)
                 fig.add_trace(go.Scatter(
                     x=indices, y=train_df[col],
                     mode='lines+markers', name=f"History {col}",
-                    line=dict(color=colors[col], width=2, dash='solid'),
-                    marker=dict(size=6, opacity=0.5, line=dict(width=1, color='white')),
+                    line=dict(color=colors[col], width=2),
+                    marker=dict(size=6, symbol='circle'),
                     yaxis=y_axis
                 ))
 
-                # B. BƯỚC NHẢY DỰ BÁO (Nét cực đậm - Nối từ cuộn cuối cùng)
+                # B. BƯỚC NHẢY DỰ BÁO (ĐƯỜNG NÉT SIÊU ĐẬM)
                 fig.add_trace(go.Scatter(
                     x=[indices[-1], next_idx],
                     y=[train_df[col].iloc[-1], preds[col]],
                     mode='lines+markers',
-                    line=dict(color=colors[col], width=5), # Độ dày 5 để cực kỳ rõ ràng
-                    marker=dict(color='yellow', size=12, line=dict(color=colors[col], width=3), symbol='star'),
+                    line=dict(color=colors[col], width=6), # Độ dày cực đại để thấy rõ hướng
+                    marker=dict(color='yellow', size=12, line=dict(color='black', width=1), symbol='star'),
                     yaxis=y_axis, showlegend=False
                 ))
 
-                # C. ĐIỂM ĐÍCH DỰ BÁO (Marker lớn nhất, chữ in đậm)
+                # C. ĐIỂM ĐÍCH DỰ BÁO (NỔI BẬT NHẤT)
                 fig.add_trace(go.Scatter(
                     x=[next_idx], y=[preds[col]],
                     mode='markers+text',
                     text=[f"<b>{preds[col]:.1f}</b>"],
                     textposition="top center",
-                    textfont=dict(size=14, color=colors[col]),
-                    marker=dict(color=colors[col], size=18, symbol='diamond', 
-                                line=dict(color='white', width=3)),
+                    marker=dict(color=colors[col], size=18, symbol='diamond', line=dict(color='white', width=2)),
                     yaxis=y_axis, showlegend=False
                 ))
 
-            # 5. CẤU HÌNH LAYOUT CHUẨN CÔNG NGHIỆP
+            # 5. LAYOUT (CẤU TRÚC PHẲNG - CHỐNG VALUEERROR)
             fig.update_layout(
-                title=dict(text="<b>MECHANICAL PROPERTIES EVOLUTION & AI PREDICTION PATH</b>", 
-                           font=dict(size=20, color='#212121')),
-                xaxis=dict(title="<b>Production Sequence</b>", gridcolor='#EEEEEE', 
-                           showline=True, linecolor='black', mirror=True),
-                yaxis=dict(title="<b>Strength (MPa)</b>", side="left", gridcolor='#EEEEEE', 
-                           titlefont=dict(color=colors["TS"]), showline=True, linecolor='black'),
-                yaxis2=dict(title="<b>Elongation (%)</b>", side="right", overlaying="y", 
-                            showgrid=False, titlefont=dict(color=colors["EL"]), showline=True, linecolor='black'),
+                title_text="<b>MECHANICAL PROPERTIES EVOLUTION & AI PREDICTION</b>",
+                xaxis_title="Sequential Production Coils",
+                xaxis_gridcolor="#E0E0E0",
+                yaxis_title="<b>Strength (TS/YS) [MPa]</b>",
+                yaxis_gridcolor="#E0E0E0",
+                yaxis_titlefont_color=colors["TS"],
+                yaxis2_title="<b>Elongation (EL) [%]</b>",
+                yaxis2_titlefont_color=colors["EL"],
+                yaxis2_overlaying="y",
+                yaxis2_side="right",
+                yaxis2_showgrid=False,
                 template="plotly_white",
                 height=650,
                 hovermode="x unified",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="center", x=0.5, 
-                            font=dict(size=12), bgcolor='rgba(255,255,255,0.8)')
+                legend_orientation="h",
+                legend_y=1.1,
+                legend_x=0.5,
+                legend_xanchor="center"
             )
 
-            # Forecast Zone Background
-            fig.add_vrect(x0=indices[-1], x1=next_idx, fillcolor="#F5F5F5", 
-                          opacity=0.5, layer="below", line_width=0)
+            # Đổ bóng khu vực dự báo
+            fig.add_vrect(x0=indices[-1], x1=next_idx, fillcolor="#BDBDBD", opacity=0.2, layer="below", line_width=0)
 
             st.plotly_chart(fig, use_container_width=True)
 
