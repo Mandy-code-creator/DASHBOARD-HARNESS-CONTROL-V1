@@ -1066,87 +1066,83 @@ for _, g in valid.iterrows():
             """)
 # ========================================================
 # ========================================================
-    # VIEW MODE: DỰ BÁO CƠ TÍNH & BIỂU ĐỒ XU HƯỚNG TRỰC QUAN
+    # VIEW MODE: BIỂU ĐỒ XU HƯỚNG (TRENDLINE) & DỰ BÁO
     # ========================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
-        st.markdown(f"#### 🤖 AI Prediction & Trend for {g['Material']} | {g['Gauge_Range']}")
+        st.markdown(f"#### 📉 Trendline Analysis & Prediction: {g['Material']}")
         
-        # 1. Chuẩn bị dữ liệu sạch cho nhóm này
+        # 1. Làm sạch dữ liệu
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
-        train_df = train_df.sort_values("Hardness_LINE") # Sắp xếp để vẽ đường xu hướng mượt hơn
         
-        if len(train_df) < 10:
-            st.warning(f"⚠️ Dữ liệu nhóm này quá ít ({len(train_df)} cuộn), không đủ để vẽ xu hướng dự báo.")
+        if len(train_df) < 5:
+            st.warning("⚠️ Không đủ dữ liệu để vẽ biểu đồ xu hướng.")
         else:
             # 2. Ô nhập Hardness mục tiêu
             mean_h = float(train_df["Hardness_LINE"].mean())
-            input_key = f"input_pred_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
-            
-            target_h = st.number_input(
-                f"Nhập độ cứng mục tiêu (HRB):",
-                min_value=0.0, max_value=120.0,
-                value=round(mean_h, 1), step=0.1, key=input_key
-            )
+            input_key = f"trend_input_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
+            target_h = st.number_input(f"Nhập Hardness mục tiêu (HRB):", 
+                                       value=round(mean_h, 1), step=0.5, key=input_key)
 
-            # 3. Tính toán mô hình cho TS (Tensile Strength) làm đại diện xu hướng
+            # 3. Tính toán Hồi quy Tuyến tính (Linear Regression)
             X = train_df[["Hardness_LINE"]].values
             y_ts = train_df["TS"].values
-            model_ts = LinearRegression().fit(X, y_ts)
+            model = LinearRegression().fit(X, y_ts)
             
-            # Dự báo giá trị TS tại điểm target_h
-            pred_ts = model_ts.predict([[target_h]])[0]
-            
-            # 4. Hiển thị nhanh kết quả 3 chỉ số
-            cols = st.columns(3)
-            for i, col_name in enumerate(["TS", "YS", "EL"]):
-                y_temp = train_df[col_name].values
-                model_temp = LinearRegression().fit(X, y_temp)
-                p_val = model_temp.predict([[target_h]])[0]
-                r2 = r2_score(y_temp, model_temp.predict(X))
-                cols[i].metric(f"Dự báo {col_name}", f"{p_val:.1f}", f"R²={r2:.2f}")
+            # Dự báo điểm mới
+            pred_ts = model.predict([[target_h]])[0]
+            r2 = r2_score(y_ts, model.predict(X))
 
-            # 5. VẼ BIỂU ĐỒ XU HƯỚNG (PLOTLY)
+            # 4. Vẽ biểu đồ Trendline bằng Plotly
             import plotly.graph_objects as go
+            
+            # Tính toán dải đường Trendline bao gồm cả điểm dự báo
+            x_min = min(train_df["Hardness_LINE"].min(), target_h) - 3
+            x_max = max(train_df["Hardness_LINE"].max(), target_h) + 3
+            x_trend = np.array([x_min, x_max]).reshape(-1, 1)
+            y_trend = model.predict(x_trend)
 
             fig = go.Figure()
 
-            # A. Vẽ các điểm dữ liệu thực tế (Màu xanh nhạt)
+            # --- Trace 1: Dữ liệu quá khứ (Các chấm nhỏ) ---
             fig.add_trace(go.Scatter(
                 x=train_df["Hardness_LINE"], y=train_df["TS"],
                 mode='markers', name='Dữ liệu thực tế',
-                marker=dict(color='rgba(100, 150, 250, 0.5)', size=8)
+                marker=dict(color='rgba(31, 119, 180, 0.4)', size=6),
+                hovertemplate="Hardness: %{x}<br>Actual TS: %{y}<extra></extra>"
             ))
 
-            # B. Vẽ đường xu hướng (Đường nối từ dữ liệu đến tương lai)
-            # Tạo dải X từ min dữ liệu đến điểm dự báo
-            x_range = np.linspace(min(train_df["Hardness_LINE"].min(), target_h) - 2, 
-                                  max(train_df["Hardness_LINE"].max(), target_h) + 2, 20)
-            y_range = model_ts.predict(x_range.reshape(-1, 1))
-            
+            # --- Trace 2: ĐƯỜNG TRENDLINE (Đường xu hướng chính) ---
             fig.add_trace(go.Scatter(
-                x=x_range, y=y_range,
-                mode='lines', name='Đường xu hướng (AI)',
-                line=dict(color='gray', dash='dash')
+                x=x_trend.flatten(), y=y_trend,
+                mode='lines', name='Trendline (Xu hướng)',
+                line=dict(color='orange', width=2),
+                hoverinfo='skip'
             ))
 
-            # C. Vẽ ĐIỂM DỰ BÁO (Tô đỏ, kích thước lớn)
+            # --- Trace 3: ĐIỂM DỰ BÁO (Màu đỏ rực) ---
             fig.add_trace(go.Scatter(
                 x=[target_h], y=[pred_ts],
-                mode='markers+text',
-                name='Vị trí dự báo',
-                text=[f"Dự báo: {pred_ts:.1f}"],
+                mode='markers+text', name='DỰ BÁO',
+                text=[f"Đích đến: {pred_ts:.1f}"],
                 textposition="top center",
-                marker=dict(color='red', size=15, symbol='x')
+                marker=dict(color='red', size=14, symbol='diamond',
+                            line=dict(color='white', width=2)),
+                hovertemplate="Target Hardness: %{x}<br>Predicted TS: %{y:.1f}<extra></extra>"
             ))
 
-            # D. Tinh chỉnh giao diện biểu đồ
+            # Cấu hình giao diện
             fig.update_layout(
-                title=f"Biểu đồ hướng dịch chuyển TS theo Hardness",
+                title=f"Trendline Tensile Strength theo Hardness ({g['Material']})",
                 xaxis_title="Hardness (HRB)",
                 yaxis_title="Tensile Strength (MPa)",
-                hovermode="x unified",
                 template="plotly_white",
-                height=450
+                height=500,
+                xaxis=dict(range=[x_min, x_max], gridcolor='lightgrey'),
+                yaxis=dict(gridcolor='lightgrey'),
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
             )
 
             st.plotly_chart(fig, use_container_width=True)
+            
+            # Hiển thị kết quả dạng số bên dưới
+            st.info(f"💡 **Phân tích:** Với độ cứng **{target_h} HRB**, Tensile Strength dự kiến đạt **{pred_ts:.1f} MPa**. Độ tin cậy của xu hướng này là **{r2*100:.1f}%** (R²={r2:.2f}).")
