@@ -794,59 +794,58 @@ for _, g in valid.iterrows():
 
         # --- 0. PRE-CALCULATE & DISPLAY REFERENCE TABLE ---
         
-        # 1. Khai báo biến mặc định (Fallback)
+        # 1. Khai báo biến mặc định (Fallback an toàn)
+        # Đây là giá trị sẽ dùng nếu mọi tính toán thất bại
         d_ys_min, d_ys_max = 250.0, 900.0
         d_ts_min, d_ts_max = 350.0, 900.0
         d_el_min, d_el_max = 0.0, 50.0
         
-        # 2. Khai báo các biến lưu trữ và cờ hiệu (QUAN TRỌNG ĐỂ TRÁNH NAME ERROR)
         limit_summary = []
         missing_spec_warning = False 
-        debug_msg = ""
+        
+        # Biến debug để bạn xem chuyện gì đang xảy ra (ẩn trong Expander)
+        debug_log = {}
 
         if not sub.empty:
-            # Hàm tính toán an toàn (Safe Calculation)
+            # Hàm tính toán siêu an toàn (Robust & Sanitized)
             def calculate_smart_limits(name, col_val, col_spec_min, col_spec_max, step=5.0):
+                log_key = name
                 try:
-                    # --- A. XỬ LÝ DỮ LIỆU THỰC TẾ (PROCESS) ---
-                    # Lọc bỏ giá trị <=0 để tránh làm sai lệch thống kê (đặc biệt cho EL âm)
-                    valid_data = sub[sub[col_val] > 0][col_val]
+                    # --- A. CLEAN DATA (LÀM SẠCH) ---
+                    # Chuyển về numeric, ép lỗi thành NaN
+                    series_val = pd.to_numeric(sub[col_val], errors='coerce')
+                    # Chỉ lấy số dương (YS/TS/EL phải > 0)
+                    valid_data = series_val[series_val > 0.1].dropna()
                     
                     if valid_data.empty:
-                        # Trả về mặc định nếu không có data hợp lệ
-                        return 0.0, 0.0, {
-                            "Property": name, "Customer Spec": "N/A", "Process (3σ)": "No Data",
-                            "Basis": "Default", "Recommended": "N/A"
-                        }, False # Không coi là No Spec, mà là No Data
+                        return 0.0, 0.0, {"Property": name, "Recommended": "No Data"}, False, "Empty Data"
                     
-                    mean = valid_data.mean()
-                    std = valid_data.std() if len(valid_data) > 1 else 0
+                    # Tính toán thống kê cơ bản
+                    mean = float(valid_data.mean())
+                    std = float(valid_data.std()) if len(valid_data) > 1 else 0.0
                     
                     stat_min = mean - (3 * std)
                     stat_max = mean + (3 * std)
 
-                    # --- B. XỬ LÝ SPEC (CUSTOMER STANDARD) ---
-                    # Kiểm tra cột Spec có tồn tại không
+                    # --- B. XỬ LÝ SPEC ---
                     spec_min = 0.0
                     if col_spec_min in sub.columns:
-                        temp_min = sub[col_spec_min].max()
-                        if not pd.isna(temp_min): spec_min = float(temp_min)
+                        s_min = pd.to_numeric(sub[col_spec_min], errors='coerce').max()
+                        if not pd.isna(s_min): spec_min = float(s_min)
                     
                     spec_max = 9999.0
                     if col_spec_max in sub.columns:
                         # Lấy min > 0
-                        temp_max_series = sub[sub[col_spec_max] > 0][col_spec_max]
-                        if not temp_max_series.empty:
-                            spec_max = float(temp_max_series.min())
+                        s_max_series = pd.to_numeric(sub[col_spec_max], errors='coerce')
+                        s_max_valid = s_max_series[s_max_series > 0]
+                        if not s_max_valid.empty:
+                            spec_max = float(s_max_valid.min())
 
-                    # Kiểm tra xem có phải "No Spec" không
-                    is_no_spec = (spec_min == 0) and (spec_max == 9999.0)
+                    is_no_spec = (spec_min < 1.0) and (spec_max > 9000.0)
 
-                    # --- C. LOGIC CHỌN (SMART SELECTION) ---
-                    # Min: Lấy cái LỚN HƠN (Chặt chẽ)
+                    # --- C. LOGIC CHỌN ---
                     final_min = max(stat_min, spec_min)
                     
-                    # Max:
                     if spec_max < 9000:
                         final_max = min(stat_max, spec_max)
                         note = "Spec Limit"
@@ -854,16 +853,17 @@ for _, g in valid.iterrows():
                         final_max = stat_max + (1 * std) if is_no_spec else stat_max
                         note = "3-Sigma" if is_no_spec else "Process Only"
 
-                    # Fallback
+                    # Fallback Logic (Tránh Min > Max)
                     if final_min >= final_max:
                         final_min = stat_min
                         final_max = stat_max + std
 
-                    # Làm tròn
-                    rec_min = max(0.0, float(round(final_min / step) * step))
+                    # --- D. SANITY CHECK & ROUNDING (QUAN TRỌNG) ---
+                    # Ép kiểu float lần cuối
+                    rec_min = float(round(max(0.0, final_min) / step) * step)
                     rec_max = float(round(final_max / step) * step)
 
-                    # String hiển thị
+                    # Tạo string hiển thị
                     str_spec = f"{spec_min:.0f}~{spec_max:.0f}" if spec_max < 9000 else f"Min {spec_min:.0f}"
                     if is_no_spec: str_spec = "❌ No Spec"
 
@@ -873,33 +873,56 @@ for _, g in valid.iterrows():
                         "Process (3σ)": f"{stat_min:.0f} ~ {stat_max:.0f}",
                         "Basis": note,
                         "Recommended": f"{rec_min:.0f} ~ {rec_max:.0f}"
-                    }, is_no_spec
+                    }, is_no_spec, "Success"
 
                 except Exception as e:
-                    return 0.0, 0.0, {"Property": name, "Recommended": "Error"}, False
+                    return 0.0, 0.0, {"Property": name, "Recommended": "Error"}, False, str(e)
 
             # --- THỰC HIỆN TÍNH TOÁN ---
-            # Yield Strength
-            cal_ys_min, cal_ys_max, row_ys, no_spec_ys = calculate_smart_limits('Yield Strength', 'YS', 'Standard YS min', 'Standard YS max', 5.0)
-            if row_ys["Recommended"] != "N/A" and row_ys["Recommended"] != "Error":
-                d_ys_min, d_ys_max = cal_ys_min, cal_ys_max
             
-            # Tensile Strength
-            cal_ts_min, cal_ts_max, row_ts, no_spec_ts = calculate_smart_limits('Tensile Strength', 'TS', 'Standard TS min', 'Standard TS max', 5.0)
-            if row_ts["Recommended"] != "N/A" and row_ts["Recommended"] != "Error":
-                d_ts_min, d_ts_max = cal_ts_min, cal_ts_max
+            # 1. YIELD STRENGTH
+            c_ys_min, c_ys_max, r_ys, ns_ys, log_ys = calculate_smart_limits('Yield Strength', 'YS', 'Standard YS min', 'Standard YS max', 5.0)
+            # Chỉ cập nhật nếu tính ra số hợp lý (>10 MPa)
+            if c_ys_min > 10: d_ys_min = c_ys_min
+            if c_ys_max > c_ys_min: d_ys_max = c_ys_max
+            debug_log['YS'] = log_ys
 
-            # Elongation
-            cal_el_min, cal_el_max, row_el, no_spec_el = calculate_smart_limits('Elongation', 'EL', 'Standard EL min', 'Standard EL max', 1.0)
-            if row_el["Recommended"] != "N/A" and row_el["Recommended"] != "Error":
-                d_el_min, d_el_max = cal_el_min, cal_el_max
+            # 2. TENSILE STRENGTH
+            c_ts_min, c_ts_max, r_ts, ns_ts, log_ts = calculate_smart_limits('Tensile Strength', 'TS', 'Standard TS min', 'Standard TS max', 5.0)
+            # Chỉ cập nhật nếu tính ra số hợp lý (>10 MPa)
+            if c_ts_min > 10: d_ts_min = c_ts_min
+            if c_ts_max > c_ts_min: d_ts_max = c_ts_max
+            debug_log['TS'] = log_ts
 
-            limit_summary = [row_ys, row_ts, row_el]
+            # 3. ELONGATION
+            c_el_min, c_el_max, r_el, ns_el, log_el = calculate_smart_limits('Elongation', 'EL', 'Standard EL min', 'Standard EL max', 1.0)
+            # Elongation có thể = 0 (Full Hard), nên kiểm tra lỏng hơn
+            d_el_min, d_el_max = c_el_min, c_el_max
+            debug_log['EL'] = log_el
+
+            limit_summary = [r_ys, r_ts, r_el]
+            if ns_ys or ns_ts or ns_el: missing_spec_warning = True
+
+        # --- HIỂN THỊ BẢNG & DEBUG ---
+        if limit_summary:
+            st.markdown("#### 📋 Reference: Spec vs. Capability")
             
-            # Cập nhật cờ cảnh báo
-            if no_spec_ys or no_spec_ts or no_spec_el:
-                missing_spec_warning = True
-
+            if missing_spec_warning:
+                st.info("ℹ️ **Note:** Some properties use **3-Sigma Limits** due to missing Spec.")
+            
+            df_limits = pd.DataFrame(limit_summary)
+            st.table(df_limits.set_index("Property"))
+            
+            # --- DEBUG EXPANDER (Giúp bạn biết tại sao nó không điền) ---
+            with st.expander("🛠️ Developer Debug Info (Why values computed?)"):
+                st.write("Calculation Logs:", debug_log)
+                st.write("Final Defaults Applied:", {
+                    "YS Min": d_ys_min, "YS Max": d_ys_max,
+                    "TS Min": d_ts_min, "TS Max": d_ts_max,
+                    "EL Min": d_el_min
+                })
+        
+        st.divider()
         # --- HIỂN THỊ BẢNG THAM CHIẾU ---
         if limit_summary:
             st.markdown("#### 📋 Reference: Spec vs. Capability")
