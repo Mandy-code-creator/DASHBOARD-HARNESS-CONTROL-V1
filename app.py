@@ -483,46 +483,38 @@ for _, g in valid.iterrows():
             with st.expander("🔹 View Detailed Data Table"):
                 st.dataframe(summary, use_container_width=True)
 # ========================================================
-    # MODE: MECHANICAL PROPERTIES ANALYSIS (TS / YS / EL)
+# ========================================================
+    # MODE: MECH PROPS ANALYSIS (FIXED DUPLICATE KEY ERROR)
     # ========================================================
     elif view_mode == "⚙️ Mech Props Analysis":
         
         st.markdown("### ⚙️ Mechanical Properties Analysis (TS / YS / EL)")
         
-        # 1. Lọc dữ liệu có cơ tính
-        # Sắp xếp theo thứ tự cuộn để vẽ Trend cho đúng
+        # 1. Lọc dữ liệu có cơ tính & Sắp xếp
         sub_mech = sub.dropna(subset=["TS", "YS", "EL"]).sort_values("COIL_NO")
         N = len(sub_mech)
 
         if sub_mech.empty:
             st.warning("⚠️ No mechanical property data available.")
         else:
-            # 2. Logic kiểm tra NG (Fail) cho từng cuộn (dựa trên Spec riêng của từng dòng)
-            # Vì trong 1 Group có thể có nhiều Spec khác nhau, nên ta check vector hóa
-            
-            # Hàm check nhanh
+            # 2. Logic kiểm tra NG (Fail)
             def get_ng_mask(col_val, col_min, col_max):
-                # Thay 0 bằng NaN để không bị lỗi so sánh sai
                 lo = col_min.replace(0, np.nan)
                 hi = col_max.replace(0, np.nan)
-                
                 is_fail = pd.Series(False, index=col_val.index)
                 
-                # Fail nếu < Min
                 mask_lo = lo.notna()
                 is_fail[mask_lo] |= (col_val[mask_lo] < lo[mask_lo])
                 
-                # Fail nếu > Max
                 mask_hi = hi.notna()
                 is_fail[mask_hi] |= (col_val[mask_hi] > hi[mask_hi])
-                
                 return is_fail
 
             sub_mech["NG_TS"] = get_ng_mask(sub_mech["TS"], sub_mech["Standard TS min"], sub_mech["Standard TS max"])
             sub_mech["NG_YS"] = get_ng_mask(sub_mech["YS"], sub_mech["Standard YS min"], sub_mech["Standard YS max"])
             sub_mech["NG_EL"] = get_ng_mask(sub_mech["EL"], sub_mech["Standard EL min"], sub_mech["Standard EL max"])
 
-            # 3. Tạo Tabs
+            # 3. Tabs
             tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution Analysis"])
 
             # --- TAB 1: TREND CHART ---
@@ -532,100 +524,71 @@ for _, g in valid.iterrows():
                 fig, ax = plt.subplots(figsize=(12, 5))
                 x = np.arange(1, N + 1)
                 
-                # Vẽ 3 đường
-                props = [
-                    ("TS", "#1f77b4", "o"), # Blue
-                    ("YS", "#2ca02c", "s"), # Green
-                    ("EL", "#ff7f0e", "^")  # Orange
-                ]
+                props = [("TS", "#1f77b4", "o"), ("YS", "#2ca02c", "s"), ("EL", "#ff7f0e", "^")]
                 
                 for col, color, marker in props:
-                    # Line chart
                     ax.plot(x, sub_mech[col], marker=marker, color=color, label=col, alpha=0.7, linewidth=1.5)
-                    
-                    # Highlight NG points (Chấm đỏ to)
                     ng_indices = np.where(sub_mech[f"NG_{col}"])[0]
                     if len(ng_indices) > 0:
                         ax.scatter(x[ng_indices], sub_mech[col].iloc[ng_indices], 
                                    color="red", s=80, zorder=10, edgecolors="white", linewidth=1)
 
-                # Vẽ giới hạn (Lấy giới hạn của cuộn đầu tiên làm tham chiếu hiển thị)
-                # Lưu ý: Nếu trong nhóm có nhiều Spec khác nhau, đường này chỉ mang tính tham khảo
                 ref_row = sub_mech.iloc[0]
                 for col, color, _ in props:
-                    lsl = ref_row.get(f"Standard {col} min", np.nan)
-                    usl = ref_row.get(f"Standard {col} max", np.nan)
-                    
-                    if pd.notna(lsl) and lsl > 0:
-                        ax.axhline(lsl, color=color, linestyle="--", alpha=0.3)
-                    if pd.notna(usl) and usl > 0:
-                        ax.axhline(usl, color=color, linestyle="--", alpha=0.3)
+                    lsl = ref_row.get(f"Standard {col} min", 0)
+                    usl = ref_row.get(f"Standard {col} max", 0)
+                    if lsl > 0: ax.axhline(lsl, color=color, linestyle="--", alpha=0.3)
+                    if usl > 0: ax.axhline(usl, color=color, linestyle="--", alpha=0.3)
 
                 ax.set_title("Mechanical Properties Trend (TS / YS / EL)", weight="bold")
-                ax.set_xlabel("Coil Sequence")
-                ax.set_ylabel("Value (MPa / %)")
-                ax.grid(True, linestyle="--", alpha=0.5)
-                ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=3)
-                
+                ax.set_xlabel("Coil Sequence"); ax.set_ylabel("Value (MPa / %)")
+                ax.grid(True, linestyle="--", alpha=0.5); ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=3)
                 plt.tight_layout()
                 st.pyplot(fig)
                 
-                # Download
+                # FIX: Thêm uuid vào key để tránh trùng lặp tuyệt đối
                 buf = fig_to_png(fig)
                 st.download_button(
-                    label="📥 Download Mech Trend",
-                    data=buf,
-                    file_name=f"Mech_Trend_{g['Material']}.png",
-                    mime="image/png",
-                    key=f"dl_mech_trend_{_}"
+                    label="📥 Download Mech Trend", 
+                    data=buf, 
+                    file_name=f"Mech_Trend_{g['Material']}.png", 
+                    mime="image/png", 
+                    key=f"dl_mech_trend_{_}_{uuid.uuid4()}" 
                 )
 
             # --- TAB 2: DISTRIBUTION CHART ---
             with tab_dist:
                 fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-                
                 for i, (col, color, _) in enumerate(props):
                     ax = axes[i]
                     data = sub_mech[col].dropna()
-                    
-                    # Histogram
                     ax.hist(data, bins=15, color=color, alpha=0.5, edgecolor="black", density=True)
-                    
-                    # Density Curve (KDE or Normal fit)
                     if len(data) > 1:
-                        mean, std = data.mean(), data.std()
-                        if std > 0:
-                            xmin, xmax = ax.get_xlim()
-                            x_plot = np.linspace(xmin, xmax, 100)
-                            y_plot = (1/(std * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_plot - mean) / std)**2)
-                            ax.plot(x_plot, y_plot, color=color, linewidth=2)
-                            ax.axvline(mean, color="black", linestyle="--", label=f"Mean: {mean:.1f}")
-
-                    # Spec Lines (Reference)
-                    lsl = ref_row.get(f"Standard {col} min", np.nan)
-                    usl = ref_row.get(f"Standard {col} max", np.nan)
-                    if pd.notna(lsl) and lsl > 0:
-                        ax.axvline(lsl, color="red", linestyle=":", linewidth=2, label="Min")
-                    if pd.notna(usl) and usl > 0:
-                        ax.axvline(usl, color="red", linestyle=":", linewidth=2, label="Max")
-
+                        data.plot.kde(ax=ax, color=color, linewidth=2)
                     ax.set_title(f"{col} Distribution", weight="bold")
-                    ax.legend()
                     ax.grid(alpha=0.3)
                 
                 plt.tight_layout()
                 st.pyplot(fig)
-
-                # Download
+                
+                # FIX: Thêm uuid vào key
                 buf = fig_to_png(fig)
                 st.download_button(
-                    label="📥 Download Mech Dist",
-                    data=buf,
-                    file_name=f"Mech_Dist_{g['Material']}.png",
-                    mime="image/png",
-                    key=f"dl_mech_dist_{_}"
+                    label="📥 Download Mech Dist", 
+                    data=buf, 
+                    file_name=f"Mech_Dist_{g['Material']}.png", 
+                    mime="image/png", 
+                    key=f"dl_mech_dist_{_}_{uuid.uuid4()}"
                 )
             
+            # --- SUMMARY TABLE ---
+            with st.expander("📋 Detailed Statistics & NG List", expanded=False):
+                ng_rows = sub_mech[sub_mech["NG_TS"] | sub_mech["NG_YS"] | sub_mech["NG_EL"]]
+                if not ng_rows.empty:
+                    st.error(f"⚠️ Found {len(ng_rows)} Out-of-Spec Coils!")
+                    st.dataframe(ng_rows[["COIL_NO", "Hardness_LINE", "TS", "YS", "EL"]].style.format("{:.1f}"), use_container_width=True)
+                else:
+                    st.success("✅ All coils passed Mechanical Specs.")
             # --- SUMMARY TABLE (Dưới cùng cho tiện theo dõi) ---
             with st.expander("📋 Detailed Statistics & NG List", expanded=False):
                 # Thống kê cơ bản
