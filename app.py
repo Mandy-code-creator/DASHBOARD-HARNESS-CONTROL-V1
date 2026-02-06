@@ -13,7 +13,10 @@ import numpy as np
 import requests, re
 from io import StringIO, BytesIO
 import matplotlib.pyplot as plt
-
+# --- BỔ SUNG THƯ VIỆN CÒN THIẾU ---
+import uuid
+from sklearn.linear_model import LinearRegression
+from sklearn.metrics import r2_score
 # ================================
 # PAGE CONFIG
 # ================================
@@ -1065,22 +1068,22 @@ for _, g in valid.iterrows():
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown("#### 🤖 AI Prediction (Linear Regression)")
         
-        # Chuẩn bị dữ liệu train
-        train_df = g_sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
+        # [SỬA LỖI] Dùng biến 'sub' thay vì 'g_sub'
+        train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
         
         if len(train_df) < 30:
             st.warning(f"⚠️ Not enough data points ({len(train_df)}) for reliable prediction. Need at least 30.")
         else:
-            # --- [SỬA] TÍNH TRUNG BÌNH ĐỂ LÀM MẶC ĐỊNH ---
+            # [SỬA LỖI] Tính trung bình để thanh kéo tự động nhận diện
             mean_hardness = float(train_df["Hardness_LINE"].mean())
 
             # Input Slider
             target_h = st.slider(f"Target Hardness (HRB) {uuid.uuid4()}", 
                                  min_value=float(train_df["Hardness_LINE"].min()), 
                                  max_value=float(train_df["Hardness_LINE"].max()), 
-                                 value=mean_hardness) # <--- Đã thay 60.0 bằng mean_hardness
+                                 value=mean_hardness) # Đặt mặc định là trung bình
             
-            # Xây dựng Model cho từng chỉ số
+            # Xây dựng Model
             X = train_df[["Hardness_LINE"]].values
             cols_pred = st.columns(3)
             
@@ -1095,16 +1098,13 @@ for _, g in valid.iterrows():
                 y_pred_all = model.predict(X)
                 r2 = r2_score(y, y_pred_all)
                 
-                # Predict Input
+                # Predict
                 val_pred = model.predict([[target_h]])[0]
-                
-                # Tính khoảng sai số (RMSE)
                 rmse = np.sqrt(((y - y_pred_all) ** 2).mean())
                 
                 with cols_pred[idx]:
                     st.metric(label=f"Predicted {col_name}", value=f"{val_pred:.1f}", delta=f"± {rmse:.1f}")
                     
-                    # Đánh giá độ tin cậy
                     if r2 > 0.5:
                         st.success(f"🎯 High Confidence (R²={r2:.2f})")
                     elif r2 > 0.3:
@@ -1112,11 +1112,10 @@ for _, g in valid.iterrows():
                     else:
                         st.error(f"❌ Low Correlation (R²={r2:.2f})")
                         
-                    # Vẽ biểu đồ tương quan nhỏ
+                    # Chart
                     fig, ax = plt.subplots(figsize=(4,3))
                     ax.scatter(train_df["Hardness_LINE"], train_df[col_name], alpha=0.5, s=10)
                     ax.plot(train_df["Hardness_LINE"], y_pred_all, color="red", linewidth=1)
-                    ax.scatter([target_h], [val_pred], color="green", s=100, zorder=5, label="You are here")
+                    ax.scatter([target_h], [val_pred], color="green", s=100, zorder=5)
                     ax.set_xlabel("Hardness"); ax.set_ylabel(col_name)
-                    ax.legend()
                     st.pyplot(fig)
