@@ -742,43 +742,100 @@ for _, g in valid.iterrows():
                     
                     st.markdown("\n".join(spec_res))
 
-                    # --- BOXPLOT DISTRIBUTION ---
-                    st.markdown("##### 3. Actual Distribution Charts (Boxplot)")
-                    
-                    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-                    
-                    colors = {"TS": "#1f77b4", "YS": "#2ca02c", "EL": "#ff7f0e"}
-                    for i, col in enumerate(["TS", "YS", "EL"]):
-                        ax = axes[i]
-                        data = df_filtered[col].dropna()
-                        
-                        # Boxplot
-                        ax.boxplot(data, patch_artist=True, 
-                                   boxprops=dict(facecolor=colors[col], alpha=0.5),
-                                   medianprops=dict(color="black", linewidth=1.5))
-                        
-                        # Jitter points
-                        y = data
-                        x = np.random.normal(1, 0.04, size=len(y))
-                        ax.scatter(x, y, alpha=0.6, color=colors[col], s=20)
-                        
-                        # Mean Line
-                        ax.axhline(data.mean(), color='red', linestyle='--', alpha=0.7, label=f"Mean: {data.mean():.1f}")
-                        
-                        ax.set_title(f"{col} Distribution", fontweight="bold")
-                        ax.set_xticks([])
-                        ax.set_ylabel("Value (MPa / %)")
-                        ax.legend()
-                        ax.grid(axis='y', linestyle='--', alpha=0.3)
+                    # --- C. BOXPLOT DISTRIBUTION & AUTOMATIC ANALYSIS ---
+                    st.markdown("##### 3. Actual Distribution Charts & Analysis")
 
-                    plt.tight_layout()
-                    st.pyplot(fig)
+                    # Hàm phân tích tự động (Helper Function)
+                    def analyze_distribution(series, name, unit="MPa"):
+                        try:
+                            # 1. Tính toán thống kê cơ bản
+                            mean = series.mean()
+                            median = series.median()
+                            std = series.std()
+                            
+                            # 2. Phân tích độ lệch (Skewness)
+                            skew = series.skew()
+                            if skew > 0.5:
+                                skew_text = "Lệch Phải (Thiên về giá trị cao)"
+                                skew_icon = "↗️"
+                            elif skew < -0.5:
+                                skew_text = "Lệch Trái (Thiên về giá trị thấp)"
+                                skew_icon = "↙️"
+                            else:
+                                skew_text = "Đối xứng (Phân bố chuẩn)"
+                                skew_icon = "↔️"
+
+                            # 3. Phát hiện Outlier (IQR Method)
+                            Q1 = series.quantile(0.25)
+                            Q3 = series.quantile(0.75)
+                            IQR = Q3 - Q1
+                            lower_fence = Q1 - 1.5 * IQR
+                            upper_fence = Q3 + 1.5 * IQR
+                            
+                            outliers = series[(series < lower_fence) | (series > upper_fence)]
+                            n_outliers = len(outliers)
+                            
+                            range_val = series.max() - series.min()
+
+                            # 4. Format nội dung hiển thị
+                            return f"""
+                            **{name} Statistics:**
+                            - **Mean:** {mean:.1f} {unit} | **Median:** {median:.1f} {unit}
+                            - **Phân bố:** {skew_icon} {skew_text}
+                            - **Độ ổn định (StdDev):** {std:.2f} (Range: {range_val:.1f})
+                            - **Điểm dị biệt (Outliers):** {n_outliers} cuộn (ngoài vùng {lower_fence:.0f}~{upper_fence:.0f})
+                            """
+                        except Exception:
+                            return "Không đủ dữ liệu phân tích."
+
+                    # Tạo 3 cột layout của Streamlit
+                    c_ts, c_ys, c_el = st.columns(3)
                     
-                    # Download Button
-                    buf = fig_to_png(fig)
-                    st.download_button("📥 Download Distribution Chart", data=buf, 
-                                       file_name=f"Lookup_{input_min}_{input_max}_{g['Material']}.png",
-                                       mime="image/png", key=f"dl_lookup_{_}")
+                    # Cấu hình vòng lặp vẽ
+                    chart_configs = [
+                        ("TS", "Tensile Strength", "MPa", "#1f77b4", c_ts),
+                        ("YS", "Yield Strength", "MPa", "#2ca02c", c_ys),
+                        ("EL", "Elongation", "%", "#ff7f0e", c_el)
+                    ]
+
+                    for col_db, col_name, unit, color, col_ui in chart_configs:
+                        with col_ui:
+                            # Lấy dữ liệu sạch
+                            data = df_filtered[col_db].dropna()
+                            
+                            if data.empty:
+                                st.warning(f"No Data for {col_db}")
+                                continue
+
+                            # 1. Vẽ biểu đồ (Tạo Figure riêng cho từng cột)
+                            fig, ax = plt.subplots(figsize=(4, 5))
+                            
+                            # Boxplot
+                            ax.boxplot(data, patch_artist=True, 
+                                       boxprops=dict(facecolor=color, alpha=0.5),
+                                       medianprops=dict(color="black", linewidth=1.5))
+                            
+                            # Jitter points
+                            y = data
+                            x = np.random.normal(1, 0.04, size=len(y))
+                            ax.scatter(x, y, alpha=0.6, color=color, s=20, zorder=3)
+                            
+                            # Mean Line
+                            mean_val = data.mean()
+                            ax.axhline(mean_val, color='red', linestyle='--', alpha=0.7, label=f"Mean: {mean_val:.1f}")
+                            
+                            ax.set_title(f"{col_db} Distribution", fontweight="bold")
+                            ax.set_xticks([])
+                            ax.set_ylabel(f"Value ({unit})")
+                            ax.legend(loc='upper right', fontsize='small')
+                            ax.grid(axis='y', linestyle='--', alpha=0.3)
+
+                            # Hiển thị biểu đồ
+                            st.pyplot(fig)
+                            
+                            # 2. Hiển thị bảng phân tích ngay bên dưới
+                            analysis_text = analyze_distribution(data, col_name, unit)
+                            st.info(analysis_text)
 # ========================================================
 # MODE: REVERSE LOOKUP (TARGET HARDNESS)
     # ========================================================
