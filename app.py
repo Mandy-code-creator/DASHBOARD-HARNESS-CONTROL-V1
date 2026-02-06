@@ -790,137 +790,68 @@ for _, g in valid.iterrows():
                                        file_name=f"Lookup_{input_min}_{input_max}_{g['Material']}.png",
                                        mime="image/png", key=f"dl_lookup_{_}")
 # ========================================================
-    # MODE: TARGET HARDNESS CALCULATOR (REVERSE LOOKUP)
-    # ========================================================
-    elif view_mode == "🎯 Target Hardness Calculator (Reverse Lookup)":
-        import uuid
+elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
+    # --- HEADER ---
+    st.subheader("🎯 Target Hardness Calculator")
+    
+    # Câu mô tả tiếng Anh chuẩn kỹ thuật
+    st.markdown("""
+    > **This tool helps identify the Target Hardness range required to achieve the desired mechanical property limits.**
+    """)
+    
+    st.divider()
+
+    # --- INPUT SECTION (Desired Mechanical Properties) ---
+    st.markdown("### 1. Define Desired Mechanical Properties")
+    
+    # Chia làm 3 cột cho gọn
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        # Giới hạn dưới của YS (Yield Strength)
+        req_ys_min = st.number_input("Min Yield Strength (MPa)", min_value=0.0, value=250.0, step=5.0)
+    
+    with col2:
+        # Giới hạn dưới của TS (Tensile Strength)
+        req_ts_min = st.number_input("Min Tensile Strength (MPa)", min_value=0.0, value=350.0, step=5.0)
         
-        st.markdown("### 🎯 Target Hardness Calculator")
-        st.info("ℹ️ Công cụ này giúp tìm ra **Khoảng Độ cứng Mục tiêu (Target Hardness)** cần thiết để đạt được các giới hạn cơ tính mong muốn.")
+    with col3:
+        # Giới hạn dưới của Elongation
+        req_el_min = st.number_input("Min Elongation (%)", min_value=0.0, value=30.0, step=1.0)
 
-        # 1. Chuẩn bị dữ liệu sạch
-        df_rev = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
-        
-        if df_rev.empty:
-            st.warning("⚠️ Không có dữ liệu để phân tích.")
-            st.stop()
+    # --- PROCESSING ---
+    # Lọc dữ liệu thỏa mãn TẤT CẢ điều kiện trên
+    # (Giả sử dataframe chính tên là 'df')
+    filtered_df = df[
+        (df['TENSILE_YIELD'] >= req_ys_min) &
+        (df['TENSILE_TENSILE'] >= req_ts_min) &
+        (df['TENSILE_ELONG'] >= req_el_min)
+    ]
 
-        # 2. Nhập Giới hạn Cơ tính mong muốn (Internal Limits)
-        st.markdown("#### 1️⃣ Nhập giới hạn Cơ tính mong muốn (Internal Limits)")
-        
-        # Gợi ý mặc định dựa trên 3 Sigma của dữ liệu hiện tại (để đỡ phải gõ)
-        def get_suggestions(col):
-            mean = df_rev[col].mean()
-            std = df_rev[col].std()
-            return float(max(0, mean - 2*std)), float(mean + 2*std) # Lấy 2 Sigma cho chặt
+    st.divider()
 
-        ts_min_def, ts_max_def = get_suggestions("TS")
-        ys_min_def, ys_max_def = get_suggestions("YS")
-        el_min_def, el_max_def = get_suggestions("EL")
+    # --- OUTPUT SECTION ---
+    st.markdown("### 2. Recommended Target Hardness")
 
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            st.markdown("**Target TS (MPa)**")
-            req_ts_min = st.number_input("TS Min:", value=round(ts_min_def, 0), step=5.0, key=f"req_ts_min_{_}")
-            req_ts_max = st.number_input("TS Max:", value=round(ts_max_def, 0), step=5.0, key=f"req_ts_max_{_}")
-        with c2:
-            st.markdown("**Target YS (MPa)**")
-            req_ys_min = st.number_input("YS Min:", value=round(ys_min_def, 0), step=5.0, key=f"req_ys_min_{_}")
-            req_ys_max = st.number_input("YS Max:", value=round(ys_max_def, 0), step=5.0, key=f"req_ys_max_{_}")
-        with c3:
-            st.markdown("**Target EL (%)**")
-            req_el_min = st.number_input("EL Min:", value=round(el_min_def, 1), step=1.0, key=f"req_el_min_{_}")
-            req_el_max = st.number_input("EL Max:", value=100.0, step=1.0, key=f"req_el_max_{_}") # EL max thường ko quan trọng
+    if not filtered_df.empty:
+        # Tính toán thống kê độ cứng từ các cuộn thép đạt chuẩn
+        rec_min_hrb = filtered_df['HARDNESS'].min()
+        rec_max_hrb = filtered_df['HARDNESS'].max()
+        rec_avg_hrb = filtered_df['HARDNESS'].mean()
+        sample_size = len(filtered_df)
 
-        # 3. Lọc ra các cuộn "Cuộn Vàng" (Golden Coils) - Đạt cả 3 chỉ số
-        mask_good = (
-            (df_rev["TS"] >= req_ts_min) & (df_rev["TS"] <= req_ts_max) &
-            (df_rev["YS"] >= req_ys_min) & (df_rev["YS"] <= req_ys_max) &
-            (df_rev["EL"] >= req_el_min) & (df_rev["EL"] <= req_el_max)
-        )
-        
-        good_coils = df_rev[mask_good]
-        n_good = len(good_coils)
-        n_total = len(df_rev)
+        # Hiển thị kết quả bằng Metrics
+        m1, m2, m3 = st.columns(3)
+        m1.metric(label="Min Hardness (HRB)", value=f"{rec_min_hrb:.1f}")
+        m2.metric(label="Max Hardness (HRB)", value=f"{rec_max_hrb:.1f}")
+        m3.metric(label="Samples Found", value=f"{sample_size} coils")
 
-        st.markdown("---")
-        st.markdown("#### 2️⃣ Kết quả Phân tích (Analysis Result)")
+        st.success(f"✅ To meet the mechanical requirements, keep Hardness between **{rec_min_hrb:.1f}** and **{rec_max_hrb:.1f} HRB**.")
 
-        if n_good < 5:
-            st.error(f"⚠️ Chỉ tìm thấy **{n_good}/{n_total}** cuộn đạt yêu cầu cơ tính này. Dữ liệu quá ít để đề xuất độ cứng an toàn.")
-            st.markdown("👉 **Gợi ý:** Hãy nới lỏng khoảng giới hạn TS/YS/EL ra một chút.")
-        else:
-            # 4. Tính toán khoảng độ cứng đề xuất
-            # Lấy khoảng phân vị 10% - 90% của nhóm tốt để loại bỏ nhiễu (outliers)
-            rec_h_min = good_coils["Hardness_LINE"].quantile(0.10)
-            rec_h_max = good_coils["Hardness_LINE"].quantile(0.90)
-            rec_h_mean = good_coils["Hardness_LINE"].mean()
-
-            # Hiển thị kết quả nổi bật
-            c_res1, c_res2 = st.columns([2, 1])
-            with c_res1:
-                st.success(f"✅ Tìm thấy **{n_good}** cuộn đạt chuẩn ({n_good/n_total:.1%} tổng dữ liệu).")
-                st.markdown(f"""
-                ### 🎯 Độ cứng Mục tiêu Khuyến nghị:
-                # **{rec_h_min:.1f} ~ {rec_h_max:.1f} HRB**
-                *(Trung bình tối ưu: {rec_h_mean:.1f} HRB)*
-                """)
-                st.caption(f"Khoảng này bao phủ 80% số cuộn đạt chuẩn cơ tính đã chọn.")
-
-            with c_res2:
-                # Kiểm chứng ngược (Validation)
-                # Nếu chạy theo độ cứng này, tỷ lệ đạt là bao nhiêu?
-                mask_verify = (df_rev["Hardness_LINE"] >= rec_h_min) & (df_rev["Hardness_LINE"] <= rec_h_max)
-                coils_in_range = df_rev[mask_verify]
-                pass_in_range = coils_in_range[
-                    (coils_in_range["TS"] >= req_ts_min) & (coils_in_range["TS"] <= req_ts_max) &
-                    (coils_in_range["YS"] >= req_ys_min) & (coils_in_range["YS"] <= req_ys_max) &
-                    (coils_in_range["EL"] >= req_el_min)
-                ]
-                
-                if not coils_in_range.empty:
-                    success_rate = len(pass_in_range) / len(coils_in_range)
-                    st.metric(
-                        label="Dự báo Tỷ lệ Đạt (Success Rate)", 
-                        value=f"{success_rate:.1%}",
-                        help=f"Nếu bạn vận hành lò trong khoảng {rec_h_min:.1f}-{rec_h_max:.1f}, xác suất đạt cơ tính là {success_rate:.1%}"
-                    )
-                
-            # 5. Biểu đồ trực quan hóa (Scatter Plot: Hardness vs YS)
-            # YS thường là chỉ số quan trọng nhất, nên ta vẽ YS
-            st.markdown("#### 3️⃣ Biểu đồ Tương quan: Vùng An toàn (Sweet Spot)")
+        # Hiển thị biểu đồ phân bố độ cứng (Optional)
+        with st.expander("View Distribution of Valid Coils"):
+            st.bar_chart(filtered_df['HARDNESS'].value_counts())
+            st.dataframe(filtered_df[['coil_id', 'HARDNESS', 'TENSILE_YIELD', 'TENSILE_TENSILE', 'TENSILE_ELONG']])
             
-            fig, ax = plt.subplots(figsize=(10, 6))
-            
-            # Vẽ tất cả các điểm (mờ)
-            ax.scatter(df_rev["Hardness_LINE"], df_rev["YS"], c="gray", alpha=0.3, label="All Coils")
-            
-            # Vẽ các điểm "Good Coils" (Đậm)
-            ax.scatter(good_coils["Hardness_LINE"], good_coils["YS"], c="green", s=50, alpha=0.8, label="Passed Coils")
-            
-            # Vẽ khung chữ nhật mục tiêu (Target Zone)
-            # Vùng Độ cứng đề xuất x Vùng YS mong muốn
-            import matplotlib.patches as patches
-            
-            rect = patches.Rectangle(
-                (rec_h_min, req_ys_min),          # (x,y) góc dưới trái
-                rec_h_max - rec_h_min,            # width
-                req_ys_max - req_ys_min,          # height
-                linewidth=2, edgecolor='red', facecolor='none', linestyle='--', label='Optimal Zone'
-            )
-            ax.add_patch(rect)
-            
-            ax.set_xlabel("Hardness (HRB)")
-            ax.set_ylabel("Yield Strength (MPa)")
-            ax.set_title("Identified Optimal Hardness Zone (Red Box)", weight="bold")
-            ax.axvline(rec_h_min, color="red", linestyle=":")
-            ax.axvline(rec_h_max, color="red", linestyle=":")
-            
-            ax.legend()
-            ax.grid(True, linestyle="--", alpha=0.5)
-            
-            st.pyplot(fig)
-            
-            # Download
-            buf = fig_to_png(fig)
-            st.download_button("📥 Download Chart", data=buf, file_name="Target_Hardness_Analysis.png", mime="image/png", key=f"dl_target_{_}_{uuid.uuid4()}")
+    else:
+        st.error("❌ No historical data found matching these mechanical property constraints. Please try widening the limits.")
