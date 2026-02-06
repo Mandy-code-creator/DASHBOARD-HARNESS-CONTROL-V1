@@ -348,9 +348,11 @@ for _, g in valid.iterrows():
 # ================================
 # ========================================================
 # ========================================================
-    # MODE: MECH PROPS ANALYSIS (FIXED SCIPY ERROR)
+# ========================================================
+    # MODE: MECH PROPS ANALYSIS (FULL FIX: UUID + NO SCIPY)
     # ========================================================
     elif view_mode == "⚙️ Mech Props Analysis":
+        import uuid  # <--- KHẮC PHỤC LỖI NAME ERROR TẠI ĐÂY
         
         st.markdown("### ⚙️ Mechanical Properties Analysis (TS / YS / EL)")
         
