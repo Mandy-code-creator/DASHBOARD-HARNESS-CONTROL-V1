@@ -169,22 +169,38 @@ with st.sidebar:
     # --- 2. TIME FILTER (Compact Layout) ---
     st.markdown("### 📅 Production Period")
     
-    # Đặt ngày bắt đầu và kết thúc nằm trên cùng 1 hàng cho gọn
+    # [FIX QUAN TRỌNG] Xử lý dữ liệu ngày tháng an toàn
+    # 1. Chuyển đổi sang datetime và ép lỗi thành NaT (nếu có dữ liệu rác)
+    if not pd.api.types.is_datetime64_any_dtype(df["PRODUCTION DATE"]):
+        df["PRODUCTION DATE"] = pd.to_datetime(df["PRODUCTION DATE"], errors='coerce')
+    
+    # 2. Lấy danh sách ngày hợp lệ (bỏ qua NaT)
+    valid_dates = df["PRODUCTION DATE"].dropna()
+
+    # 3. Tính toán min/max an toàn
+    import datetime # Đảm bảo đã import thư viện này
+    
+    if not valid_dates.empty:
+        # Chuyển Timestamp -> Python Date object (Streamlit bắt buộc dùng kiểu này)
+        min_date = valid_dates.min().date()
+        max_date = valid_dates.max().date()
+    else:
+        # Fallback: Nếu không có dữ liệu thì lấy ngày hôm nay
+        min_date = datetime.date.today()
+        max_date = datetime.date.today()
+
+    # Layout 2 cột
     c_date1, c_date2 = st.columns(2)
     
-    # Lấy min/max date từ dữ liệu gốc để làm default
-    min_date = df["PRODUCTION DATE"].min()
-    max_date = df["PRODUCTION DATE"].max()
-    
     with c_date1:
+        # Đảm bảo value nằm trong khoảng min-max
         start_date = st.date_input("From", value=min_date, min_value=min_date, max_value=max_date)
     with c_date2:
         end_date = st.date_input("To", value=max_date, min_value=min_date, max_value=max_date)
 
-    # Lọc sơ bộ theo ngày
+    # Lọc dữ liệu (convert sang .date để so sánh)
     mask_date = (df["PRODUCTION DATE"].dt.date >= start_date) & (df["PRODUCTION DATE"].dt.date <= end_date)
     df_date_filtered = df[mask_date]
-
     # --- 3. CATEGORY FILTERS (Grouped in Expanders) ---
     
     # GROUP A: MATERIAL SPECS (Mác thép, Nhóm, Loại)
