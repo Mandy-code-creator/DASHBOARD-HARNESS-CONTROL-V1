@@ -807,17 +807,19 @@ for _, g in valid.iterrows():
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            req_ys_min = st.number_input("Min Yield Strength (MPa)", min_value=0.0, value=250.0, step=5.0)
+            # SỬA: Thêm key="rev_ys" để không bị trùng
+            req_ys_min = st.number_input("Min Yield Strength (MPa)", min_value=0.0, value=250.0, step=5.0, key="rev_ys")
         
         with col2:
-            req_ts_min = st.number_input("Min Tensile Strength (MPa)", min_value=0.0, value=350.0, step=5.0)
+            # SỬA: Thêm key="rev_ts"
+            req_ts_min = st.number_input("Min Tensile Strength (MPa)", min_value=0.0, value=350.0, step=5.0, key="rev_ts")
             
         with col3:
-            req_el_min = st.number_input("Min Elongation (%)", min_value=0.0, value=30.0, step=1.0)
+            # SỬA: Thêm key="rev_el"
+            req_el_min = st.number_input("Min Elongation (%)", min_value=0.0, value=30.0, step=1.0, key="rev_el")
 
         # 2. PROCESSING: Filter Data
-        # Sử dụng biến 'sub' (hoặc 'df' tùy code của bạn) và tên cột chuẩn (YS, TS, EL)
-        # Loại bỏ các dòng dữ liệu bị null trước khi so sánh
+        # Sử dụng biến 'sub' (hoặc 'df') và tên cột chuẩn (YS, TS, EL)
         clean_df = sub.dropna(subset=['YS', 'TS', 'EL', 'Hardness_LINE'])
         
         filtered_df = clean_df[
@@ -832,37 +834,31 @@ for _, g in valid.iterrows():
         st.markdown("### 2. Recommended Target Hardness")
 
         if not filtered_df.empty:
-            # Tính toán thống kê trên cột 'Hardness_LINE'
             rec_min_hrb = filtered_df['Hardness_LINE'].min()
             rec_max_hrb = filtered_df['Hardness_LINE'].max()
             rec_avg_hrb = filtered_df['Hardness_LINE'].mean()
             sample_size = len(filtered_df)
 
-            # Hiển thị kết quả bằng Metrics
             m1, m2, m3 = st.columns(3)
             m1.metric(label="Min Hardness (HRB)", value=f"{rec_min_hrb:.1f}")
             m2.metric(label="Max Hardness (HRB)", value=f"{rec_max_hrb:.1f}")
             m3.metric(label="Samples Found", value=f"{sample_size} coils")
 
-            st.success(f"✅ To meet the mechanical requirements, keep Hardness between **{rec_min_hrb:.1f}** and **{rec_max_hrb:.1f} HRB**.")
+            st.success(f"✅ To meet requirements, keep Hardness between **{rec_min_hrb:.1f}** and **{rec_max_hrb:.1f} HRB**.")
 
-            # Hiển thị biểu đồ phân bố và dữ liệu chi tiết
             with st.expander("View Distribution & Details", expanded=True):
                 c_chart, c_data = st.columns([1, 1])
                 
                 with c_chart:
-                    st.markdown("**Hardness Distribution of Valid Coils**")
-                    # Dùng biểu đồ native của Streamlit cho đơn giản
+                    st.markdown("**Hardness Distribution**")
                     st.bar_chart(filtered_df['Hardness_LINE'].value_counts().sort_index())
                 
                 with c_data:
                     st.markdown("**Detailed Data List**")
-                    # Chỉ hiện các cột cần thiết
                     cols_to_show = ['coil_id', 'Hardness_LINE', 'YS', 'TS', 'EL']
-                    # Kiểm tra xem cột coil_id có tồn tại không, nếu không thì bỏ qua
                     final_cols = [c for c in cols_to_show if c in filtered_df.columns]
                     st.dataframe(filtered_df[final_cols], height=300)
                 
         else:
-            st.error("❌ No historical data found matching these mechanical property constraints.")
-            st.info("💡 **Suggestion:** Try lowering the 'Min' requirements slightly to find a feasible range.")
+            st.error("❌ No historical data found matching these constraints.")
+            st.info("💡 **Suggestion:** Try lowering the requirements slightly.")
