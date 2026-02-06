@@ -712,6 +712,7 @@ for _, g in valid.iterrows():
                             use_container_width=True
                         )
 # ========================================================
+# ========================================================
     # MODE: HARDNESS LOOKUP -> ACTUAL MECHANICAL PROPERTIES
     # ========================================================
     elif view_mode == "🔍 Lookup: Hardness Range → Actual Mech Props":
@@ -733,7 +734,6 @@ for _, g in valid.iterrows():
             # 2. Input Area
             c1, c2 = st.columns(2)
             with c1:
-                # Use unique keys _{_} to avoid DuplicateKeyError
                 input_min = st.number_input("Min Hardness (HRB):", min_value=0.0, max_value=120.0, 
                                             value=58.0, step=0.5, key=f"lookup_min_{_}")
             with c2:
@@ -780,22 +780,31 @@ for _, g in valid.iterrows():
                         use_container_width=True
                     )
 
-                    # --- SPEC COMPLIANCE CHECK ---
+                    # --- SPEC COMPLIANCE CHECK (FIXED 0 VALUE ISSUE) ---
                     st.markdown("##### 2. Specification Compliance Rate")
                     
                     spec_res = []
                     for col, lsl_col, usl_col in [("TS", "Standard TS min", "Standard TS max"),
                                                   ("YS", "Standard YS min", "Standard YS max"),
                                                   ("EL", "Standard EL min", "Standard EL max")]:
-                        lsl = df_filtered[lsl_col]
-                        usl = df_filtered[usl_col]
+                        
+                        # FIX: Replace 0 with NaN (Treat 0 as No Limit)
+                        lsl = df_filtered[lsl_col].replace(0, np.nan)
+                        usl = df_filtered[usl_col].replace(0, np.nan)
                         
                         # Logic: Pass if (val >= lsl) AND (val <= usl OR usl is NaN)
                         pass_mask = pd.Series(True, index=df_filtered.index)
-                        if lsl.notna().all():
-                            pass_mask &= (df_filtered[col] >= lsl)
-                        if usl.notna().all():
-                            pass_mask &= (df_filtered[col] <= usl)
+                        
+                        # Check Min Limit (if exists)
+                        if lsl.notna().any(): # If at least one row has a limit
+                            # Only enforce limit where it is not NaN
+                            has_limit = lsl.notna()
+                            pass_mask[has_limit] &= (df_filtered.loc[has_limit, col] >= lsl[has_limit])
+                            
+                        # Check Max Limit (if exists)
+                        if usl.notna().any():
+                            has_limit = usl.notna()
+                            pass_mask[has_limit] &= (df_filtered.loc[has_limit, col] <= usl[has_limit])
                         
                         pass_count = pass_mask.sum()
                         pass_rate = (pass_count / n_count) * 100
@@ -803,7 +812,17 @@ for _, g in valid.iterrows():
                         # Add icon based on rate
                         icon = "🟢" if pass_rate >= 95 else ("🟡" if pass_rate >= 80 else "🔴")
                         
-                        spec_res.append(f"- {icon} **{col}**: {pass_rate:.1f}% coils passed ({pass_count}/{n_count})")
+                        # Show limit used for info (optional, taking mode)
+                        limit_info = ""
+                        if lsl.max() > 0 or usl.max() > 0:
+                           # Try to grab a representative limit to show user
+                           l_val = lsl.max() if lsl.max() > 0 else "None"
+                           u_val = usl.max() if usl.max() > 0 else "None"
+                           limit_info = f"(Limit: {l_val:.0f}~{u_val:.0f})"
+                        else:
+                           limit_info = "(No Spec Limits Found in Data)"
+
+                        spec_res.append(f"- {icon} **{col}**: {pass_rate:.1f}% coils passed ({pass_count}/{n_count}) {limit_info}")
                     
                     st.markdown("\n".join(spec_res))
 
