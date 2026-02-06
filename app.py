@@ -175,6 +175,7 @@ view_mode = st.sidebar.radio(
         "🛠 Hardness → TS/YS/EL",
         "📊 TS/YS/EL Trend & Distribution",
         "🧮 Predict TS/YS/EL (Custom Hardness)",
+        "🔍 Lookup: Hardness Range → Actual Mech Props",
     ]
 )
 
@@ -710,3 +711,136 @@ for _, g in valid.iterrows():
                             }),
                             use_container_width=True
                         )
+# ========================================================
+    # MODE: HARDNESS LOOKUP -> ACTUAL MECHANICAL PROPERTIES
+    # ========================================================
+    elif view_mode == "🔍 Lookup: Hardness Range → Actual Mech Props":
+        
+        st.markdown("### 🔍 Actual Mechanical Properties Lookup (by Hardness Range)")
+        st.info("ℹ️ This feature analyzes historical data to show how mechanical properties fluctuate within a specific hardness range.")
+
+        # 1. Prepare Data
+        # Filter out rows with missing hardness or mechanical properties
+        df_lookup = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+        
+        if df_lookup.empty:
+            st.warning("⚠️ No data available for analysis.")
+        else:
+            # Get real min/max for input reference
+            min_h_real = float(df_lookup["Hardness_LINE"].min())
+            max_h_real = float(df_lookup["Hardness_LINE"].max())
+
+            # 2. Input Area
+            c1, c2 = st.columns(2)
+            with c1:
+                # Use unique keys _{_} to avoid DuplicateKeyError
+                input_min = st.number_input("Min Hardness (HRB):", min_value=0.0, max_value=120.0, 
+                                            value=58.0, step=0.5, key=f"lookup_min_{_}")
+            with c2:
+                input_max = st.number_input("Max Hardness (HRB):", min_value=0.0, max_value=120.0, 
+                                            value=65.0, step=0.5, key=f"lookup_max_{_}")
+
+            if input_min > input_max:
+                st.error("⚠️ 'Min' value must be less than 'Max' value.")
+            else:
+                # 3. Filter Data
+                mask = (df_lookup["Hardness_LINE"] >= input_min) & (df_lookup["Hardness_LINE"] <= input_max)
+                df_filtered = df_lookup[mask]
+                n_count = len(df_filtered)
+
+                # 4. Display Results
+                st.markdown(f"#### 📊 Results for Hardness Range: **{input_min} ~ {input_max} HRB**")
+                
+                if n_count == 0:
+                    st.warning(f"⚠️ No coils found in hardness range {input_min}~{input_max} in history.")
+                else:
+                    st.success(f"✅ Found **{n_count}** historical coils.")
+
+                    # --- SUMMARY TABLE ---
+                    stats_data = []
+                    for col in ["TS", "YS", "EL"]:
+                        series = df_filtered[col]
+                        stats_data.append({
+                            "Property": col,
+                            "Min": series.min(),
+                            "Average": series.mean(),
+                            "Max": series.max(),
+                            "Std Dev": series.std(ddof=1),
+                            "Range": series.max() - series.min()
+                        })
+                    
+                    df_stats = pd.DataFrame(stats_data)
+                    
+                    st.markdown("##### 1. Summary Statistics")
+                    st.dataframe(
+                        df_stats.style.format({
+                            "Min": "{:.1f}", "Average": "{:.1f}", "Max": "{:.1f}", 
+                            "Std Dev": "{:.2f}", "Range": "{:.1f}"
+                        }),
+                        use_container_width=True
+                    )
+
+                    # --- SPEC COMPLIANCE CHECK ---
+                    st.markdown("##### 2. Specification Compliance Rate")
+                    
+                    spec_res = []
+                    for col, lsl_col, usl_col in [("TS", "Standard TS min", "Standard TS max"),
+                                                  ("YS", "Standard YS min", "Standard YS max"),
+                                                  ("EL", "Standard EL min", "Standard EL max")]:
+                        lsl = df_filtered[lsl_col]
+                        usl = df_filtered[usl_col]
+                        
+                        # Logic: Pass if (val >= lsl) AND (val <= usl OR usl is NaN)
+                        pass_mask = pd.Series(True, index=df_filtered.index)
+                        if lsl.notna().all():
+                            pass_mask &= (df_filtered[col] >= lsl)
+                        if usl.notna().all():
+                            pass_mask &= (df_filtered[col] <= usl)
+                        
+                        pass_count = pass_mask.sum()
+                        pass_rate = (pass_count / n_count) * 100
+                        
+                        # Add icon based on rate
+                        icon = "🟢" if pass_rate >= 95 else ("🟡" if pass_rate >= 80 else "🔴")
+                        
+                        spec_res.append(f"- {icon} **{col}**: {pass_rate:.1f}% coils passed ({pass_count}/{n_count})")
+                    
+                    st.markdown("\n".join(spec_res))
+
+                    # --- BOXPLOT DISTRIBUTION ---
+                    st.markdown("##### 3. Actual Distribution Charts (Boxplot)")
+                    
+                    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+                    
+                    colors = {"TS": "#1f77b4", "YS": "#2ca02c", "EL": "#ff7f0e"}
+                    for i, col in enumerate(["TS", "YS", "EL"]):
+                        ax = axes[i]
+                        data = df_filtered[col].dropna()
+                        
+                        # Boxplot
+                        ax.boxplot(data, patch_artist=True, 
+                                   boxprops=dict(facecolor=colors[col], alpha=0.5),
+                                   medianprops=dict(color="black", linewidth=1.5))
+                        
+                        # Jitter points
+                        y = data
+                        x = np.random.normal(1, 0.04, size=len(y))
+                        ax.scatter(x, y, alpha=0.6, color=colors[col], s=20)
+                        
+                        # Mean Line
+                        ax.axhline(data.mean(), color='red', linestyle='--', alpha=0.7, label=f"Mean: {data.mean():.1f}")
+                        
+                        ax.set_title(f"{col} Distribution", fontweight="bold")
+                        ax.set_xticks([])
+                        ax.set_ylabel("Value (MPa / %)")
+                        ax.legend()
+                        ax.grid(axis='y', linestyle='--', alpha=0.3)
+
+                    plt.tight_layout()
+                    st.pyplot(fig)
+                    
+                    # Download Button
+                    buf = fig_to_png(fig)
+                    st.download_button("📥 Download Distribution Chart", data=buf, 
+                                       file_name=f"Lookup_{input_min}_{input_max}_{g['Material']}.png",
+                                       mime="image/png", key=f"dl_lookup_{_}")
