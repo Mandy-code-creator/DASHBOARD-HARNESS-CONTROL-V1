@@ -1065,94 +1065,88 @@ for _, g in valid.iterrows():
             2. Check the 'Debug Info' above to see if data is missing.
             """)
 # ========================================================
-    # VIEW MODE: DỰ BÁO CƠ TÍNH (PREDICT) - KÈM BIỂU ĐỒ XU HƯỚNG
+# ========================================================
+    # VIEW MODE: DỰ BÁO CƠ TÍNH & BIỂU ĐỒ XU HƯỚNG TRỰC QUAN
     # ========================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
-        st.markdown(f"#### 🤖 AI Prediction for {g['Material']} | {g['Gauge_Range']}")
-        st.info("ℹ️ Biểu đồ dưới đây minh họa xu hướng dự báo Tensile Strength (TS).")
+        st.markdown(f"#### 🤖 AI Prediction & Trend for {g['Material']} | {g['Gauge_Range']}")
         
-        # Dữ liệu train model cho riêng nhóm này
-        train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
+        # 1. Chuẩn bị dữ liệu sạch cho nhóm này
+        train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+        train_df = train_df.sort_values("Hardness_LINE") # Sắp xếp để vẽ đường xu hướng mượt hơn
         
-        if len(train_df) < 15:
-            st.warning(f"⚠️ Nhóm này chỉ có {len(train_df)} cuộn đủ dữ liệu, không đủ độ tin cậy để dự báo (Cần ≥15).")
+        if len(train_df) < 10:
+            st.warning(f"⚠️ Dữ liệu nhóm này quá ít ({len(train_df)} cuộn), không đủ để vẽ xu hướng dự báo.")
         else:
-            # Lấy trung bình của nhóm làm gợi ý mặc định
+            # 2. Ô nhập Hardness mục tiêu
             mean_h = float(train_df["Hardness_LINE"].mean())
-            
-            # Key duy nhất cho ô nhập để không bị xung đột giữa các Group
             input_key = f"input_pred_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
             
             target_h = st.number_input(
-                f"Nhập độ cứng HRB mục tiêu ({g['Material']}):",
+                f"Nhập độ cứng mục tiêu (HRB):",
                 min_value=0.0, max_value=120.0,
-                value=round(mean_h, 1), step=0.1,
-                key=input_key
+                value=round(mean_h, 1), step=0.1, key=input_key
             )
-            
-            # --- TÍNH TOÁN VÀ HIỂN THỊ KẾT QUẢ DỰ BÁO ---
+
+            # 3. Tính toán mô hình cho TS (Tensile Strength) làm đại diện xu hướng
             X = train_df[["Hardness_LINE"]].values
+            y_ts = train_df["TS"].values
+            model_ts = LinearRegression().fit(X, y_ts)
             
-            # Tạo mô hình và dự báo cho từng thuộc tính cơ tính
-            pred_results = {}
-            for col_db in ["TS", "YS", "EL"]:
-                y = train_df[col_db].values
-                model = LinearRegression().fit(X, y)
-                y_pred_all = model.predict(X)
-                
-                val_pred = model.predict([[target_h]])[0]
-                rmse = np.sqrt(((y - y_pred_all) ** 2).mean())
-                r2 = r2_score(y, y_pred_all)
-                pred_results[col_db] = {"value": val_pred, "rmse": rmse, "r2": r2, "model": model, "y_pred_all": y_pred_all}
+            # Dự báo giá trị TS tại điểm target_h
+            pred_ts = model_ts.predict([[target_h]])[0]
             
-            cols_pred = st.columns(3)
-            metric_labels = {"TS": "Tensile Strength", "YS": "Yield Strength", "EL": "Elongation"}
+            # 4. Hiển thị nhanh kết quả 3 chỉ số
+            cols = st.columns(3)
+            for i, col_name in enumerate(["TS", "YS", "EL"]):
+                y_temp = train_df[col_name].values
+                model_temp = LinearRegression().fit(X, y_temp)
+                p_val = model_temp.predict([[target_h]])[0]
+                r2 = r2_score(y_temp, model_temp.predict(X))
+                cols[i].metric(f"Dự báo {col_name}", f"{p_val:.1f}", f"R²={r2:.2f}")
 
-            for idx, (col_db, data) in enumerate(pred_results.items()):
-                with cols_pred[idx]:
-                    st.metric(
-                        label=f"Dự báo {metric_labels[col_db]}",
-                        value=f"{data['value']:.1f}",
-                        delta=f"± {data['rmse']:.1f} (RMSE)"
-                    )
-                    if data['r2'] > 0.5:
-                        st.success(f"🎯 Tin cậy cao (R²={data['r2']:.2f})")
-                    else:
-                        st.caption(f"☁️ Tham khảo (R²={data['r2']:.2f})")
+            # 5. VẼ BIỂU ĐỒ XU HƯỚNG (PLOTLY)
+            import plotly.graph_objects as go
 
-            # --- VẼ BIỂU ĐỒ MINH HỌA XU HƯỚNG ---
-            st.markdown("##### Biểu đồ xu hướng Tensile Strength (TS)")
-            fig, ax = plt.subplots(figsize=(10, 4)) # Tăng chiều cao biểu đồ
+            fig = go.Figure()
+
+            # A. Vẽ các điểm dữ liệu thực tế (Màu xanh nhạt)
+            fig.add_trace(go.Scatter(
+                x=train_df["Hardness_LINE"], y=train_df["TS"],
+                mode='markers', name='Dữ liệu thực tế',
+                marker=dict(color='rgba(100, 150, 250, 0.5)', size=8)
+            ))
+
+            # B. Vẽ đường xu hướng (Đường nối từ dữ liệu đến tương lai)
+            # Tạo dải X từ min dữ liệu đến điểm dự báo
+            x_range = np.linspace(min(train_df["Hardness_LINE"].min(), target_h) - 2, 
+                                  max(train_df["Hardness_LINE"].max(), target_h) + 2, 20)
+            y_range = model_ts.predict(x_range.reshape(-1, 1))
             
-            # 1. Vẽ dữ liệu thực tế
-            ax.scatter(train_df["Hardness_LINE"], train_df["TS"], alpha=0.6, s=30, label="Dữ liệu TS thực tế")
-            
-            # 2. Vẽ đường hồi quy (xu hướng dữ liệu hiện tại)
-            model_ts = pred_results["TS"]["model"]
-            ax.plot(train_df["Hardness_LINE"], model_ts.predict(X), color="blue", linestyle='--', linewidth=1.5, label="Đường hồi quy TS")
-            
-            # 3. Vẽ điểm dự báo (màu đỏ)
-            pred_ts_val = pred_results["TS"]["value"]
-            ax.scatter([target_h], [pred_ts_val], color="red", s=150, zorder=5, marker='X', label=f"Điểm dự báo ({target_h:.1f} HRB)")
-            
-            # 4. Vẽ đường nối (từ dữ liệu hiện tại đến điểm dự báo)
-            # Tạo một đường từ điểm cuối của dữ liệu thực tế đến điểm dự báo
-            # (Hoặc từ một điểm trung bình/đại diện nếu dữ liệu thực tế quá phân tán)
-            # Cách đơn giản nhất là kéo dài đường hồi quy
-            
-            # Để thấy rõ "phương hướng", chúng ta kéo dài đường hồi quy ra đến điểm dự báo
-            # Tạo một dải giá trị Hardness bao gồm cả điểm dự báo
-            min_h = min(train_df["Hardness_LINE"].min(), target_h)
-            max_h = max(train_df["Hardness_LINE"].max(), target_h)
-            
-            # Tạo các điểm trên đường xu hướng
-            x_line = np.array([min_h - 5, max_h + 5]).reshape(-1, 1) # Mở rộng thêm 5 đơn vị để đường rõ hơn
-            y_line = model_ts.predict(x_line)
-            ax.plot(x_line, y_line, color="green", linestyle='-', linewidth=2, alpha=0.7, label="Xu hướng chung")
-            
-            ax.set_xlabel("Độ cứng Hardness (HRB)")
-            ax.set_ylabel("Tensile Strength (TS)")
-            ax.set_title(f"Tương quan Hardness vs. TS ({g['Material']} - {g['Gauge_Range']})")
-            ax.legend(loc="upper left")
-            ax.grid(True, linestyle='--', alpha=0.6)
-            st.pyplot(fig)
+            fig.add_trace(go.Scatter(
+                x=x_range, y=y_range,
+                mode='lines', name='Đường xu hướng (AI)',
+                line=dict(color='gray', dash='dash')
+            ))
+
+            # C. Vẽ ĐIỂM DỰ BÁO (Tô đỏ, kích thước lớn)
+            fig.add_trace(go.Scatter(
+                x=[target_h], y=[pred_ts],
+                mode='markers+text',
+                name='Vị trí dự báo',
+                text=[f"Dự báo: {pred_ts:.1f}"],
+                textposition="top center",
+                marker=dict(color='red', size=15, symbol='x')
+            ))
+
+            # D. Tinh chỉnh giao diện biểu đồ
+            fig.update_layout(
+                title=f"Biểu đồ hướng dịch chuyển TS theo Hardness",
+                xaxis_title="Hardness (HRB)",
+                yaxis_title="Tensile Strength (MPa)",
+                hovermode="x unified",
+                template="plotly_white",
+                height=450
+            )
+
+            st.plotly_chart(fig, use_container_width=True)
