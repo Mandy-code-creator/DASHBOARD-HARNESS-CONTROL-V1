@@ -1064,49 +1064,49 @@ for _, g in valid.iterrows():
             1. Try widening the **Max YS** or **Max TS** slightly.
             2. Check the 'Debug Info' above to see if data is missing.
             """)
-
-# --- TÍNH NĂNG DỰ BÁO: DÙNG Ô NHẬP SỐ (NUMBER INPUT) ---
+# --- TÍNH NĂNG DỰ BÁO: ĐẢM BẢO TUÂN THỦ BỘ LỌC SIDEBAR ---
 if view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
     st.markdown("### 🤖 AI Prediction (Global Model)")
+    st.info("ℹ️ Dự báo dựa trên các điều kiện lọc: " + f"{rolling} | {metal} | {qgroup}")
     
-    # Dùng toàn bộ dữ liệu đã lọc 'sub' để máy học được nhiều nhất
-    train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
+    # Sử dụng 'df' đã được lọc bởi Sidebar ở dòng 150-154 trong code của bạn
+    # Loại bỏ giá trị trống và lọc GE* < 88 để dữ liệu đồng nhất với các view khác
+    train_df = df.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
     
     if len(train_df) < 10:
-        st.warning(f"⚠️ Dữ liệu quá ít ({len(train_df)} cuộn) để dự báo. Vui lòng chọn bộ lọc rộng hơn.")
+        st.warning(f"⚠️ Dữ liệu sau lọc quá ít ({len(train_df)} cuộn) để dự báo tin cậy.")
     else:
-        # Tính giá trị trung bình để gợi ý trong ô nhập
+        # Tính trung bình của tập dữ liệu đã lọc để làm gợi ý
         mean_h = float(train_df["Hardness_LINE"].mean())
         
-        # SỬA: Thay Slider bằng Number Input cho đỡ "mệt"
+        # Ô nhập số cố định, không bị nhảy giá trị
         target_h = st.number_input(
             "Nhập độ cứng mục tiêu (HRB):",
-            min_value=0.0,
-            max_value=120.0,
-            value=round(mean_h, 1), # Gợi ý giá trị trung bình hiện tại
-            step=0.1,
-            format="%.1f",
-            key="fixed_prediction_input" 
+            min_value=0.0, max_value=120.0,
+            value=round(mean_h, 1), step=0.1, format="%.1f",
+            key="global_predict_input" 
         )
         
-        # Tính toán Model 1 lần duy nhất cho toàn bộ dữ liệu đang chọn
+        # Huấn luyện mô hình dựa trên tập dữ liệu đã lọc
         X = train_df[["Hardness_LINE"]].values
         cols_pred = st.columns(3)
         metrics = [("YS", "Yield Strength"), ("TS", "Tensile Strength"), ("EL", "Elongation")]
         
-        for idx, (col_name, label) in enumerate(metrics):
-            y = train_df[col_name].values
-            model = LinearRegression().fit(X, y)
+        for idx, (col_db, label) in enumerate(metrics):
+            y = train_df[col_db].values
+            model = LinearRegression().fit(X, y) #
             
-            # Dự báo dựa trên con số vừa NHẬP
+            # Tính toán kết quả dự báo
             val_pred = model.predict([[target_h]])[0]
-            r2 = r2_score(y, model.predict(X))
+            r2 = r2_score(y, model.predict(X)) #
             
             with cols_pred[idx]:
-                st.metric(label=f"Dự báo {col_name}", value=f"{val_pred:.1f}")
-                # Đánh giá độ tin cậy của con số
-                if r2 > 0.5: st.success(f"🎯 Tin cậy cao (R²={r2:.2f})")
-                else: st.warning(f"⚠️ Tham khảo (R²={r2:.2f})")
+                st.metric(label=f"Dự báo {col_db}", value=f"{val_pred:.1f}")
+                # Hiển thị độ tin cậy dựa trên dữ liệu thực tế đã lọc
+                if r2 > 0.5: 
+                    st.success(f"🎯 Tin cậy cao (R²={r2:.2f})")
+                else: 
+                    st.warning(f"⚠️ Tham khảo (R²={r2:.2f})")
 
     st.divider()
-    st.stop() # Dừng App tại đây để không hiện các bảng con bên dưới, giúp giao diện gọn gàng
+    st.stop() # Dừng tại đây để không hiện các nhóm chi tiết bên dưới
