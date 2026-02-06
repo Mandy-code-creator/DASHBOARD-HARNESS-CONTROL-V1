@@ -155,17 +155,50 @@ df = df.dropna(subset=["Gauge_Range"])
 # ================================
 # SIDEBAR FILTER
 # ==============================================================================
-st.sidebar.header("🎛 FILTER")
-rolling = st.sidebar.radio("Rolling Type", sorted(df["Rolling_Type"].unique()))
-metal   = st.sidebar.radio("Metallic Type", sorted(df["Metallic_Type"].unique()))
-qgroup  = st.sidebar.radio("Quality Group", sorted(df["Quality_Group"].unique()))
+# 🎨 SIDEBAR: ORIGINAL SIMPLE STYLE (FIXED)
+# ==============================================================================
 
-df = df[
-    (df["Rolling_Type"] == rolling) &
-    (df["Metallic_Type"] == metal) &
-    (df["Quality_Group"] == qgroup)
+# 1. Logo (Vẫn giữ lại cho đẹp, nếu không thích bạn có thể xóa)
+with st.sidebar:
+    try:
+        st.image("image_4.png", use_container_width=True)
+    except:
+        pass # Không có ảnh thì thôi, không báo lỗi
+    st.divider()
+
+# 2. Header
+st.sidebar.header("🎛 FILTER")
+
+# --- QUAN TRỌNG: KIỂM TRA TÊN CỘT TRƯỚC KHI TẠO FILTER ---
+# Bạn cần thay thế các tên cột bên dưới ('...') bằng tên cột THỰC TẾ trong file Excel của bạn
+
+# Filter 1: Rolling Type (Ví dụ thực tế có thể là 'Claasify material'?)
+# Nếu cột "Rolling_Type" không có, code sẽ lỗi. Hãy đổi tên đúng:
+col_rolling = "Rolling_Type" if "Rolling_Type" in df.columns else "Claasify material" 
+rolling = st.sidebar.radio("Rolling Type", sorted(df[col_rolling].dropna().unique()))
+
+# Filter 2: Metallic Type (Thực tế là 'METALLIC COATING TYPE')
+col_metal = "Metallic_Type" if "Metallic_Type" in df.columns else "METALLIC COATING TYPE"
+metal = st.sidebar.radio("Metallic Type", sorted(df[col_metal].dropna().unique()))
+
+# Filter 3: Quality Group (Thực tế là 'Quality Group' hoặc 'HR STEEL GRADE')
+col_group = "Quality_Group" if "Quality_Group" in df.columns else "Quality Group"
+# Nếu không tìm thấy cột Quality Group, thử dùng cột Grade
+if col_group not in df.columns: col_group = "HR STEEL GRADE" 
+
+qgroup = st.sidebar.radio("Quality Group", sorted(df[col_group].dropna().unique()))
+
+
+# 3. THỰC HIỆN LỌC (Tạo biến 'sub' để các View bên dưới hoạt động)
+# Lưu ý: Tôi dùng biến 'sub' thay vì đè lên 'df' để an toàn cho dữ liệu gốc
+sub = df[
+    (df[col_rolling] == rolling) &
+    (df[col_metal] == metal) &
+    (df[col_group] == qgroup)
 ]
 
+# 4. VIEW MODE SELECTOR (Menu chọn tính năng)
+st.sidebar.divider()
 view_mode = st.sidebar.radio(
     "📊 View Mode",
     [
@@ -178,6 +211,8 @@ view_mode = st.sidebar.radio(
     ]
 )
 
+# Hiển thị số lượng kết quả ngay dưới Sidebar để biết filter có chạy không
+st.sidebar.info(f"Found: {len(sub)} coils")
 # ================================
 # GROUP CONDITION
 # ================================
