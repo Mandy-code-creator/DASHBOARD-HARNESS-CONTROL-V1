@@ -798,63 +798,80 @@ for _, g in valid.iterrows():
         st.subheader("🎯 Target Hardness Calculator (Safe Window)")
         st.markdown("""
         > **Find the Target Hardness range that satisfies BOTH Min and Max mechanical property limits.**
-        > *Crucial for preventing forming issues (Springback) caused by material being too strong.*
         """)
         st.divider()
 
-        # --- 0. PRE-CALCULATE DEFAULTS (SMART RANGE LOGIC) ---
+        # --- 0. PRE-CALCULATE & DISPLAY REFERENCE TABLE ---
         
-        # Giá trị khởi tạo mặc định (Fallback)
+        # Giá trị khởi tạo mặc định
         d_ys_min, d_ys_max = 250.0, 450.0
         d_ts_min, d_ts_max = 350.0, 550.0
         d_el_min, d_el_max = 30.0, 50.0
         
-        msg_logic = [] # Lưu thông tin giải trình
-        
+        # List để lưu dữ liệu hiển thị lên bảng
+        limit_summary = []
+
         if not sub.empty:
             try:
-                # Hàm tính toán giới hạn thông minh (Smart Limits)
-                def get_smart_range(col_val, col_spec_min, col_spec_max, step=5.0):
-                    # 1. Tính toán thống kê (3-Sigma)
+                # Hàm tính toán trả về cả giá trị hiển thị
+                def calculate_and_record(name, col_val, col_spec_min, col_spec_max, step=5.0):
+                    # 1. Process 3-Sigma
                     mean = sub[col_val].mean()
                     std = sub[col_val].std() if len(sub) > 1 else 0
                     stat_min = mean - (3 * std)
                     stat_max = mean + (3 * std)
                     
-                    # 2. Lấy Spec (Nếu có)
-                    spec_min = float(sub[col_spec_min].max()) if col_spec_min in sub.columns else 0
-                    # Với Max, nếu không có Spec (bằng 0 hoặc NaN), ta coi như là Vô cùng lớn
-                    raw_spec_max = sub[col_spec_max].min() if col_spec_max in sub.columns else 0
+                    # 2. Customer Spec
+                    has_spec_min = col_spec_min in sub.columns and sub[col_spec_min].max() > 0
+                    spec_min = float(sub[col_spec_min].max()) if has_spec_min else 0.0
+                    
+                    has_spec_max = col_spec_max in sub.columns and sub[col_spec_max].min() > 0
+                    raw_spec_max = sub[col_spec_max].min() if has_spec_max else 0.0
                     spec_max = float(raw_spec_max) if raw_spec_max > 0 else 9999.0
                     
-                    # 3. Logic "Stricter" (Khắt khe nhất)
-                    # Min: Lấy cái CAO HƠN (để an toàn chạm đáy)
+                    # 3. Logic chọn (Stricter)
                     final_min = max(stat_min, spec_min)
-                    # Max: Lấy cái THẤP HƠN (để tránh bị cứng quá/hồi ván)
                     final_max = min(stat_max, spec_max)
                     
-                    # Xử lý trường hợp vô lý (Min > Max) do dữ liệu nhiễu -> Fallback về 3-Sigma
-                    if final_min >= final_max:
-                        final_min, final_max = stat_min, stat_max
+                    if final_min >= final_max: final_min, final_max = stat_min, stat_max # Fallback
 
-                    # Làm tròn
-                    final_min = max(0.0, float(round(final_min / step) * step))
-                    final_max = float(round(final_max / step) * step)
+                    # Làm tròn cho Input
+                    rec_min = max(0.0, float(round(final_min / step) * step))
+                    rec_max = float(round(final_max / step) * step)
                     
-                    return final_min, final_max
+                    # Tạo String hiển thị cho bảng (Format đẹp)
+                    str_spec = f"{spec_min:.0f} ~ {spec_max:.0f}" if spec_max < 9000 else f"Min {spec_min:.0f}"
+                    if not has_spec_min and not has_spec_max: str_spec = "No Spec"
+                    
+                    str_sigma = f"{stat_min:.0f} ~ {stat_max:.0f}"
+                    str_final = f"{rec_min:.0f} ~ {rec_max:.0f}"
 
-                # Áp dụng tính toán
-                d_ys_min, d_ys_max = get_smart_range('YS', 'Standard YS min', 'Standard YS max', 5.0)
-                d_ts_min, d_ts_max = get_smart_range('TS', 'Standard TS min', 'Standard TS max', 5.0)
-                d_el_min, d_el_max = get_smart_range('EL', 'Standard EL min', 'Standard EL max', 1.0)
+                    return rec_min, rec_max, {
+                        "Property": name,
+                        "Customer Spec": str_spec,
+                        "Process (3σ)": str_sigma,
+                        "Recommended Range": str_final
+                    }
+
+                # Thực hiện tính toán
+                d_ys_min, d_ys_max, row_ys = calculate_and_record('Yield Strength', 'YS', 'Standard YS min', 'Standard YS max', 5.0)
+                d_ts_min, d_ts_max, row_ts = calculate_and_record('Tensile Strength', 'TS', 'Standard TS min', 'Standard TS max', 5.0)
+                d_el_min, d_el_max, row_el = calculate_and_record('Elongation', 'EL', 'Standard EL min', 'Standard EL max', 1.0)
                 
-                st.info(f"""
-                ℹ️ **Optimized Constraints Calculated:**
-                Based on strictest limits between **Customer Spec** and **Process Capability (3σ)** to prevent forming issues.
-                """)
+                limit_summary = [row_ys, row_ts, row_el]
                 
             except Exception as e:
-                pass # Giữ mặc định nếu lỗi
+                st.error(f"Calculation Error: {e}")
+
+        # --- HIỂN THỊ BẢNG THAM CHIẾU (REFERENCE TABLE) ---
+        if limit_summary:
+            st.markdown("#### 📋 Reference: Spec vs. Capability Analysis")
+            df_limits = pd.DataFrame(limit_summary)
+            # Hiển thị bảng static cho dễ nhìn
+            st.table(df_limits.set_index("Property"))
+            st.caption("ℹ️ *Recommended Range takes the stricter limit between Customer Spec and Process Capability.*")
+        
+        st.divider()
 
         # --- 1. INPUT: Define Desired Mechanical Properties (RANGE) ---
         st.markdown("### 1. Define Desired Property Range")
@@ -879,7 +896,6 @@ for _, g in valid.iterrows():
         # --- 2. PROCESSING: Filter Data ---
         clean_df = sub.dropna(subset=['YS', 'TS', 'EL', 'Hardness_LINE'])
         
-        # Lọc dữ liệu nằm TRONG KHOẢNG (Between)
         filtered_df = clean_df[
             (clean_df['YS'] >= req_ys_min) & (clean_df['YS'] <= req_ys_max) &
             (clean_df['TS'] >= req_ts_min) & (clean_df['TS'] <= req_ts_max) &
