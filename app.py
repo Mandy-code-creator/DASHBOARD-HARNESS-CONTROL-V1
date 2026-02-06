@@ -235,72 +235,118 @@ for _, g in valid.iterrows():
     if view_mode == "📋 Data Table":
         st.dataframe(sub, use_container_width=True)
 
-    elif view_mode == "📈 Trend (LAB / LINE)":
-        x = np.arange(1, len(sub)+1)
-        fig, ax = plt.subplots(figsize=(8,4))
-        ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB")
-        ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE")
-        ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
-        ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
-        ax.set_title("Hardness Trend by Coil Sequence", weight="bold")
-        ax.set_xlabel("Coil Sequence")
-        ax.set_ylabel("Hardness (HRB)")
-        ax.grid(alpha=0.25)
-        ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
-        plt.tight_layout()
-        st.pyplot(fig)
-        buf = fig_to_png(fig)
-        st.download_button(
-            label="📥 Download Trend Chart",
-            data=buf,
-            file_name=f"trend_{g['Material']}_{g['Gauge_Range']}.png",
-            mime="image/png"
-        )
+# ========================================================
+    # MODE: HARDNESS ANALYSIS (TREND & DISTRIBUTION COMBINED)
+    # ========================================================
+    elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
+        
+        st.markdown("### 📉 Hardness Analysis: Process Stability & Capability")
+        
+        # Tạo 2 Tabs
+        tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
 
-    elif view_mode == "📊 Distribution (LAB + LINE)":
-        lab = sub["Hardness_LAB"].dropna()
-        line = sub["Hardness_LINE"].dropna()
-        if len(lab) >= 10 and len(line) >= 10:
-            mean_lab, std_lab = lab.mean(), lab.std(ddof=1)
-            mean_line, std_line = line.mean(), line.std(ddof=1)
-            x_min = min(mean_lab - 3*std_lab, mean_line - 3*std_line)
-            x_max = max(mean_lab + 3*std_lab, mean_line + 3*std_line)
-            bins = np.linspace(x_min, x_max, 25)
-            fig, ax = plt.subplots(figsize=(8,4.5))
-            ax.hist(lab, bins=bins, density=True, alpha=0.4, color="#1f77b4", edgecolor="black", label="LAB")
-            ax.hist(line, bins=bins, density=True, alpha=0.4, color="#ff7f0e", edgecolor="black", label="LINE")
-            xs = np.linspace(x_min, x_max, 400)
-            ys_lab = (1/(std_lab*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_lab)/std_lab)**2)
-            ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
-            ax.plot(xs, ys_lab, linewidth=2.5, label="LAB Normal (±3σ)", color="#1f77b4")
-            ax.plot(xs, ys_line, linewidth=2.5, linestyle="--", label="LINE Normal (±3σ)", color="#ff7f0e")
-            ax.axvline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
-            ax.axvline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
-            ax.axvline(mean_lab, linestyle=":", linewidth=2, color="#0b3d91", label=f"LAB Mean {mean_lab:.2f}")
-            ax.axvline(mean_line, linestyle=":", linewidth=2, color="#b25e00", label=f"LINE Mean {mean_line:.2f}")
-            note = (
-                f"LAB:\n  N={len(lab)}  Mean={mean_lab:.2f}  Std={std_lab:.2f}\n"
-                f"  Ca={abs(mean_lab-(hi+lo)/2)/((hi-lo)/2):.2f}  Cp={(hi-lo)/(6*std_lab):.2f}  Cpk={min((hi-mean_lab)/(3*std_lab),(mean_lab-lo)/(3*std_lab)):.2f}\n\n"
-                f"LINE:\n  N={len(line)}  Mean={mean_line:.2f}  Std={std_line:.2f}\n"
-                f"  Ca={abs(mean_line-(hi+lo)/2)/((hi-lo)/2):.2f}  Cp={(hi-lo)/(6*std_line):.2f}  Cpk={min((hi-mean_line)/(3*std_line),(mean_line-lo)/(3*std_line)):.2f}"
-            )
-            ax.text(1.02, 0.4, note, transform=ax.transAxes, va="center",
-                    bbox=dict(boxstyle="round,pad=0.4", facecolor="white", alpha=0.2, edgecolor="gray"))
-            ax.set_title("Hardness Distribution – LAB vs LINE (3σ)", weight="bold")
-            ax.set_xlabel("Hardness (HRB)")
-            ax.set_ylabel("Density")
-            ax.grid(alpha=0.3)
-            ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.85), frameon=False)
+        # --- TAB 1: TREND CHART ---
+        with tab_trend:
+            st.markdown(f"**Material:** {g['Material']} | **Gauge:** {g['Gauge_Range']}")
+            
+            x = np.arange(1, len(sub)+1)
+            fig, ax = plt.subplots(figsize=(10, 4.5)) # Resize cho đẹp hơn trong tab
+            
+            # Plot Data
+            ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.8)
+            ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.8)
+            
+            # Limits
+            ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
+            ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
+            
+            # Styling
+            ax.set_title("Hardness Trend by Coil Sequence", weight="bold")
+            ax.set_xlabel("Coil Sequence")
+            ax.set_ylabel("Hardness (HRB)")
+            ax.grid(alpha=0.25, linestyle="--")
+            ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=4) # Legend xuống dưới cho gọn
+            
             plt.tight_layout()
             st.pyplot(fig)
+            
+            # Download
             buf = fig_to_png(fig)
             st.download_button(
-               label="📥 Download Distribution Chart",
-               data=buf,
-               file_name=f"distribution_{g['Material']}_{g['Gauge_Range']}.png",
-               mime="image/png"
+                label="📥 Download Trend Chart",
+                data=buf,
+                file_name=f"trend_{g['Material']}_{g['Gauge_Range']}.png",
+                mime="image/png",
+                key=f"dl_trend_{_}"
             )
 
+        # --- TAB 2: DISTRIBUTION CHART ---
+        with tab_dist:
+            lab = sub["Hardness_LAB"].dropna()
+            line = sub["Hardness_LINE"].dropna()
+            
+            if len(lab) < 10 or len(line) < 10:
+                st.warning("⚠️ Not enough data points (N < 10) to visualize distribution.")
+            else:
+                mean_lab, std_lab = lab.mean(), lab.std(ddof=1)
+                mean_line, std_line = line.mean(), line.std(ddof=1)
+                
+                # Auto scale x-axis
+                x_min = min(mean_lab - 3*std_lab, mean_line - 3*std_line, lo - 2)
+                x_max = max(mean_lab + 3*std_lab, mean_line + 3*std_line, hi + 2)
+                
+                bins = np.linspace(x_min, x_max, 25)
+                
+                fig, ax = plt.subplots(figsize=(10, 5))
+                
+                # Histogram
+                ax.hist(lab, bins=bins, density=True, alpha=0.4, color="#1f77b4", edgecolor="black", label="LAB Hist")
+                ax.hist(line, bins=bins, density=True, alpha=0.4, color="#ff7f0e", edgecolor="black", label="LINE Hist")
+                
+                # Normal Curves
+                xs = np.linspace(x_min, x_max, 400)
+                if std_lab > 0:
+                    ys_lab = (1/(std_lab*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_lab)/std_lab)**2)
+                    ax.plot(xs, ys_lab, linewidth=2.5, label="LAB Fit", color="#1f77b4")
+                
+                if std_line > 0:
+                    ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
+                    ax.plot(xs, ys_line, linewidth=2.5, linestyle="--", label="LINE Fit", color="#ff7f0e")
+                
+                # Limits & Means
+                ax.axvline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
+                ax.axvline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
+                ax.axvline(mean_lab, linestyle=":", linewidth=1.5, color="#0b3d91")
+                ax.axvline(mean_line, linestyle=":", linewidth=1.5, color="#b25e00")
+                
+                # SPC Stats Box (Moved to bottom to avoid covering chart)
+                note = (
+                    f"🔷 LAB: N={len(lab)} | Mean={mean_lab:.1f} | Std={std_lab:.2f} | Cpk={min((hi-mean_lab)/(3*std_lab),(mean_lab-lo)/(3*std_lab)):.2f}\n"
+                    f"🔶 LINE: N={len(line)} | Mean={mean_line:.1f} | Std={std_line:.2f} | Cpk={min((hi-mean_line)/(3*std_line),(mean_line-lo)/(3*std_line)):.2f}"
+                )
+                
+                ax.set_title("Hardness Distribution & SPC Capability", weight="bold")
+                ax.set_xlabel("Hardness (HRB)")
+                ax.set_ylabel("Probability Density")
+                ax.grid(alpha=0.3)
+                
+                # Add text box below title
+                plt.figtext(0.5, -0.05, note, ha="center", fontsize=10, 
+                            bbox={"facecolor":"white", "alpha":0.5, "pad":5})
+                
+                ax.legend(loc="upper right", frameon=True)
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                # Download
+                buf = fig_to_png(fig)
+                st.download_button(
+                   label="📥 Download Dist Chart",
+                   data=buf,
+                   file_name=f"distribution_{g['Material']}_{g['Gauge_Range']}.png",
+                   mime="image/png",
+                   key=f"dl_dist_{_}"
+                )
 # ================================
 # (Các view còn lại như Hardness → TS/YS/EL, TS/YS/EL Trend & Distribution, Predict TS/YS/EL)
 # ================================
