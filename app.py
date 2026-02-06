@@ -174,6 +174,7 @@ view_mode = st.sidebar.radio(
         "🔗 Correlation: Hardness vs Mech Props", # <--- Tên mới cho Hardness -> TS/YS/EL
         "⚙️ Mech Props Analysis",                 # <--- Tên mới cho TS/YS/EL Trend
         "🔍 Lookup: Hardness Range → Actual Mech Props", # <--- Tính năng tra cứu
+        "🎯 Target Hardness Calculator (Reverse Lookup)",
     ]
 )
 
@@ -788,145 +789,138 @@ for _, g in valid.iterrows():
                     st.download_button("📥 Download Distribution Chart", data=buf, 
                                        file_name=f"Lookup_{input_min}_{input_max}_{g['Material']}.png",
                                        mime="image/png", key=f"dl_lookup_{_}")
-    elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
-            
-            st.markdown("## 🧮 Predict Mechanical Properties (Auto-Update)")
-            
-            # ===============================
-            # Prepare data
-            # ===============================
-            sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
-            N = len(sub_fit)
-            
-            if N < 5:
-                st.warning(f"⚠️ Not enough data for prediction (N={N})")
-            else:
-                hrb_min_data = float(sub_fit["Hardness_LINE"].min())
-                hrb_max_data = float(sub_fit["Hardness_LINE"].max())
-                
-                # ===============================
-                # INPUT AREA (AUTO UPDATE - NO BUTTON)
-                # ===============================
-                # Thêm _{_} vào key để tránh lỗi Duplicate Key
-                pred_type = st.radio(
-                    "Select input type for prediction:",
-                    ["Single Value", "Range"],
-                    index=0,
-                    key=f"pred_type_custom_{_}" 
-                )
-                
-                hrb_values = []
-                
-                if pred_type == "Single Value":
-                    val = st.number_input(
-                        "Enter desired LINE Hardness (HRB):",
-                        value=round((hrb_min_data + hrb_max_data) / 2, 1),
-                        step=0.1,
-                        key=f"hrb_single_{_}"
-                    )
-                    hrb_values = [val]
-                else:
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        hrb_min = st.number_input(
-                            "Min Hardness:",
-                            value=round(hrb_min_data, 1),
-                            step=0.1,
-                            key=f"hrb_min_{_}"
-                        )
-                    with c2:
-                        hrb_max = st.number_input(
-                            "Max Hardness:",
-                            value=round(hrb_max_data, 1),
-                            step=0.1,
-                            key=f"hrb_max_{_}"
-                        )
-                    with c3:
-                        step = st.number_input(
-                            "Step:",
-                            value=1.0,
-                            step=0.1,
-                            key=f"hrb_step_{_}"
-                        )
-                    
-                    if hrb_min > hrb_max:
-                        st.error("⚠️ Min > Max! Please adjust.")
-                    else:
-                        hrb_values = list(np.arange(hrb_min, hrb_max + 0.001, step))
-                
-                # ===============================
-                # CALCULATION & PLOT (ALWAYS RUN)
-                # ===============================
-                if len(hrb_values) > 0:
-                    pred_values = {}
-                    
-                    # Fit & Predict Logic
-                    for prop in ["TS", "YS", "EL"]:
-                        try:
-                            a, b = np.polyfit(
-                                sub_fit["Hardness_LINE"].values,
-                                sub_fit[prop].values,
-                                1
-                            )
-                            pred_values[prop] = a * np.array(hrb_values) + b
-                        except:
-                            pred_values[prop] = np.zeros(len(hrb_values))
-                    
-                    # Plot
-                    fig, ax = plt.subplots(figsize=(14, 5))
-                    coils = np.arange(1, N + 1)
-                    
-                    for prop, color, marker, unit in [
-                        ("TS", "#1f77b4", "o", "MPa"),
-                        ("YS", "#2ca02c", "s", "MPa"),
-                        ("EL", "#ff7f0e", "^", "%")
-                    ]:
-                        # Vẽ dữ liệu thực tế
-                        obs = sub_fit[prop].values
-                        ax.plot(coils, obs, marker=marker, color=color, alpha=0.6, label=f"{prop} Observed")
-                        
-                        # Vẽ dữ liệu dự báo
-                        pred = pred_values[prop]
-                        pred_x = coils[-1] + np.arange(1, len(pred) + 1)
-                        
-                        ax.scatter(
-                            pred_x, pred,
-                            color="red", s=100, marker="X",
-                            label=f"{prop} Predicted ({unit})" if prop == "TS" else "" # Chỉ hiện label 1 lần cho gọn
-                        )
-                        
-                        # Nối nét đứt
-                        if len(pred) > 0:
-                            ax.plot(
-                                [coils[-1], pred_x[0]],
-                                [obs[-1], pred[0]],
-                                linestyle=":",
-                                color="red",
-                                alpha=0.5
-                            )
-                            if len(pred) > 1:
-                                ax.plot(pred_x, pred, linestyle="--", color=color, alpha=0.8)
-    
-                    ax.set_xlabel("Coil Sequence")
-                    ax.set_ylabel("Mechanical Properties")
-                    ax.set_title("Observed vs Predicted TS / YS / EL")
-                    ax.grid(True, linestyle="--", alpha=0.3)
-                    ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
-                    st.pyplot(fig)
-                    
-                    # Table Result
-                    pred_table = pd.DataFrame({"HRB Input": hrb_values})
-                    for prop in ["TS", "YS", "EL"]:
-                        pred_table[prop] = pred_values[prop]
-                    
-                    with st.expander("📋 Predicted Values Table", expanded=True):
-                        st.dataframe(
-                            pred_table.style.format({
-                                "HRB Input": "{:.1f}",
-                                "TS": "{:.1f}",
-                                "YS": "{:.1f}",
-                                "EL": "{:.1f}"
-                            }),
-                            use_container_width=True
-                        )
 # ========================================================
+    # MODE: TARGET HARDNESS CALCULATOR (REVERSE LOOKUP)
+    # ========================================================
+    elif view_mode == "🎯 Target Hardness Calculator (Reverse Lookup)":
+        import uuid
+        
+        st.markdown("### 🎯 Target Hardness Calculator")
+        st.info("ℹ️ Công cụ này giúp tìm ra **Khoảng Độ cứng Mục tiêu (Target Hardness)** cần thiết để đạt được các giới hạn cơ tính mong muốn.")
+
+        # 1. Chuẩn bị dữ liệu sạch
+        df_rev = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+        
+        if df_rev.empty:
+            st.warning("⚠️ Không có dữ liệu để phân tích.")
+            st.stop()
+
+        # 2. Nhập Giới hạn Cơ tính mong muốn (Internal Limits)
+        st.markdown("#### 1️⃣ Nhập giới hạn Cơ tính mong muốn (Internal Limits)")
+        
+        # Gợi ý mặc định dựa trên 3 Sigma của dữ liệu hiện tại (để đỡ phải gõ)
+        def get_suggestions(col):
+            mean = df_rev[col].mean()
+            std = df_rev[col].std()
+            return float(max(0, mean - 2*std)), float(mean + 2*std) # Lấy 2 Sigma cho chặt
+
+        ts_min_def, ts_max_def = get_suggestions("TS")
+        ys_min_def, ys_max_def = get_suggestions("YS")
+        el_min_def, el_max_def = get_suggestions("EL")
+
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown("**Target TS (MPa)**")
+            req_ts_min = st.number_input("TS Min:", value=round(ts_min_def, 0), step=5.0, key=f"req_ts_min_{_}")
+            req_ts_max = st.number_input("TS Max:", value=round(ts_max_def, 0), step=5.0, key=f"req_ts_max_{_}")
+        with c2:
+            st.markdown("**Target YS (MPa)**")
+            req_ys_min = st.number_input("YS Min:", value=round(ys_min_def, 0), step=5.0, key=f"req_ys_min_{_}")
+            req_ys_max = st.number_input("YS Max:", value=round(ys_max_def, 0), step=5.0, key=f"req_ys_max_{_}")
+        with c3:
+            st.markdown("**Target EL (%)**")
+            req_el_min = st.number_input("EL Min:", value=round(el_min_def, 1), step=1.0, key=f"req_el_min_{_}")
+            req_el_max = st.number_input("EL Max:", value=100.0, step=1.0, key=f"req_el_max_{_}") # EL max thường ko quan trọng
+
+        # 3. Lọc ra các cuộn "Cuộn Vàng" (Golden Coils) - Đạt cả 3 chỉ số
+        mask_good = (
+            (df_rev["TS"] >= req_ts_min) & (df_rev["TS"] <= req_ts_max) &
+            (df_rev["YS"] >= req_ys_min) & (df_rev["YS"] <= req_ys_max) &
+            (df_rev["EL"] >= req_el_min) & (df_rev["EL"] <= req_el_max)
+        )
+        
+        good_coils = df_rev[mask_good]
+        n_good = len(good_coils)
+        n_total = len(df_rev)
+
+        st.markdown("---")
+        st.markdown("#### 2️⃣ Kết quả Phân tích (Analysis Result)")
+
+        if n_good < 5:
+            st.error(f"⚠️ Chỉ tìm thấy **{n_good}/{n_total}** cuộn đạt yêu cầu cơ tính này. Dữ liệu quá ít để đề xuất độ cứng an toàn.")
+            st.markdown("👉 **Gợi ý:** Hãy nới lỏng khoảng giới hạn TS/YS/EL ra một chút.")
+        else:
+            # 4. Tính toán khoảng độ cứng đề xuất
+            # Lấy khoảng phân vị 10% - 90% của nhóm tốt để loại bỏ nhiễu (outliers)
+            rec_h_min = good_coils["Hardness_LINE"].quantile(0.10)
+            rec_h_max = good_coils["Hardness_LINE"].quantile(0.90)
+            rec_h_mean = good_coils["Hardness_LINE"].mean()
+
+            # Hiển thị kết quả nổi bật
+            c_res1, c_res2 = st.columns([2, 1])
+            with c_res1:
+                st.success(f"✅ Tìm thấy **{n_good}** cuộn đạt chuẩn ({n_good/n_total:.1%} tổng dữ liệu).")
+                st.markdown(f"""
+                ### 🎯 Độ cứng Mục tiêu Khuyến nghị:
+                # **{rec_h_min:.1f} ~ {rec_h_max:.1f} HRB**
+                *(Trung bình tối ưu: {rec_h_mean:.1f} HRB)*
+                """)
+                st.caption(f"Khoảng này bao phủ 80% số cuộn đạt chuẩn cơ tính đã chọn.")
+
+            with c_res2:
+                # Kiểm chứng ngược (Validation)
+                # Nếu chạy theo độ cứng này, tỷ lệ đạt là bao nhiêu?
+                mask_verify = (df_rev["Hardness_LINE"] >= rec_h_min) & (df_rev["Hardness_LINE"] <= rec_h_max)
+                coils_in_range = df_rev[mask_verify]
+                pass_in_range = coils_in_range[
+                    (coils_in_range["TS"] >= req_ts_min) & (coils_in_range["TS"] <= req_ts_max) &
+                    (coils_in_range["YS"] >= req_ys_min) & (coils_in_range["YS"] <= req_ys_max) &
+                    (coils_in_range["EL"] >= req_el_min)
+                ]
+                
+                if not coils_in_range.empty:
+                    success_rate = len(pass_in_range) / len(coils_in_range)
+                    st.metric(
+                        label="Dự báo Tỷ lệ Đạt (Success Rate)", 
+                        value=f"{success_rate:.1%}",
+                        help=f"Nếu bạn vận hành lò trong khoảng {rec_h_min:.1f}-{rec_h_max:.1f}, xác suất đạt cơ tính là {success_rate:.1%}"
+                    )
+                
+            # 5. Biểu đồ trực quan hóa (Scatter Plot: Hardness vs YS)
+            # YS thường là chỉ số quan trọng nhất, nên ta vẽ YS
+            st.markdown("#### 3️⃣ Biểu đồ Tương quan: Vùng An toàn (Sweet Spot)")
+            
+            fig, ax = plt.subplots(figsize=(10, 6))
+            
+            # Vẽ tất cả các điểm (mờ)
+            ax.scatter(df_rev["Hardness_LINE"], df_rev["YS"], c="gray", alpha=0.3, label="All Coils")
+            
+            # Vẽ các điểm "Good Coils" (Đậm)
+            ax.scatter(good_coils["Hardness_LINE"], good_coils["YS"], c="green", s=50, alpha=0.8, label="Passed Coils")
+            
+            # Vẽ khung chữ nhật mục tiêu (Target Zone)
+            # Vùng Độ cứng đề xuất x Vùng YS mong muốn
+            import matplotlib.patches as patches
+            
+            rect = patches.Rectangle(
+                (rec_h_min, req_ys_min),          # (x,y) góc dưới trái
+                rec_h_max - rec_h_min,            # width
+                req_ys_max - req_ys_min,          # height
+                linewidth=2, edgecolor='red', facecolor='none', linestyle='--', label='Optimal Zone'
+            )
+            ax.add_patch(rect)
+            
+            ax.set_xlabel("Hardness (HRB)")
+            ax.set_ylabel("Yield Strength (MPa)")
+            ax.set_title("Identified Optimal Hardness Zone (Red Box)", weight="bold")
+            ax.axvline(rec_h_min, color="red", linestyle=":")
+            ax.axvline(rec_h_max, color="red", linestyle=":")
+            
+            ax.legend()
+            ax.grid(True, linestyle="--", alpha=0.5)
+            
+            st.pyplot(fig)
+            
+            # Download
+            buf = fig_to_png(fig)
+            st.download_button("📥 Download Chart", data=buf, file_name="Target_Hardness_Analysis.png", mime="image/png", key=f"dl_target_{_}_{uuid.uuid4()}")
