@@ -1066,75 +1066,81 @@ for _, g in valid.iterrows():
             """)
 # ========================================================
 # ========================================================
-    # VIEW MODE: BIỂU ĐỒ 3 ĐƯỜNG CƠ TÍNH THEO ĐỘ CỨNG (CÓ DỰ BÁO)
+    # VIEW MODE: BIỂU ĐỒ LINE NỐI TIẾP ĐIỂM DỰ BÁO (THEO TIẾN TRÌNH)
     # ========================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
-        st.markdown(f"#### 📈 Cơ tính theo độ cứng: {g['Material']} | {g['Gauge_Range']}")
+        st.markdown(f"#### 📈 Cơ tính: Lịch sử và Bước nhảy dự báo ({g['Material']})")
         
-        # 1. Sắp xếp dữ liệu theo độ cứng tăng dần để đường line chạy đúng hướng
+        # 1. Lọc dữ liệu và sắp xếp theo số cuộn (COIL_NO) hoặc thời gian để giữ đúng trình tự sản xuất
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
-        train_df = train_df.sort_values(by="Hardness_LINE")
+        train_df = train_df.sort_values(by="COIL_NO") # Sắp xếp theo thứ tự sản xuất
         
         if len(train_df) < 5:
-            st.warning("⚠️ Không đủ dữ liệu để vẽ biểu đồ.")
+            st.warning("⚠️ Không đủ dữ liệu để vẽ biểu đồ nối tiếp.")
         else:
-            # 2. Nhập độ cứng mục tiêu
+            # 2. Nhập Hardness mục tiêu
             mean_h = float(train_df["Hardness_LINE"].mean())
-            input_key = f"final_pred_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
-            target_h = st.number_input(f"Nhập Hardness mục tiêu (HRB):", 
+            input_key = f"seq_pred_in_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
+            target_h = st.number_input(f"Nhập Hardness dự kiến cho cuộn tiếp theo (HRB):", 
                                        value=round(mean_h, 1), step=0.5, key=input_key)
 
-            # 3. Tính toán giá trị dự báo AI
+            # 3. Tính toán AI dựa trên toàn bộ tập dữ liệu (Global Correlation)
             X_train = train_df[["Hardness_LINE"]].values
             predictions = {}
             for col in ["TS", "YS", "EL"]:
                 model = LinearRegression().fit(X_train, train_df[col].values)
                 predictions[col] = model.predict([[target_h]])[0]
 
-            # 4. Vẽ biểu đồ Plotly (3 đường nối tiếp)
+            # 4. VẼ BIỂU ĐỒ (DÙNG INDEX ĐỂ ĐIỂM DỰ BÁO LUÔN NẰM CUỐI)
             import plotly.graph_objects as go
             fig = go.Figure()
-            colors = {"TS": "#1f77b4", "YS": "#2ca02c", "EL": "#d62728"} # Xanh dương, Xanh lá, Đỏ
-
+            colors = {"TS": "#1f77b4", "YS": "#2ca02c", "EL": "#d62728"}
+            
+            # Tạo trục X giả lập (Thứ tự cuộn + 1 điểm dự báo)
+            indices = list(range(len(train_df)))
+            next_index = len(train_df)
+            
             for col in ["TS", "YS", "EL"]:
                 is_el = (col == "EL")
                 y_axis = "y2" if is_el else "y1"
                 
-                # A. Vẽ đường dữ liệu thực tế (Line mờ + Marker nhỏ)
+                # A. Vẽ đường lịch sử (Line nối các cuộn đã sản xuất)
                 fig.add_trace(go.Scatter(
-                    x=train_df["Hardness_LINE"], y=train_df[col],
-                    mode='lines+markers', name=f"Thực tế {col}",
-                    line=dict(color=colors[col], width=1, dash='dot'),
-                    marker=dict(size=4, opacity=0.5),
-                    yaxis=y_axis
+                    x=indices, y=train_df[col],
+                    mode='lines+markers', name=f"Quá khứ {col}",
+                    line=dict(color=colors[col], width=1.5),
+                    marker=dict(size=4),
+                    yaxis=y_axis,
+                    customdata=train_df["Hardness_LINE"],
+                    hovertemplate="Cuộn số: %{x}<br>Hardness: %{customdata} HRB<br>Giá trị: %{y}<extra></extra>"
                 ))
 
-                # B. Vẽ đường nối từ điểm có độ cứng gần nhất đến điểm dự báo
-                # Tìm cuộn thép có độ cứng gần với target_h nhất để tạo đường nối hướng đi
-                last_row = train_df.iloc[(train_df['Hardness_LINE'] - target_h).abs().argsort()[:1]]
-                
+                # B. VẼ ĐƯỜNG NỐI TIẾP (Nối từ cuộn cuối cùng đến điểm dự báo)
                 fig.add_trace(go.Scatter(
-                    x=[last_row["Hardness_LINE"].values[0], target_h],
-                    y=[last_row[col].values[0], predictions[col]],
-                    mode='lines+markers', name=f"Hướng dịch chuyển {col}",
-                    line=dict(color=colors[col], width=3),
-                    marker=dict(color='white', size=10, line=dict(color=colors[col], width=2), symbol='star'),
-                    yaxis=y_axis, showlegend=False
+                    x=[indices[-1], next_index],
+                    y=[train_df[col].iloc[-1], predictions[col]],
+                    mode='lines+markers',
+                    name=f"Bước nhảy {col}",
+                    line=dict(color=colors[col], width=4, dash='solid'), # Đường nối đậm hơn
+                    marker=dict(color='yellow', size=10, line=dict(color='red', width=2), symbol='star'),
+                    yaxis=y_axis,
+                    showlegend=False
                 ))
 
-                # C. Điểm dự báo (Marker to nhất)
+                # C. ĐIỂM DỰ BÁO (Nằm ở vị trí cuối cùng bên phải)
                 fig.add_trace(go.Scatter(
-                    x=[target_h], y=[predictions[col]],
-                    mode='markers+text', name=f"DỰ BÁO {col}",
+                    x=[next_index], y=[predictions[col]],
+                    mode='markers+text', name=f"MỤC TIÊU {col}",
                     text=[f"{predictions[col]:.1f}"], textposition="top center",
-                    marker=dict(color=colors[col], size=14, symbol='square'),
-                    yaxis=y_axis
+                    marker=dict(color='red', size=14, symbol='diamond'),
+                    yaxis=y_axis,
+                    hovertemplate=f"Mục tiêu Hardness: {target_h} HRB<br>Dự báo {col}: %{{y}}<extra></extra>"
                 ))
 
-            # 5. Cấu hình Trục Y kép (MPa cho TS/YS và % cho EL)
+            # 5. Cấu hình Trục và Layout
             fig.update_layout(
-                title=f"Xu hướng cơ tính khi thay đổi độ cứng ({g['Material']})",
-                xaxis_title="Hardness (HRB)",
+                title=f"Biểu đồ diễn biến cơ tính và Bước nhảy dự báo ({g['Material']})",
+                xaxis=dict(title="Trình tự các cuộn thép (Điểm cuối là Dự báo)", tickvals=indices + [next_index]),
                 yaxis=dict(title="Strength (TS/YS) [MPa]", side="left"),
                 yaxis2=dict(title="Elongation (EL) [%]", side="right", overlaying="y", showgrid=False),
                 template="plotly_white",
@@ -1144,9 +1150,4 @@ for _, g in valid.iterrows():
             )
 
             st.plotly_chart(fig, use_container_width=True)
-
-            # Chỉ số nhanh
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Dự báo TS", f"{predictions['TS']:.1f} MPa")
-            c2.metric("Dự báo YS", f"{predictions['YS']:.1f} MPa")
-            c3.metric("Dự báo EL", f"{predictions['EL']:.1f} %")
+            st.info(f"💡 Đường kẻ đậm nối từ điểm cuối cùng sang điểm đỏ thể hiện sự thay đổi cơ tính nếu cuộn tiếp theo đạt độ cứng **{target_h} HRB**.")
