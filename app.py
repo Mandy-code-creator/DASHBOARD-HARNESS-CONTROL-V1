@@ -155,7 +155,6 @@ df = df.dropna(subset=["Gauge_Range"])
 # ================================
 # SIDEBAR FILTER
 # ==============================================================================
-# ================================
 st.sidebar.header("🎛 FILTER")
 rolling = st.sidebar.radio("Rolling Type", sorted(df["Rolling_Type"].unique()))
 metal   = st.sidebar.radio("Metallic Type", sorted(df["Metallic_Type"].unique()))
@@ -189,7 +188,6 @@ with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=Fal
         - This note is **shown once** for clarity and can be collapsed.
         """
     )
-
 
 # ================================
 # GROUP CONDITION
