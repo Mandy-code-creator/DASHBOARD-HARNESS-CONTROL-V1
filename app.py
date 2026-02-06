@@ -169,25 +169,14 @@ df = df[
 view_mode = st.sidebar.radio(
     "📊 View Mode",
     [
-        "📋 Data Table",
-        "📈 Trend (LAB / LINE)",
-        "📊 Distribution (LAB + LINE)",
-        "🛠 Hardness → TS/YS/EL",
-        "📊 TS/YS/EL Trend & Distribution",
-        "🧮 Predict TS/YS/EL (Custom Hardness)",
+        "📋 Data Inspection",
+        "📉 Hardness Analysis (Trend & Dist)",
+        "🔗 Correlation: Hardness vs Mech Props",
+        "⚙️ Mech Props Analysis",
         "🔍 Lookup: Hardness Range → Actual Mech Props",
+        "🎯 Find Target Hardness (Reverse Lookup)",
     ]
 )
-
-with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
-    st.markdown(
-        """
-        - The shaded area around the predicted line represents the **95% Confidence Interval (CI)**.
-        - It means that **approximately 95% of future observations are expected to fall within this range** if the linear model is valid.
-        - Narrow CI → high precision; wide CI → higher uncertainty.
-        - This note is **shown once** for clarity and can be collapsed.
-        """
-    )
 
 # ================================
 # GROUP CONDITION
@@ -484,9 +473,6 @@ for _, g in valid.iterrows():
             # Table Expand
             with st.expander("🔹 View Detailed Data Table"):
                 st.dataframe(summary, use_container_width=True)
-# ========================================================
-# ========================================================
-# ========================================================
 # ========================================================
 # ========================================================
     # MODE: MECH PROPS ANALYSIS (FIXED DATAFRAME FORMAT ERROR)
