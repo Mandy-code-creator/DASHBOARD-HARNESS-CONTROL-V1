@@ -1067,74 +1067,79 @@ for _, g in valid.iterrows():
 # ========================================================
 # ========================================================
 # ========================================================
-    # VIEW MODE: BIỂU ĐỒ 3 ĐƯỜNG NÉT ĐẬM (FIX NAMEERROR & SCALE)
+# ========================================================
+    # VIEW MODE: BIỂU ĐỒ 3 ĐƯỜNG NỐI TIẾP (FIX NAMEERROR & HOVER)
     # ========================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown(f"#### 🚀 Mechanical Properties: Sequential Path & AI Forecast")
         
-        # 1. ĐỊNH NGHĨA LẠI train_df ĐỂ TRÁNH NAMEERROR
-        # Sử dụng sub (dữ liệu đã lọc của nhóm) và sắp xếp theo trình tự sản xuất
+        # 1. ĐỊNH NGHĨA DỮ LIỆU ĐỂ TRÁNH NAMEERROR
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         train_df = train_df.sort_values(by="COIL_NO")
         
         if len(train_df) < 5:
-            st.warning("⚠️ Cần tối thiểu 5 cuộn dữ liệu lịch sử để xây dựng mô hình.")
+            st.warning("⚠️ Cần tối thiểu 5 cuộn dữ liệu để xây dựng mô hình dự báo.")
         else:
             # 2. Input Section
             mean_h = float(train_df["Hardness_LINE"].mean())
-            input_key = f"final_fix_v11_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
+            input_key = f"final_v11_{g['Material']}_{g['Gauge_Range']}".replace(".", "_")
             
             c_in, _ = st.columns([1, 2])
             with c_in:
                 target_h = st.number_input(f"Target Hardness (HRB):", value=round(mean_h, 1), step=0.1, key=input_key)
 
-            # 3. Tính toán AI cho cả 3 đường
+            # 3. AI Prediction logic
             X_train = train_df[["Hardness_LINE"]].values
             preds = {}
             for col in ["TS", "YS", "EL"]:
                 model = LinearRegression().fit(X_train, train_df[col].values)
                 preds[col] = model.predict([[target_h]])[0]
 
-            # ... (Phần tính toán preds giữ nguyên)
+            # 4. KHỞI TẠO BIỂU ĐỒ (DÙNG MAKE_SUBPLOTS ĐỂ TRÁNH NAMEERROR)
+            from plotly.subplots import make_subplots
+            import plotly.graph_objects as go # Đảm bảo đã import go
+
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            colors = {"TS": "#004BA0", "YS": "#1B5E20", "EL": "#B71C1C"} 
+            indices = list(range(len(train_df)))
+            next_idx = len(train_df)
 
             for col in ["TS", "YS", "EL"]:
                 is_secondary = True if col == "EL" else False
                 
-                # A. Đường lịch sử: Thêm hovertemplate để hiện tên rõ ràng
+                # A. Đường lịch sử (Dùng <extra></extra> để xóa chữ 'trace')
                 fig.add_trace(go.Scatter(
                     x=indices, y=train_df[col],
                     mode='lines+markers', name=f"Lịch sử {col}",
                     line=dict(color=colors[col], width=1.5, dash='dot'),
                     marker=dict(size=4, opacity=0.4),
-                    hovertemplate=f"Cuộn thực tế<br>{col}: %{{y:.1f}}<extra></extra>"
+                    hovertemplate=f"Thực tế {col}: %{{y:.1f}}<extra></extra>"
                 ), secondary_y=is_secondary)
 
-                # B. Bước nhảy dự báo: Ẩn khỏi Legend và Hover để không bị trùng lặp
+                # B. Bước nhảy dự báo (Ẩn thông tin hover thừa)
                 fig.add_trace(go.Scatter(
                     x=[indices[-1], next_idx],
                     y=[train_df[col].iloc[-1], preds[col]],
                     mode='lines',
                     line=dict(color=colors[col], width=6),
-                    hoverinfo='skip', # Bỏ qua hover cho đường nối
+                    hoverinfo='skip', # Bỏ qua hover cho đường nối này
                     showlegend=False
                 ), secondary_y=is_secondary)
 
-                # C. Điểm đích dự báo: Đặt tên cụ thể để thay thế "trace X"
+                # C. Điểm đích dự báo (Đặt tên rõ ràng thay cho 'trace')
                 fig.add_trace(go.Scatter(
                     x=[next_idx], y=[preds[col]],
                     mode='markers+text',
-                    name=f"Dự báo {col}", # Tên này sẽ thay thế chữ 'trace'
+                    name=f"Dự báo {col}",
                     text=[f"<b>{preds[col]:.1f}</b>"],
                     textposition="top center",
-                    marker=dict(color=colors[col], size=16, symbol='diamond', line=dict(color='white', width=2)),
+                    marker=dict(color=colors[col], size=18, symbol='diamond', line=dict(color='white', width=2)),
                     hovertemplate=f"<b>MỤC TIÊU DỰ BÁO</b><br>{col}: %{{y:.1f}}<extra></extra>"
                 ), secondary_y=is_secondary)
 
-            # ... (Phần Layout giữ nguyên)
-
-            # 5. CẤU HÌNH GIAO DIỆN (LAYOUT CHỐNG LỖI)
+            # 5. CẤU HÌNH LAYOUT (CHẮC CHẮN CHẠY)
             fig.update_layout(
-                title_text="<b>MECHANICAL PROPERTIES EVOLUTION & PREDICTION</b>",
+                title_text="<b>MECHANICAL PROPERTIES EVOLUTION & AI PREDICTION</b>",
                 height=650, template="plotly_white", hovermode="x unified",
                 legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="center", x=0.5)
             )
@@ -1143,13 +1148,7 @@ for _, g in valid.iterrows():
             fig.update_yaxes(title_text="<b>Strength (MPa)</b>", secondary_y=False, gridcolor="#F0F0F0")
             fig.update_yaxes(title_text="<b>Elongation (%)</b>", secondary_y=True, showgrid=False)
 
-            # Highlight vùng dự báo
+            # Đổ bóng Forecast Zone
             fig.add_vrect(x0=indices[-1], x1=next_idx, fillcolor="#BDBDBD", opacity=0.2, layer="below", line_width=0)
 
             st.plotly_chart(fig, use_container_width=True)
-
-            # Hiển thị số liệu
-            c1, c2, c3 = st.columns(3)
-            c1.metric("Predicted TS", f"{preds['TS']:.1f} MPa")
-            c2.metric("Predicted YS", f"{preds['YS']:.1f} MPa")
-            c3.metric("Predicted EL", f"{preds['EL']:.1f} %")
