@@ -1,8 +1,9 @@
 # ================================
-# FULL STREAMLIT APP – FINAL RESTORED
-# - Restored: Metallic Coating Type Filter
-# - Restored: Prediction Chart (Observed + Predicted)
-# - Fixed: Indentation, Duplicate ID, Missing Columns, Auto-Switch Line/Lab
+# FULL STREAMLIT APP – FINAL FIXED
+# CQ00 + CQ06 MERGED
+# PRODUCT SPEC MERGED IN SAME GAUGE RANGE
+# TREND + DISTRIBUTION VIEW SEPARATE
+# GE* <88 FILTERED
 # ================================
 
 import streamlit as st
@@ -13,348 +14,677 @@ from io import StringIO, BytesIO
 import matplotlib.pyplot as plt
 
 # ================================
-# 1. PAGE CONFIG & UTILS
+# PAGE CONFIG
 # ================================
 st.set_page_config(page_title="SPC Hardness Dashboard", layout="wide")
 st.title("📊 SPC Hardness – Material / Gauge Level Analysis")
 
+# ================================
+# REFRESH
+# ================================
+if st.sidebar.button("🔄 Refresh Data"):
+    st.cache_data.clear()
+    st.rerun()
+
+# ================================
+# UTILS
+# ================================
 def fig_to_png(fig):
     buf = BytesIO()
     fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
     buf.seek(0)
     return buf
 
+def spc_stats(data, lsl, usl):
+    data = data.dropna()
+    if len(data) < 2:
+        return None
+    mean = data.mean()
+    std = data.std(ddof=1)
+    cp = (usl - lsl) / (6 * std) if std > 0 else np.nan
+    ca = (mean - (usl + lsl) / 2) / ((usl - lsl) / 2) * 100 if usl > lsl else np.nan
+    cpk = min((usl - mean), (mean - lsl)) / (3 * std) if std > 0 else np.nan
+    return mean, std, cp, ca, cpk
+
 # ================================
-# 2. LOAD DATA & GLOBAL PROCESSING
+# LOAD MAIN DATA
 # ================================
 DATA_URL = "https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
-GAUGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
 
 @st.cache_data
-def load_data():
-    r1 = requests.get(DATA_URL); r1.encoding = "utf-8"
-    df = pd.read_csv(StringIO(r1.text))
-    r2 = requests.get(GAUGE_URL); r2.encoding = "utf-8"
-    g_df = pd.read_csv(StringIO(r2.text))
-    return df, g_df
+def load_main():
+    r = requests.get(DATA_URL)
+    r.encoding = "utf-8"
+    return pd.read_csv(StringIO(r.text))
 
-raw, gauge_df = load_data()
+raw = load_main()
 
-# --- A. METALLIC TYPE EXTRACTION (RESTORED) ---
-# Tự động tìm cột chứa chữ "METALLIC" để lấy loại mạ
-metal_col = next((c for c in raw.columns if "METALLIC" in c.upper()), None)
-if metal_col:
-    raw["Metallic_Type"] = raw[metal_col]
-else:
-    raw["Metallic_Type"] = "Unknown"
+# ================================
+# METALLIC TYPE AUTO
+# ================================
+metal_col = next(c for c in raw.columns if "METALLIC" in c.upper())
+raw["Metallic_Type"] = raw[metal_col]
 
-# --- B. RENAME COLUMNS ---
+# ================================
+# RENAME COLUMNS
+# ================================
 df = raw.rename(columns={
     "PRODUCT SPECIFICATION CODE": "Product_Spec",
     "HR STEEL GRADE": "Material",
     "Claasify material": "Rolling_Type",
+    "TOP COATMASS": "Top_Coatmass",
     "ORDER GAUGE": "Order_Gauge",
     "COIL NO": "COIL_NO",
     "QUALITY_CODE": "Quality_Code",
     "Standard Hardness": "Std_Text",
     "HARDNESS 冶金": "Hardness_LAB",
     "HARDNESS 鍍鋅線 C": "Hardness_LINE",
-    "TENSILE_TENSILE": "TS", 
-    "TENSILE_YIELD": "YS", 
+    "TENSILE_YIELD": "YS",
+    "TENSILE_TENSILE": "TS",
     "TENSILE_ELONG": "EL",
-    "Standard TS min": "Standard TS min", "Standard TS max": "Standard TS max",
-    "Standard YS min": "Standard YS min", "Standard YS max": "Standard YS max",
-    "Standard EL min": "Standard EL min", "Standard EL max": "Standard EL max"
 })
 
-# --- C. FORCE NUMERIC ---
-for c in ["Hardness_LAB","Hardness_LINE","TS","YS","EL","Order_Gauge"]:
-    df[c] = pd.to_numeric(df[c], errors="coerce")
-
-# --- D. PARSE STANDARD HARDNESS ---
+# ================================
+# STANDARD HARDNESS
+# ================================
 def split_std(x):
     if isinstance(x, str) and "~" in x:
-        try:
-            lo, hi = x.split("~")
-            return float(lo), float(hi)
-        except:
-            pass
+        lo, hi = x.split("~")
+        return float(lo), float(hi)
     return np.nan, np.nan
 
 df[["Std_Min","Std_Max"]] = df["Std_Text"].apply(lambda x: pd.Series(split_std(x)))
-df["Std_Hardness_Range"] = df["Std_Min"].astype(str) + " ~ " + df["Std_Max"].astype(str)
 
-# --- E. MAPPING GAUGE RANGE ---
-gauge_df.columns = gauge_df.columns.str.strip()
-gauge_col = next(c for c in gauge_df.columns if "RANGE" in c.upper())
+# ================================
+# FORCE NUMERIC
+# ================================
+for c in ["Hardness_LAB","Hardness_LINE","YS","TS","EL","Order_Gauge"]:
+    df[c] = pd.to_numeric(df[c], errors="coerce")
 
-def parse_range_text(text):
-    nums = re.findall(r"\d+\.\d+|\d+", str(text))
-    return (float(nums[0]), float(nums[-1])) if len(nums) >= 2 else (None, None)
+# ================================
+# QUALITY GROUP (CQ00 + CQ06)
+# ================================
+df["Quality_Group"] = df["Quality_Code"].replace({
+    "CQ00": "CQ00 / CQ06",
+    "CQ06": "CQ00 / CQ06"
+})
 
-ranges = []
-for _, r in gauge_df.iterrows():
-    lo, hi = parse_range_text(r[gauge_col])
-    if lo is not None: 
-        ranges.append((lo, hi, r[gauge_col]))
-
-def map_gauge(val):
-    for lo, hi, name in ranges:
-        if lo <= val < hi: 
-            return name
-    return "Other Groups"
-
-df["Gauge_Range_Group"] = df["Order_Gauge"].apply(map_gauge)
-
-# --- F. FILTER GE* < 88 ---
+# ================================
+# LOẠI BỎ GE* <88 NGAY TỪ ĐẦU
+# ================================
 if "Quality_Code" in df.columns:
     df = df[~(
         df["Quality_Code"].astype(str).str.startswith("GE") &
         ((df["Hardness_LAB"] < 88) | (df["Hardness_LINE"] < 88))
     )]
 
-# --- G. QUALITY GROUP MERGE ---
-df["Quality_Group"] = df["Quality_Code"].replace({"CQ00": "CQ00/CQ06", "CQ06": "CQ00/CQ06"})
+# ================================
+# LOAD GAUGE RANGE TABLE
+# ================================
+GAUGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
+
+@st.cache_data
+def load_gauge():
+    return pd.read_csv(GAUGE_URL)
+
+gauge_df = load_gauge()
+gauge_df.columns = gauge_df.columns.str.strip()
+gauge_col = next(c for c in gauge_df.columns if "RANGE" in c.upper())
+
+def parse_range(text):
+    nums = re.findall(r"\d+\.\d+|\d+", str(text))
+    if len(nums) < 2:
+        return None, None
+    return float(nums[0]), float(nums[-1])
+
+ranges = []
+for _, r in gauge_df.iterrows():
+    lo, hi = parse_range(r[gauge_col])
+    if lo is not None:
+        ranges.append((lo, hi, r[gauge_col]))
+
+def map_gauge(val):
+    for lo, hi, name in ranges:
+        if lo <= val < hi:
+            return name
+    return None
+
+df["Gauge_Range"] = df["Order_Gauge"].apply(map_gauge)
+df = df.dropna(subset=["Gauge_Range"])
 
 # ================================
-# 3. SIDEBAR & FILTERS
+# SIDEBAR FILTER
 # ================================
 st.sidebar.header("🎛 FILTER")
+rolling = st.sidebar.radio("Rolling Type", sorted(df["Rolling_Type"].unique()))
+metal   = st.sidebar.radio("Metallic Type", sorted(df["Metallic_Type"].unique()))
+qgroup  = st.sidebar.radio("Quality Group", sorted(df["Quality_Group"].unique()))
 
-# 1. Rolling Type
-rolling = st.sidebar.radio("Rolling Type", sorted(df["Rolling_Type"].dropna().unique()))
-
-# 2. Metallic Type (RESTORED)
-metal_opts = sorted(df["Metallic_Type"].dropna().unique())
-metal = st.sidebar.radio("Metallic Type", metal_opts)
-
-# 3. Quality Group
-valid_qgroups = sorted(df["Quality_Group"].dropna().unique())
-qgroup = st.sidebar.selectbox("Quality Group", valid_qgroups)
-
-# Apply Filters
-df_filtered = df[
-    (df["Rolling_Type"] == rolling) & 
+df = df[
+    (df["Rolling_Type"] == rolling) &
     (df["Metallic_Type"] == metal) &
     (df["Quality_Group"] == qgroup)
 ]
 
-view_mode = st.sidebar.radio("📊 View Mode", [
-    "📋 Data Table", 
-    "📈 Trend (LAB / LINE)", 
-    "📊 Distribution (LAB + LINE)",
-    "🛠 Hardness → TS/YS/EL", 
-    "📊 TS/YS/EL Trend & Distribution",
-    "🧮 Predict TS/YS/EL (Custom Hardness)", 
-    "📊 Hardness → Mechanical Range"
-])
+view_mode = st.sidebar.radio(
+    "📊 View Mode",
+    [
+        "📋 Data Table",
+        "📈 Trend (LAB / LINE)",
+        "📊 Distribution (LAB + LINE)",
+        "🛠 Hardness → TS/YS/EL",
+        "📊 TS/YS/EL Trend & Distribution",
+        "🧮 Predict TS/YS/EL (Custom Hardness)",
+    ]
+)
+
+with st.sidebar.expander("💡 About 95% Confidence Interval (CI)", expanded=False):
+    st.markdown(
+        """
+        - The shaded area around the predicted line represents the **95% Confidence Interval (CI)**.
+        - It means that **approximately 95% of future observations are expected to fall within this range** if the linear model is valid.
+        - Narrow CI → high precision; wide CI → higher uncertainty.
+        - This note is **shown once** for clarity and can be collapsed.
+        """
+    )
 
 # ================================
-# 4. MAIN LOOP
+# GROUP CONDITION
 # ================================
-# Thêm Metallic_Type vào Group Cols
-GROUP_COLS = ["Rolling_Type", "Metallic_Type", "Gauge_Range_Group", "Material"]
-
-valid_groups = df_filtered.groupby(GROUP_COLS).size().reset_index(name='N')
-valid_groups = valid_groups[valid_groups['N'] >= 5] 
-
-if valid_groups.empty:
-    st.warning("⚠️ Không tìm thấy nhóm dữ liệu nào thỏa mãn điều kiện lọc (N >= 5).")
+GROUP_COLS = ["Rolling_Type","Metallic_Type","Quality_Group","Gauge_Range","Material"]
+cnt = df.groupby(GROUP_COLS).agg(N_Coils=("COIL_NO","nunique")).reset_index()
+valid = cnt[cnt["N_Coils"] >= 30]
+if valid.empty:
+    st.warning("⚠️ No group with ≥30 coils")
     st.stop()
 
-for idx, g in valid_groups.iterrows():
-    # Unique ID
-    uid = f"{g['Material']}_{g['Gauge_Range_Group']}_{idx}".replace(".", "_").replace(" ", "")
-    
-    sub = df_filtered[
-        (df_filtered["Rolling_Type"] == g["Rolling_Type"]) &
-        (df_filtered["Metallic_Type"] == g["Metallic_Type"]) &
-        (df_filtered["Gauge_Range_Group"] == g["Gauge_Range_Group"]) &
-        (df_filtered["Material"] == g["Material"])
+# ================================
+# MAIN LOOP
+# ================================
+for _, g in valid.iterrows():
+    sub = df[
+        (df["Rolling_Type"] == g["Rolling_Type"]) &
+        (df["Metallic_Type"] == g["Metallic_Type"]) &
+        (df["Quality_Group"] == g["Quality_Group"]) &
+        (df["Gauge_Range"] == g["Gauge_Range"]) &
+        (df["Material"] == g["Material"])
     ].sort_values("COIL_NO")
-    
-    lo = sub["Std_Min"].iloc[0] if "Std_Min" in sub.columns else 0
-    hi = sub["Std_Max"].iloc[0] if "Std_Max" in sub.columns else 0
-    specs = ", ".join(sorted(sub["Product_Spec"].dropna().unique()))
-    
-    st.markdown("---")
+
+    lo, hi = sub.iloc[0][["Std_Min","Std_Max"]]
+    sub["NG_LAB"]  = (sub["Hardness_LAB"] < lo) | (sub["Hardness_LAB"] > hi)
+    sub["NG_LINE"] = (sub["Hardness_LINE"] < lo) | (sub["Hardness_LINE"] > hi)
+    sub["NG"] = sub["NG_LAB"] | sub["NG_LINE"]
+    qa = "FAIL" if sub["NG"].any() else "PASS"
+    specs = ", ".join(sorted(sub["Product_Spec"].unique()))
+
     st.markdown(
         f"""
-### 🧱 Quality Group: {qgroup} | Metal: {metal}
+### 🧱 Quality Group: {g['Quality_Group']}
 **Material:** {g['Material']}  
-**Gauge Range:** {g['Gauge_Range_Group']}  
+**Gauge Range:** {g['Gauge_Range']}  
 **Product Specs:** {specs}  
-**Coils:** {len(sub)} | **Hardness Limit:** {lo:.1f} ~ {hi:.1f}
+**Coils:** {sub['COIL_NO'].nunique()} | **QA:** 🧪 **{qa}** **Hardness Limit (HRB):** {lo:.1f} ~ {hi:.1f}
 """
     )
 
-    # ==========================
-    # VIEW 1: DATA TABLE
-    # ==========================
+    # ================================
+    # VIEW MODE SWITCH
+    # ================================
     if view_mode == "📋 Data Table":
         st.dataframe(sub, use_container_width=True)
 
-    # ==========================
-    # VIEW 2: TREND LAB/LINE
-    # ==========================
     elif view_mode == "📈 Trend (LAB / LINE)":
-        fig, ax = plt.subplots(figsize=(10, 4))
-        x = np.arange(len(sub))
-        ax.plot(x, sub["Hardness_LAB"].values, marker="o", label="LAB")
-        ax.plot(x, sub["Hardness_LINE"].values, marker="s", label="LINE")
-        if lo > 0: ax.axhline(lo, color='red', linestyle='--', label=f'Min {lo}')
-        if hi > 0: ax.axhline(hi, color='red', linestyle='--', label=f'Max {hi}')
-        ax.set_title("Hardness Trend")
-        ax.legend(); ax.grid(alpha=0.3)
+        x = np.arange(1, len(sub)+1)
+        fig, ax = plt.subplots(figsize=(8,4))
+        ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB")
+        ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE")
+        ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
+        ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
+        ax.set_title("Hardness Trend by Coil Sequence", weight="bold")
+        ax.set_xlabel("Coil Sequence")
+        ax.set_ylabel("Hardness (HRB)")
+        ax.grid(alpha=0.25)
+        ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5), frameon=False)
+        plt.tight_layout()
         st.pyplot(fig)
+        buf = fig_to_png(fig)
+        st.download_button(
+            label="📥 Download Trend Chart",
+            data=buf,
+            file_name=f"trend_{g['Material']}_{g['Gauge_Range']}.png",
+            mime="image/png"
+        )
 
-    # ==========================
-    # VIEW 3: DISTRIBUTION
-    # ==========================
     elif view_mode == "📊 Distribution (LAB + LINE)":
-        fig, ax = plt.subplots(figsize=(10, 4))
-        ax.hist(sub["Hardness_LAB"].dropna(), bins=15, alpha=0.5, label="LAB", density=True)
-        ax.hist(sub["Hardness_LINE"].dropna(), bins=15, alpha=0.5, label="LINE", density=True)
-        ax.set_title("Hardness Distribution")
-        ax.legend(); ax.grid(alpha=0.3)
-        st.pyplot(fig)
+        lab = sub["Hardness_LAB"].dropna()
+        line = sub["Hardness_LINE"].dropna()
+        if len(lab) >= 10 and len(line) >= 10:
+            mean_lab, std_lab = lab.mean(), lab.std(ddof=1)
+            mean_line, std_line = line.mean(), line.std(ddof=1)
+            x_min = min(mean_lab - 3*std_lab, mean_line - 3*std_line)
+            x_max = max(mean_lab + 3*std_lab, mean_line + 3*std_line)
+            bins = np.linspace(x_min, x_max, 25)
+            fig, ax = plt.subplots(figsize=(8,4.5))
+            ax.hist(lab, bins=bins, density=True, alpha=0.4, color="#1f77b4", edgecolor="black", label="LAB")
+            ax.hist(line, bins=bins, density=True, alpha=0.4, color="#ff7f0e", edgecolor="black", label="LINE")
+            xs = np.linspace(x_min, x_max, 400)
+            ys_lab = (1/(std_lab*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_lab)/std_lab)**2)
+            ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
+            ax.plot(xs, ys_lab, linewidth=2.5, label="LAB Normal (±3σ)", color="#1f77b4")
+            ax.plot(xs, ys_line, linewidth=2.5, linestyle="--", label="LINE Normal (±3σ)", color="#ff7f0e")
+            ax.axvline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
+            ax.axvline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
+            ax.axvline(mean_lab, linestyle=":", linewidth=2, color="#0b3d91", label=f"LAB Mean {mean_lab:.2f}")
+            ax.axvline(mean_line, linestyle=":", linewidth=2, color="#b25e00", label=f"LINE Mean {mean_line:.2f}")
+            note = (
+                f"LAB:\n  N={len(lab)}  Mean={mean_lab:.2f}  Std={std_lab:.2f}\n"
+                f"  Ca={abs(mean_lab-(hi+lo)/2)/((hi-lo)/2):.2f}  Cp={(hi-lo)/(6*std_lab):.2f}  Cpk={min((hi-mean_lab)/(3*std_lab),(mean_lab-lo)/(3*std_lab)):.2f}\n\n"
+                f"LINE:\n  N={len(line)}  Mean={mean_line:.2f}  Std={std_line:.2f}\n"
+                f"  Ca={abs(mean_line-(hi+lo)/2)/((hi-lo)/2):.2f}  Cp={(hi-lo)/(6*std_line):.2f}  Cpk={min((hi-mean_line)/(3*std_line),(mean_line-lo)/(3*std_line)):.2f}"
+            )
+            ax.text(1.02, 0.4, note, transform=ax.transAxes, va="center",
+                    bbox=dict(boxstyle="round,pad=0.4", facecolor="white", alpha=0.2, edgecolor="gray"))
+            ax.set_title("Hardness Distribution – LAB vs LINE (3σ)", weight="bold")
+            ax.set_xlabel("Hardness (HRB)")
+            ax.set_ylabel("Density")
+            ax.grid(alpha=0.3)
+            ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.85), frameon=False)
+            plt.tight_layout()
+            st.pyplot(fig)
+            buf = fig_to_png(fig)
+            st.download_button(
+               label="📥 Download Distribution Chart",
+               data=buf,
+               file_name=f"distribution_{g['Material']}_{g['Gauge_Range']}.png",
+               mime="image/png"
+            )
 
-    # ==========================
-    # VIEW 4: HARDNESS -> TS/YS/EL
-    # ==========================
     elif view_mode == "🛠 Hardness → TS/YS/EL":
+
+        # ================================
+        # 1️⃣ Chuẩn bị dữ liệu
+        # ================================
+        sub = sub.dropna(subset=["Hardness_LAB","Hardness_LINE","TS","YS","EL"])
+        
+        # Loại bỏ hoàn toàn coil GE* <88
+        if "Quality_Code" in sub.columns:
+            sub = sub[~(
+                sub["Quality_Code"].astype(str).str.startswith("GE") &
+                ((sub["Hardness_LAB"] < 88) | (sub["Hardness_LINE"] < 88))
+            )]
+        
+        # ================================
+        # 2️⃣ Binning Hardness (chi tiết 62–88)
+        # ================================
         bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
         labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
         sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
         
-        summary = sub.groupby("HRB_bin", observed=True).agg(
-            TS=("TS","mean"), YS=("YS","mean"), EL=("EL","mean"), Count=("COIL_NO","count")
-        ).dropna()
+        # ================================
+        # 3️⃣ Lấy giới hạn cơ tính
+        # ================================
+        mech_cols = ["Standard TS min","Standard TS max",
+                     "Standard YS min","Standard YS max",
+                     "Standard EL min","Standard EL max"]
+        sub = sub.dropna(subset=mech_cols)
         
-        if summary.empty:
-            st.info("Không đủ dữ liệu để vẽ.")
-            continue
-
-        fig, ax = plt.subplots(figsize=(12, 5))
-        x_plot = np.arange(len(summary))
+        # ================================
+        # 4️⃣ Summary thống kê
+        # ================================
+        summary = (sub.groupby("HRB_bin").agg(
+            N_coils=("COIL_NO","count"),
+            TS_mean=("TS","mean"), TS_min=("TS","min"), TS_max=("TS","max"),
+            YS_mean=("YS","mean"), YS_min=("YS","min"), YS_max=("YS","max"),
+            EL_mean=("EL","mean"), EL_min=("EL","min"), EL_max=("EL","max"),
+            EL_spec_min=("Standard EL min","min")
+        ).reset_index())
+        summary = summary[summary["N_coils"]>0]
         
-        ax.plot(x_plot, summary["TS"], marker="o", color="#1f77b4", label="TS")
-        ax.plot(x_plot, summary["YS"], marker="s", color="#2ca02c", label="YS")
+        # ================================
+        # 5️⃣ Vẽ biểu đồ
+        # ================================
+        x = np.arange(len(summary))
+        fig, ax = plt.subplots(figsize=(16,6))
         
-        for i, val in enumerate(summary["TS"]):
-            ax.annotate(f"{val:.1f}", (i, val), xytext=(0, 10), textcoords="offset points", ha='center', va='bottom', color="#1f77b4", fontweight='bold')
-        for i, val in enumerate(summary["YS"]):
-            ax.annotate(f"{val:.1f}", (i, val), xytext=(0, -15), textcoords="offset points", ha='center', va='top', color="#2ca02c", fontweight='bold')
-            
-        ax2 = ax.twinx()
-        ax2.plot(x_plot, summary["EL"], marker="^", color="#ff7f0e", label="EL", linestyle='--')
+        # TS
+        ax.plot(x, summary["TS_mean"], marker="o", linewidth=2, markersize=8, label="TS Mean")
+        ax.fill_between(x, summary["TS_min"], summary["TS_max"], alpha=0.15)
         
-        ax.set_xticks(x_plot)
-        ax.set_xticklabels(summary.index)
-        ax.grid(alpha=0.3)
-        ax.legend(loc='upper left'); ax2.legend(loc='upper right')
+        # YS
+        ax.plot(x, summary["YS_mean"], marker="s", linewidth=2, markersize=8, label="YS Mean")
+        ax.fill_between(x, summary["YS_min"], summary["YS_max"], alpha=0.15)
+        
+        # EL
+        ax.plot(x, summary["EL_mean"], marker="^", linewidth=2, markersize=8, label="EL Mean (%)")
+        ax.fill_between(x, summary["EL_min"], summary["EL_max"], alpha=0.15)
+        
+        # ================================
+        # 6️⃣ Annotation (EL < spec → đỏ + ❌)
+        # ================================
+        for idx, row in enumerate(summary.itertuples()):
+            # TS
+            ax.annotate(f"{row.TS_mean:.1f}", (x[idx], row.TS_mean),
+                        xytext=(0,12), textcoords="offset points",
+                        ha="center", va="bottom", fontsize=10, fontweight="bold")
+            # YS
+            ax.annotate(f"{row.YS_mean:.1f}", (x[idx], row.YS_mean),
+                        xytext=(0,-18), textcoords="offset points",
+                        ha="center", va="top", fontsize=10, fontweight="bold")
+            # EL
+            el_fail = row.EL_mean < row.EL_spec_min
+            ax.annotate(f"{row.EL_mean:.1f}%" + (" ❌" if el_fail else ""),
+                        (x[idx], row.EL_mean),
+                        xytext=(0,20), textcoords="offset points",
+                        ha="center", va="bottom", fontsize=10, fontweight="bold",
+                        color="red" if el_fail else None)
+        
+        # ================================
+        # 7️⃣ Trục & style
+        # ================================
+        ax.set_xticks(x)
+        ax.set_xticklabels(summary["HRB_bin"].astype(str), fontweight="bold", fontsize=12)
+        ax.set_xlabel("Hardness Range (HRB)", fontsize=12, fontweight="bold")
+        ax.set_ylabel("Mechanical Properties (MPa)", fontsize=12, fontweight="bold")
+        ax.set_title("Correlation: Hardness vs TS/YS/EL", fontsize=14, fontweight="bold")
+        
+        # Đường phân cách FULL HARD
+        if "88-92" in summary["HRB_bin"].astype(str).values:
+            idx88 = summary.index[summary["HRB_bin"].astype(str)=="88-92"][0]
+            ax.axvline(idx88-0.5, linestyle="--", alpha=0.5)
+        
+        ax.legend(loc='upper left', bbox_to_anchor=(1.02,1), fontsize=10)
+        ax.grid(True, linestyle='--', alpha=0.5)
+        plt.tight_layout()
         st.pyplot(fig)
+        
+        # ================================
+        # 8️⃣ Bảng dữ liệu
+        # ================================
+        with st.expander("🔹 Mechanical Properties per Hardness Range", expanded=False):
+            st.dataframe(summary.style.format("{:.1f}", subset=summary.columns[2:]),
+                         use_container_width=True, height=300)
+        
+        # ================================
+        # 9️⃣ Download
+        # ================================
+        buf = fig_to_png(fig)
+        st.download_button("📥 Download Hardness → TS/YS/EL Chart",
+                           data=buf,
+                           file_name=f"Hardness_TS_YS_EL_{g['Material']}_{g['Gauge_Range']}.png",
+                           mime="image/png")
+        
+        # ================================
+        # 🔹 Quick Conclusion per HRB bin (mới)
+        # ================================
+        st.markdown("### 📌 Quick Conclusion per HRB bin")
+        
+        qc_list = []
+        for hrb_bin, group in sub.groupby("HRB_bin"):
+            if group.empty:
+                continue
+            TS_min = group["TS"].min()
+            TS_max = group["TS"].max()
+            YS_min = group["YS"].min()
+            YS_max = group["YS"].max()
+            EL_min = group["EL"].min()
+            EL_max = group["EL"].max()
+            
+            TS_flag = "⚠️" if (TS_min < group["Standard TS min"].min() or TS_max > group["Standard TS max"].max()) else "✅"
+            YS_flag = "⚠️" if (YS_min < group["Standard YS min"].min() or YS_max > group["Standard YS max"].max()) else "✅"
+            EL_flag = "⚠️" if (EL_min < group["Standard EL min"].min() or EL_max > group["Standard EL max"].max()) else "✅"
+            
+            qc_list.append(f"**{hrb_bin}**: TS={TS_flag} ({TS_min:.1f}-{TS_max:.1f}), "
+                           f"YS={YS_flag} ({YS_min:.1f}-{YS_max:.1f}), "
+                           f"EL={EL_flag} ({EL_min:.1f}-{EL_max:.1f})")
+        
+        for line in qc_list:
+            st.markdown(line)
 
-    # ==========================
-    # VIEW 5: TS/YS/EL TREND
-    # ==========================
     elif view_mode == "📊 TS/YS/EL Trend & Distribution":
-        st.write("##### TS/YS/EL Trend View")
-        # Giữ nguyên logic cũ: Check NG và vẽ Trend
-        # (Ở đây rút gọn để tập trung vào các lỗi chính, nhưng vẫn hiển thị bảng tóm tắt)
-        st.dataframe(sub[["COIL_NO", "TS", "YS", "EL"]].describe(), use_container_width=True)
+        import re, uuid
+        
+        # ===== 1️⃣ Binning Hardness
+        bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
+        labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
+        sub["HRB_bin"] = pd.cut(sub["Hardness_LAB"], bins=bins, labels=labels, right=False)
+        
+        mech_cols = ["Standard TS min","Standard TS max",
+                     "Standard YS min","Standard YS max",
+                     "Standard EL min","Standard EL max"]
+        sub = sub.dropna(subset=mech_cols)
+        
+        hrb_bins = [b for b in labels if b in sub["HRB_bin"].unique()]
+        
+        # ===== 2️⃣ Safe NG check
+        def check_ng(series, lsl, usl):
+            series = series.fillna(np.nan)
+            mask = pd.Series(False, index=series.index)
+            if pd.notna(lsl) and pd.notna(usl):
+                mask = (series < lsl) | (series > usl)
+            elif pd.notna(lsl):
+                mask = series < lsl
+            elif pd.notna(usl):
+                mask = series > usl
+            return mask
+        
+        # ===== 3️⃣ Loop HRB bin
+        for i, hrb in enumerate(hrb_bins):
+            df_bin = sub[sub["HRB_bin"] == hrb].sort_values("COIL_NO")
+            N = len(df_bin)
+            if N == 0:
+                continue
+        
+            # Giới hạn cơ tính
+            TS_LSL, TS_USL = df_bin["Standard TS min"].iloc[0], df_bin["Standard TS max"].iloc[0]
+            YS_LSL, YS_USL = df_bin["Standard YS min"].iloc[0], df_bin["Standard YS max"].iloc[0]
+            EL_LSL, EL_USL = df_bin["Standard EL min"].iloc[0], df_bin["Standard EL max"].iloc[0]
+        
+            # Tạo cột NG safe
+            df_bin["NG_TS"] = check_ng(df_bin["TS"], TS_LSL, TS_USL)
+            df_bin["NG_YS"] = check_ng(df_bin["YS"], YS_LSL, YS_USL)
+            df_bin["NG_EL"] = check_ng(df_bin["EL"], EL_LSL, EL_USL)
+        
+            st.markdown(f"### HRB bin: {hrb} | N_coils={N}")
+        
+            # ===== 4️⃣ Trend Chart
+            fig, ax = plt.subplots(figsize=(14,4))
+            x = np.arange(1, N+1)
+            for col, color, marker in [("TS","#1f77b4","o"), ("YS","#2ca02c","s"), ("EL","#ff7f0e","^")]:
+                ax.plot(x, df_bin[col], marker=marker, label=col, color=color)
+                ax.fill_between(x, df_bin[col].min(), df_bin[col].max(), color=color, alpha=0.1)
+                ng_idx = df_bin.index[df_bin[f"NG_{col}"]].to_list()
+                ax.scatter([x[j] for j in range(N) if df_bin.index[j] in ng_idx],
+                           df_bin.loc[ng_idx, col], color="red", s=50, zorder=5)
+        
+            # Spec lines
+            for val, col in [(TS_LSL,"#1f77b4"),(TS_USL,"#1f77b4"),
+                             (YS_LSL,"#2ca02c"),(YS_USL,"#2ca02c"),
+                             (EL_LSL,"#ff7f0e"),(EL_USL,"#ff7f0e")]:
+                if pd.notna(val):
+                    ax.axhline(val, color=col, linestyle="--", alpha=0.5)
+        
+            ax.set_xlabel("Coil Sequence")
+            ax.set_ylabel("Mechanical Properties (MPa / %)")
+            ax.set_title(f"Trend: TS/YS/EL for HRB {hrb}")
+            ax.grid(True, linestyle="--", alpha=0.5)
+            ax.legend(loc="best")
+            plt.tight_layout()
+            st.pyplot(fig)
+        
+            safe_hrb = re.sub(r"[<≥]", "", str(hrb))
+            buf_trend = fig_to_png(fig)
+            st.download_button(label=f"📥 Download Trend HRB {hrb}", data=buf_trend,
+                               file_name=f"trend_{safe_hrb}_{i}.png", mime="image/png",
+                               key=str(uuid.uuid4()))
+        
+            # ===== 5️⃣ Distribution Chart
+            fig, ax = plt.subplots(figsize=(14,4))
+            for col, color in [("TS","#1f77b4"),("YS","#2ca02c"),("EL","#ff7f0e")]:
+                series = df_bin[col].dropna()
+                ax.hist(series, bins=10, alpha=0.4, color=color, edgecolor="black", label=col)
+                # Mean ± Std
+                mean, std = series.mean(), series.std(ddof=1)
+                ax.axvline(mean, color=color, linestyle=":", label=f"{col} Mean {mean:.1f} ±{std:.1f}")
+            ax.set_title(f"Distribution: TS/YS/EL for HRB {hrb}")
+            ax.set_xlabel("Value"); ax.set_ylabel("Count"); ax.grid(alpha=0.3, linestyle="--"); ax.legend()
+            plt.tight_layout()
+            st.pyplot(fig)
+        
+            buf_dist = fig_to_png(fig)
+            st.download_button(label=f"📥 Download Distribution HRB {hrb}", data=buf_dist,
+                               file_name=f"dist_{safe_hrb}_{i}.png", mime="image/png",
+                               key=str(uuid.uuid4()))
+        
+            # ===== 6️⃣ Mechanical Properties Table
+            summary_bin = df_bin[["COIL_NO","TS","YS","EL","HRB_bin","NG_TS","NG_YS","NG_EL"]].copy()
+            with st.expander(f"📋 Mechanical Properties Table (HRB {hrb})", expanded=False):
+                st.dataframe(summary_bin.style.format("{:.1f}", subset=["TS","YS","EL"]),
+                             use_container_width=True)
+        
+            # ===== Quick Conclusion Safe & Gọn (HRB limit 1 lần)
+            if "Std_Min" in sub.columns and "Std_Max" in sub.columns:
+                lsl, usl = sub["Std_Min"].iloc[0], sub["Std_Max"].iloc[0]
+                observed_min, observed_max = sub["Hardness_LAB"].min(), sub["Hardness_LAB"].max()
+                
+                conclusion = []
+                for prop, ng_col in [("TS","NG_TS"), ("YS","NG_YS"), ("EL","NG_EL")]:
+                    if prop not in sub.columns:
+                        continue
+                    n_ng = sub[ng_col].fillna(False).sum() if ng_col in sub.columns else 0
+                    N = len(sub)
+                    val_min, val_max = sub[prop].min(), sub[prop].max()
+                    status = "✅ OK" if n_ng==0 else f"⚠️ {n_ng}/{N} out of spec"
+                    conclusion.append(f"{prop}: {status} | {val_min:.1f}-{val_max:.1f}")
+            
+                st.markdown(
+                    f"**📌 Quick Conclusion:** HRB limit={lsl:.1f}-{usl:.1f} | observed HRB={observed_min:.1f}-{observed_max:.1f} | " +
+                    " | ".join(conclusion)
+                )
 
-    # ==========================
-    # VIEW 6: PREDICT (RESTORED CHART & AUTO-SWITCH)
-    # ==========================
     elif view_mode == "🧮 Predict TS/YS/EL (Custom Hardness)":
-        st.write("##### 🔮 Dự báo cơ tính")
-
-        # 1. AUTO-SWITCH LOGIC
-        count_line = sub["Hardness_LINE"].count()
-        count_lab = sub["Hardness_LAB"].count()
         
-        if count_line >= 5:
-            x_col = "Hardness_LINE"; x_name = "LINE Hardness"
-        elif count_lab >= 5:
-            x_col = "Hardness_LAB"; x_name = "LAB Hardness"
-            st.info(f"💡 Dữ liệu Line bị thiếu. Đang dùng **{x_name}** để dự báo.")
-        else:
-            st.warning("⚠️ Không đủ dữ liệu độ cứng để dự báo.")
-            continue
-
-        # 2. Input
-        pred_type = st.radio("Input Type", ["Single", "Range"], key=f"rad_{uid}", horizontal=True)
+        st.markdown("## 🧮 Predict Mechanical Properties for Custom Hardness")
         
-        d_min = float(sub[x_col].min()) if not pd.isna(sub[x_col].min()) else 80.0
-        d_max = float(sub[x_col].max()) if not pd.isna(sub[x_col].max()) else 100.0
-
-        if pred_type == "Single":
-            val = st.number_input(f"Nhập {x_name}", value=d_min, key=f"num_{uid}")
-            hrb_values = [val]
-        else:
-            c1, c2 = st.columns(2)
-            with c1: h_min = st.number_input(f"Min", value=d_min, key=f"min_{uid}")
-            with c2: h_max = st.number_input(f"Max", value=d_max, key=f"max_{uid}")
-            hrb_values = list(np.arange(h_min, h_max + 0.1, 1.0))
-
-        # 3. RUN BUTTON & CHART (RESTORED)
-        if st.button("🚀 Chạy Dự Báo", key=f"btn_{uid}"):
-            sub_fit = sub.dropna(subset=[x_col, "TS", "YS", "EL"])
-            if len(sub_fit) < 3:
-                st.error("Không đủ điểm dữ liệu để hồi quy.")
-            else:
-                pred_res = {}
-                for prop in ["TS","YS","EL"]:
-                    a, b = np.polyfit(sub_fit[x_col], sub_fit[prop], 1)
-                    pred_res[prop] = a * np.array(hrb_values) + b
-                
-                # --- BIỂU ĐỒ DỰ BÁO (RESTORED) ---
-                fig, ax = plt.subplots(figsize=(12, 5))
-                coils_idx = np.arange(len(sub_fit))
-                
-                for prop, col, mark, unit in [("TS","#1f77b4","o","MPa"), ("YS","#2ca02c","s","MPa"), ("EL","#ff7f0e","^","%")]:
-                    # Vẽ dữ liệu quan sát (Observed)
-                    obs_vals = sub_fit[prop].values
-                    ax.plot(coils_idx, obs_vals, marker=mark, color=col, alpha=0.5, label=f"{prop} Obs")
-                    
-                    # Vẽ điểm dự báo (Predicted)
-                    pred_vals = pred_res[prop]
-                    x_pred = coils_idx[-1] + np.arange(1, len(pred_vals)+1)
-                    
-                    # Marker dự báo to hơn và màu đỏ
-                    ax.scatter(x_pred, pred_vals, color="red", marker="X", s=80, zorder=10)
-                    
-                    # Nối dây ảo từ điểm cuối cùng đến điểm dự báo
-                    for i in range(len(pred_vals)):
-                        ax.plot([coils_idx[-1], x_pred[i]], [obs_vals[-1], pred_vals[i]], 'r:', alpha=0.5)
-
-                ax.set_title(f"Predicted TS/YS/EL based on {x_name}")
-                ax.set_xlabel("Coil Sequence -> Prediction")
-                ax.set_ylabel("Mechanical Properties")
-                ax.legend(bbox_to_anchor=(1.01, 1), loc='upper left')
-                ax.grid(True, linestyle="--", alpha=0.3)
-                st.pyplot(fig)
-
-                # --- BẢNG KẾT QUẢ ---
-                res_df = pd.DataFrame({f"{x_name}": hrb_values})
-                for prop in ["TS","YS","EL"]: res_df[prop] = pred_res[prop]
-                st.dataframe(res_df.style.format("{:.1f}"), use_container_width=True)
-
-    # ==========================
-    # VIEW 7: SUMMARY
-    # ==========================
-    elif view_mode == "📊 Hardness → Mechanical Range":
-        st.write("##### 📋 Hard Bin Mapping Summary")
+        # ===============================
+        # Prepare data
+        # ===============================
+        sub_fit = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+        N = len(sub_fit)
         
-        summary_range = sub.groupby(["Product_Spec", "Gauge_Range_Group", "Std_Hardness_Range"]).agg(
-            N=("COIL_NO", "count"),
-            TS_min=("TS", "min"), TS_max=("TS", "max"), TS_avg=("TS", "mean"),
-            YS_min=("YS", "min"), YS_max=("YS", "max"), YS_avg=("YS", "mean"),
-            EL_min=("EL", "min"), EL_max=("EL", "max"), EL_avg=("EL", "mean")
-        ).reset_index()
+        if N < 5:
+            st.warning(f"⚠️ Not enough data for prediction (N={N})")
+            st.stop()
         
-        st.dataframe(
-            summary_range.style.format("{:.1f}", subset=summary_range.columns[4:]), 
-            use_container_width=True
+        hrb_min_data = float(sub_fit["Hardness_LINE"].min())
+        hrb_max_data = float(sub_fit["Hardness_LINE"].max())
+        
+        # ===============================
+        # INPUT AREA (NO FORM – SAFE)
+        # ===============================
+        pred_type = st.radio(
+            "Select input type for prediction:",
+            ["Single Value", "Range"],
+            index=0,
+            key="pred_type_custom"
         )
+        
+        if pred_type == "Single Value":
+            hrb_values = [
+                st.number_input(
+                    "Enter desired LINE Hardness (HRB):",
+                    value=round((hrb_min_data + hrb_max_data) / 2, 1),
+                    step=0.1,
+                    key="hrb_single"
+                )
+            ]
+        else:
+            hrb_min = st.number_input(
+                "Minimum LINE Hardness (HRB):",
+                value=round(hrb_min_data, 1),
+                step=0.1,
+                key="hrb_min"
+            )
+            hrb_max = st.number_input(
+                "Maximum LINE Hardness (HRB):",
+                value=round(hrb_max_data, 1),
+                step=0.1,
+                key="hrb_max"
+            )
+            step = st.number_input(
+                "Step:",
+                value=1.0,
+                step=0.1,
+                key="hrb_step"
+            )
+            
+            hrb_values = list(np.arange(hrb_min, hrb_max + 0.001, step))
+        
+        # ===============================
+        # PREDICT BUTTON (ĐÚNG CHỖ)
+        # ===============================
+        if st.button("🔮 Predict", use_container_width=True):
+            
+            pred_values = {}
+            
+            for prop in ["TS", "YS", "EL"]:
+                a, b = np.polyfit(
+                    sub_fit["Hardness_LINE"].values,
+                    sub_fit[prop].values,
+                    1
+                )
+                pred_values[prop] = a * np.array(hrb_values) + b
+            
+            # ===============================
+            # Plot
+            # ===============================
+            fig, ax = plt.subplots(figsize=(14, 5))
+            coils = np.arange(1, N + 1)
+            
+            for prop, color, marker, unit in [
+                ("TS", "#1f77b4", "o", "MPa"),
+                ("YS", "#2ca02c", "s", "MPa"),
+                ("EL", "#ff7f0e", "^", "%")
+            ]:
+                obs = sub_fit[prop].values
+                ax.plot(coils, obs, marker=marker, color=color, label=f"{prop} Observed")
+                
+                pred = pred_values[prop]
+                pred_x = coils[-1] + np.arange(1, len(pred) + 1)
+                
+                ax.scatter(
+                    pred_x, pred,
+                    color="red", s=100, marker="X",
+                    label=f"{prop} Predicted ({unit})"
+                )
+                
+                for i in range(len(pred)):
+                    ax.plot(
+                        [coils[-1], pred_x[i]],
+                        [obs[-1], pred[i]],
+                        linestyle=":",
+                        color="red"
+                    )
+            
+            ax.set_xlabel("Coil Sequence")
+            ax.set_ylabel("Mechanical Properties")
+            ax.set_title("Observed vs Predicted TS / YS / EL")
+            ax.grid(True, linestyle="--", alpha=0.3)
+            ax.legend(loc="center left", bbox_to_anchor=(1.02, 0.5))
+            st.pyplot(fig)
+            
+            # ===============================
+            # Table
+            # ===============================
+            pred_table = pd.DataFrame({"HRB": hrb_values})
+            for prop in ["TS", "YS", "EL"]:
+                pred_table[prop] = pred_values[prop]
+            
+            with st.expander("📋 Predicted Mechanical Properties", expanded=True):
+                st.dataframe(
+                    pred_table.style.format({
+                        "TS": "{:.1f}",
+                        "YS": "{:.1f}",
+                        "EL": "{:.1f}"
+                    }),
+                    use_container_width=True
+                )
