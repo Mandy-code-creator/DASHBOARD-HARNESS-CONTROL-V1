@@ -469,7 +469,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         
         # Hiển thị Rule đang áp dụng
         if "Rule" in rule_used:
-            st.success(f"✅ Applied: **{rule_used}** (Control: {lo:.0f}~{hi:.0f} | Lab: {l_lo:.0f}~{l_hi:.0f})")
+            st.success(f"✅ Applied: **{rule_used}** (Control: {lo:.0f}-{hi:.0f} | Lab: {l_lo:.0f}-{l_hi:.0f})")
         else:
             st.caption(f"ℹ️ Applied: **Standard Excel Spec**")
 
