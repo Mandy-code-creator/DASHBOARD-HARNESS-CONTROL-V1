@@ -233,6 +233,8 @@ if valid.empty:
 # ==============================================================================
 #  🚀 GLOBAL SUMMARY DASHBOARD (FINAL: STATS + LIMITS + SIMULATION)
 # ==============================================================================
+#  🚀 GLOBAL SUMMARY DASHBOARD (FINAL: ADDED RULE & LAB COLUMNS)
+# ==============================================================================
 if view_mode == "🚀 Global Summary Dashboard":
     st.markdown("## 🚀 Global Process Dashboard")
     
@@ -241,7 +243,7 @@ if view_mode == "🚀 Global Summary Dashboard":
 
     # --- TAB 1: STATS TABLE WITH LIMITS ---
     with tab1:
-        st.info("ℹ️ This table compares ACTUAL statistics (Min/Max/Avg) against STANDARD LIMITS.")
+        st.info("ℹ️ This table compares ACTUAL statistics (Min/Max/Avg) against STANDARD & LAB LIMITS.")
         
         stats_rows = []
         
@@ -283,11 +285,20 @@ if view_mode == "🚀 Global Summary Dashboard":
             lim_ys = get_limit_str("Standard YS min", "Standard YS max")
             lim_el = get_limit_str("Standard EL min", "Standard EL max")
 
+            # --- LẤY THÔNG TIN RULE & LAB LIMIT ---
+            rule_name = sub_grp['Rule_Name'].iloc[0]
+            l_min = sub_grp['Lab_Min'].iloc[0]
+            l_max = sub_grp['Lab_Max'].iloc[0]
+            # Nếu có Lab Limit (>0) thì hiển thị, không thì gạch ngang
+            lim_lab = f"{l_min:.0f}~{l_max:.0f}" if (l_min > 0 and l_max > 0) else "-"
+
             stats_rows.append({
                 "Quality": g["Quality_Group"],
                 "Material": g["Material"],
                 "Gauge": g["Gauge_Range"],
                 "Specs": specs_str,
+                "Rule Applied": rule_name,   # <--- Cột Mới
+                "Lab Limit": lim_lab,        # <--- Cột Mới
                 "N": len(sub_grp),
                 
                 # Hardness Stats
@@ -318,21 +329,26 @@ if view_mode == "🚀 Global Summary Dashboard":
         if stats_rows:
             df_stats = pd.DataFrame(stats_rows)
             
-            # Reorder columns
+            # Reorder columns (Đưa Rule và Lab Limit lên đầu cho dễ nhìn)
             cols = [
-                "Quality", "Material", "Gauge", "Specs", "N",
-                "HRB Limit", "HRB (Avg)", "HRB (Min)", "HRB (Max)",
+                "Quality", "Material", "Gauge", "Rule Applied", "Lab Limit", "HRB Limit", 
+                "HRB (Avg)", "HRB (Min)", "HRB (Max)", "N",
                 "TS Limit", "TS (Avg)", "TS (Min)", "TS (Max)",
                 "YS Limit", "YS (Avg)", "YS (Min)", "YS (Max)",
                 "EL Limit", "EL (Avg)", "EL (Min)", "EL (Max)"
             ]
+            # Chỉ lấy các cột tồn tại
             cols = [c for c in cols if c in df_stats.columns]
             df_stats = df_stats[cols]
+
+            # Highlight các dòng áp dụng Rule đặc biệt (Cold)
+            def highlight_rule(s):
+                return ['background-color: #fffbe6' if "Rule" in str(s["Rule Applied"]) else '' for _ in s]
 
             # Format & Style
             st.dataframe(
                 df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c])
-                              .background_gradient(subset=["HRB (Avg)"], cmap="Blues"),
+                              .apply(highlight_rule, axis=1), # Tô màu vàng nhạt cho dòng có Rule
                 use_container_width=True
             )
         else:
@@ -359,8 +375,6 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             if len(sub_grp) < 10: continue 
 
-            specs_str = ", ".join(sorted(sub_grp["Product_Spec"].astype(str).unique()))
-            
             # 1. Get Historical Range
             h_min, h_max = sub_grp["Hardness_LINE"].min(), sub_grp["Hardness_LINE"].max()
             
@@ -436,7 +450,6 @@ if view_mode == "🚀 Global Summary Dashboard":
             st.warning("Insufficient data for prediction.")
 
     st.stop()
-
 # ==============================================================================
 # MAIN LOOP (DETAILS)
 # ==============================================================================
