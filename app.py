@@ -471,11 +471,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
         st.markdown(f"### 🧱 {g['Quality_Group']} | {g['Material']} | {g['Gauge_Range']}")
         st.markdown(f"**Specs:** {specs} | **Coils:** {sub['COIL_NO'].nunique()} | **Limit:** {lo:.1f}~{hi:.1f}")
         
-        # FIX LỖI MARKDOWN STRIKETHROUGH
-        if "Rule" in rule_used:
-            st.success(f"✅ Applied: **{rule_used}** (Control: {lo:.0f} - {hi:.0f} | Lab: {l_lo:.0f} - {l_hi:.0f})")
-        else:
-            st.caption(f"ℹ️ Applied: **Standard Excel Spec**")
+        # --- [CẬP NHẬT] ẨN RULE Ở VIEW MECH PROPS ---
+        if view_mode != "⚙️ Mech Props Analysis":
+            if "Rule" in rule_used:
+                # Dùng dấu "-" thay vì "~" để tránh lỗi strikethrough
+                st.success(f"✅ Applied: **{rule_used}** (Control: {lo:.0f} - {hi:.0f} | Lab: {l_lo:.0f} - {l_hi:.0f})")
+            else:
+                st.caption(f"ℹ️ Applied: **Standard Excel Spec**")
 
     # ================================
     # 1. DATA INSPECTION
