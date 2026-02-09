@@ -995,7 +995,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 
                 st.info("""
                 **Color Guide:**
-                * 🔵 **Blue Bar:** LINE Data (Dữ liệu máy chạy).
-                * 🟠 **Orange Bar:** LAB Data (Dữ liệu phòng Lab).
-                * **Mẹo:** Nếu cột Cam (Lab) lệch hẳn so với cột Xanh (Line), cần kiểm tra lại độ chính xác của máy đo Online.
+                * 🔵 **Blue Bar:** LINE Data.
+                * 🟠 **Orange Bar:** LAB Data.
+                """)
+                st.info("""
+                **Quick Comparison:**
+                * **M2 (IQR):** Filters out noise and outliers using robust algorithms.
+                * **M4 (I-MR):** Eliminates process drift influence using International SPC Standards.
+                * **Insight:** If **M4 is narrower than M1**, it indicates the presence of **Process Drift**.
                 """)
