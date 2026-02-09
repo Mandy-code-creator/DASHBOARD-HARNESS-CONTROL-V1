@@ -497,17 +497,44 @@ for _, g in valid.iterrows():
             ax.set_title("Hardness vs Mechanical Properties"); ax.grid(True, ls="--", alpha=0.5); ax.legend()
             st.pyplot(fig)
             
-            # Quick Conclusion Text (RESTORED)
-            st.markdown("#### 📌 Quick Conclusion per Hardness Bin")
+            # ... (Phần vẽ biểu đồ bên trên giữ nguyên) ...
+            
+            # --- Quick Conclusion Logic (UPDATED: TABLE FORMAT + YS ADDED) ---
+            st.markdown("#### 📌 Quick Conclusion per Hardness Bin (Table View)")
+            
+            conclusion_data = []
+
             for row in summary.itertuples():
-                def check(val_min, val_max, spec_min, spec_max):
-                    p_min = (val_min >= spec_min) if (pd.notna(spec_min) and spec_min > 0) else True
-                    p_max = (val_max <= spec_max) if (pd.notna(spec_max) and spec_max > 0) else True
-                    return "✅" if (p_min and p_max) else "⚠️"
-                
-                ts_f = check(row.TS_min, row.TS_max, row.Std_TS_min, row.Std_TS_max)
-                el_f = check(row.EL_min, row.EL_max, row.Std_EL_min, row.Std_EL_max)
-                st.write(f"**{row.HRB_bin}**: TS={ts_f} ({row.TS_min:.0f}-{row.TS_max:.0f}) | EL={el_f} ({row.EL_min:.1f}-{row.EL_max:.1f})")
+                # Hàm kiểm tra logic (Check Min/Max so với Spec)
+                def get_status(val_min, val_max, spec_min, spec_max):
+                    # Nếu không có Spec (NaN hoặc 0) thì coi như Đạt (True)
+                    pass_min = (val_min >= spec_min) if (pd.notna(spec_min) and spec_min > 0) else True
+                    pass_max = (val_max <= spec_max) if (pd.notna(spec_max) and spec_max > 0) else True
+                    return "✅" if (pass_min and pass_max) else "⚠️"
+
+                # 1. Check TS
+                ts_stat = get_status(row.TS_min, row.TS_max, row.Std_TS_min, row.Std_TS_max)
+                ts_txt = f"{ts_stat} ({row.TS_min:.0f}~{row.TS_max:.0f})"
+
+                # 2. Check YS (ĐÃ BỔ SUNG)
+                ys_stat = get_status(row.YS_min, row.YS_max, row.Std_YS_min, row.Std_YS_max)
+                ys_txt = f"{ys_stat} ({row.YS_min:.0f}~{row.YS_max:.0f})"
+
+                # 3. Check EL
+                el_stat = get_status(row.EL_min, row.EL_max, row.Std_EL_min, row.Std_EL_max)
+                el_txt = f"{el_stat} ({row.EL_min:.1f}~{row.EL_max:.1f})"
+
+                conclusion_data.append({
+                    "Hardness Range": row.HRB_bin,
+                    "TS Check (Min~Max)": ts_txt,
+                    "YS Check (Min~Max)": ys_txt, # <--- Cột YS mới
+                    "EL Check (Min~Max)": el_txt
+                })
+
+            # Hiển thị dạng bảng
+            if conclusion_data:
+                df_concl = pd.DataFrame(conclusion_data)
+                st.dataframe(df_concl, use_container_width=True, hide_index=True)
 
     # ================================
     # 4. MECH PROPS ANALYSIS
