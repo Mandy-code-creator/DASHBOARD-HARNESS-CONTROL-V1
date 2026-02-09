@@ -558,7 +558,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 x_min = min(vals) - 2; x_max = max(vals) + 2
                 
                 bins = np.linspace(x_min, x_max, 30)
-                xs = np.linspace(x_min, x_max, 400)
+                
+                # [UPDATE] Extended Range for Curve (± 5 Sigma)
+                range_curve = max(5 * std_line, (x_max - x_min)/2)
+                xs = np.linspace(mean_line - range_curve, mean_line + range_curve, 400)
                 
                 fig, ax = plt.subplots(figsize=(10, 5))
                 
@@ -582,6 +585,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 if l_lo > 0 and l_hi > 0:
                     ax.axvline(l_lo, linestyle="-.", linewidth=2, color="purple", label="Lab LSL")
                     ax.axvline(l_hi, linestyle="-.", linewidth=2, color="purple", label="Lab USL")
+                
+                # Thiết lập giới hạn trục X để nhìn vừa vặn histogram nhưng curve vẫn đi tiếp
+                ax.set_xlim(x_min, x_max)
 
                 ax.set_title(f"Hardness Distribution (LINE vs LAB)", weight="bold")
                 ax.legend()
@@ -601,7 +607,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         "Rating": eval_msg
                     }])
 
-                    # FIX VALUE ERROR: Chỉ format các cột số
                     st.dataframe(
                         df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"])
                         .applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']),
@@ -680,19 +685,16 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
 
     # ================================
-    # ================================
-    # 4. MECH PROPS ANALYSIS (UPDATED: WITH LIMITS & STATS)
+    # 4. MECH PROPS ANALYSIS (UPDATED: WITH LIMITS & STATS & LONG CURVE)
     # ================================
     elif view_mode == "⚙️ Mech Props Analysis":
         st.markdown("### ⚙️ Mechanical Properties Analysis (Distribution vs Specs)")
         
-        # Lọc dữ liệu có cơ tính
         sub_mech = sub.dropna(subset=["TS","YS","EL"])
         
         if sub_mech.empty:
             st.warning("⚠️ No Mechanical Property data available for this group.")
         else:
-            # Cấu hình cho 3 chỉ số
             props_config = [
                 {"col": "TS", "name": "Tensile Strength (TS)", "color": "#1f77b4", "min_c": "Standard TS min", "max_c": "Standard TS max"},
                 {"col": "YS", "name": "Yield Strength (YS)", "color": "#2ca02c", "min_c": "Standard YS min", "max_c": "Standard YS max"},
@@ -707,41 +709,45 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 data = sub_mech[col]
                 mean, std = data.mean(), data.std()
                 
-                # 1. Lấy giới hạn Spec (Xử lý NaN và số 0)
-                # Lấy max của cột min (để lấy tiêu chuẩn chặt nhất trong nhóm)
                 spec_min = sub_mech[cfg["min_c"]].max() if cfg["min_c"] in sub_mech else 0
                 spec_max = sub_mech[cfg["max_c"]].min() if cfg["max_c"] in sub_mech else 0
                 
                 if pd.isna(spec_min): spec_min = 0
                 if pd.isna(spec_max): spec_max = 0
                 
-                # 2. Vẽ Histogram
-                # Tự động tính bins cho đẹp
+                # Vẽ Histogram
                 axes[j].hist(data, bins=20, color=cfg["color"], alpha=0.5, density=True, label="Actual Dist")
                 
-                # 3. Vẽ đường cong phân phối chuẩn (Normal Curve)
+                # [UPDATE] Vẽ đường Normal Curve dài (± 5 Sigma)
                 if std > 0:
-                    x_p = np.linspace(data.min() - 5, data.max() + 5, 100)
+                    # Tạo khoảng vẽ rộng hơn dữ liệu thực tế
+                    x_start = mean - 5 * std
+                    x_end = mean + 5 * std
+                    x_p = np.linspace(x_start, x_end, 200)
                     y_p = (1/(std*np.sqrt(2*np.pi))) * np.exp(-0.5*((x_p-mean)/std)**2)
                     axes[j].plot(x_p, y_p, color=cfg["color"], lw=2, label="Normal Fit")
 
-                # 4. Vẽ đường giới hạn (Spec Lines) - MÀU ĐỎ
+                    # Giới hạn trục X để không bị zoom quá xa, nhưng đủ rộng để thấy đuôi
+                    # Lấy min/max của cả dữ liệu thực tế VÀ spec để set trục X hợp lý
+                    view_min = min(data.min(), spec_min if spec_min > 0 else data.min())
+                    view_max = max(data.max(), spec_max if spec_max < 9000 else data.max())
+                    margin = (view_max - view_min) * 0.5 # Mở rộng lề 50%
+                    axes[j].set_xlim(view_min - margin, view_max + margin)
+
+                # Vẽ đường giới hạn (Spec Lines)
                 has_limit = False
                 if spec_min > 0:
                     axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2, label=f"Min {spec_min:.0f}")
                     has_limit = True
                 
-                # Chỉ vẽ Max nếu nó hợp lý (nhỏ hơn 9000 - tránh giá trị rác trong Excel)
                 if spec_max > 0 and spec_max < 9000:
                     axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2, label=f"Max {spec_max:.0f}")
                     has_limit = True
 
-                # Trang trí biểu đồ
                 axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
                 axes[j].legend(loc="upper right", fontsize="small")
                 axes[j].grid(alpha=0.3, linestyle="--")
 
-                # 5. Tổng hợp số liệu cho bảng bên dưới
                 stats_data.append({
                     "Property": col,
                     "Limit (Spec)": f"{spec_min:.0f} ~ {spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else f"≥ {spec_min:.0f}",
@@ -753,7 +759,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             st.pyplot(fig)
             
-            # Hiển thị bảng tóm tắt
             st.markdown("#### 📊 Statistics Summary & Spec Check")
             df_stat = pd.DataFrame(stats_data)
             st.dataframe(
