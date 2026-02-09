@@ -450,9 +450,13 @@ for _, g in valid.iterrows():
                 st.pyplot(fig)
 
     # ================================
-    # 3. CORRELATION (FULL VERSION)
+    # ================================
+    # 3. CORRELATION (FULL CHART + TABLE)
     # ================================
     elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
+        st.markdown("### 🔗 Correlation: Hardness vs Mechanical Properties")
+        
+        # 1. Prepare Data
         sub_corr = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"])
         bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
         labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
@@ -470,82 +474,65 @@ for _, g in valid.iterrows():
         summary = summary[summary["N_coils"]>0]
 
         if not summary.empty:
+            # 2. Setup Plot
             x = np.arange(len(summary))
             fig, ax = plt.subplots(figsize=(15,6))
             
-            # Plot Helper
+            # Helper Function to Draw Lines
             def plot_prop(x, y, ymin, ymax, c, lbl, m):
                 ax.plot(x, y, marker=m, color=c, label=lbl, lw=2)
                 ax.fill_between(x, ymin, ymax, color=c, alpha=0.1)
 
+            # Draw 3 Lines
             plot_prop(x, summary["TS_mean"], summary["TS_min"], summary["TS_max"], "#1f77b4", "TS", "o")
             plot_prop(x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "#2ca02c", "YS", "s")
             plot_prop(x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL", "^")
 
-            # ... (Đoạn vẽ plot_prop ở trên giữ nguyên) ...
-
-            # Annotations (Gắn nhãn số liệu)
+            # 3. Annotations (Gắn nhãn số lên biểu đồ)
             for i, row in enumerate(summary.itertuples()):
-                # 1. TS Label (Màu xanh dương - Hiện ở trên)
-                ax.annotate(f"{row.TS_mean:.0f}", (x[i], row.TS_mean), 
-                            xytext=(0,10), textcoords="offset points", 
-                            ha="center", fontsize=9, fontweight='bold', color="#1f77b4")
+                # TS Label (Blue)
+                ax.annotate(f"{row.TS_mean:.0f}", (x[i], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#1f77b4")
                 
-                # 2. YS Label (Màu xanh lá - Hiện ở dưới) <--- ĐOẠN MỚI THÊM VÀO
-                ax.annotate(f"{row.YS_mean:.0f}", (x[i], row.YS_mean), 
-                            xytext=(0,-15), textcoords="offset points", 
-                            ha="center", fontsize=9, fontweight='bold', color="#2ca02c")
+                # YS Label (Green) - ĐÃ CÓ
+                ax.annotate(f"{row.YS_mean:.0f}", (x[i], row.YS_mean), xytext=(0,-15), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#2ca02c")
                 
-                # 3. EL Check & Label (Màu cam - Hiện ở dưới cùng)
+                # EL Label (Orange/Red)
                 el_spec = row.Std_EL_min
                 is_fail = (el_spec > 0) and (row.EL_mean < el_spec)
                 lbl = f"{row.EL_mean:.1f}%" + ("❌" if is_fail else "")
                 clr = "red" if is_fail else "#ff7f0e"
-                
-                # Đẩy label EL xuống thấp hơn nữa (-25) để tránh đè lên YS nếu gần nhau
-                ax.annotate(lbl, (x[i], row.EL_mean), 
-                            xytext=(0,10), textcoords="offset points", 
-                            ha="center", fontsize=9, color=clr, fontweight=("bold" if is_fail else "normal"))
+                ax.annotate(lbl, (x[i], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color=clr, fontweight=("bold" if is_fail else "normal"))
+
+            # Settings
+            ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
+            ax.set_title("Hardness vs Mechanical Properties (Mean & Range)"); ax.grid(True, ls="--", alpha=0.5); ax.legend()
             
-            # ... (Phần vẽ biểu đồ bên trên giữ nguyên) ...
+            # 4. RENDER CHART (LỆNH QUAN TRỌNG ĐỂ HIỆN BIỂU ĐỒ)
+            st.pyplot(fig)
             
-            # --- Quick Conclusion Logic (UPDATED: TABLE FORMAT + YS ADDED) ---
+            # 5. Quick Conclusion Table (Bảng kết luận bên dưới)
             st.markdown("#### 📌 Quick Conclusion per Hardness Bin (Table View)")
-            
             conclusion_data = []
 
             for row in summary.itertuples():
-                # Hàm kiểm tra logic (Check Min/Max so với Spec)
                 def get_status(val_min, val_max, spec_min, spec_max):
-                    # Nếu không có Spec (NaN hoặc 0) thì coi như Đạt (True)
                     pass_min = (val_min >= spec_min) if (pd.notna(spec_min) and spec_min > 0) else True
                     pass_max = (val_max <= spec_max) if (pd.notna(spec_max) and spec_max > 0) else True
                     return "✅" if (pass_min and pass_max) else "⚠️"
 
-                # 1. Check TS
                 ts_stat = get_status(row.TS_min, row.TS_max, row.Std_TS_min, row.Std_TS_max)
-                ts_txt = f"{ts_stat} ({row.TS_min:.0f}~{row.TS_max:.0f})"
-
-                # 2. Check YS (ĐÃ BỔ SUNG)
                 ys_stat = get_status(row.YS_min, row.YS_max, row.Std_YS_min, row.Std_YS_max)
-                ys_txt = f"{ys_stat} ({row.YS_min:.0f}~{row.YS_max:.0f})"
-
-                # 3. Check EL
                 el_stat = get_status(row.EL_min, row.EL_max, row.Std_EL_min, row.Std_EL_max)
-                el_txt = f"{el_stat} ({row.EL_min:.1f}~{row.EL_max:.1f})"
 
                 conclusion_data.append({
                     "Hardness Range": row.HRB_bin,
-                    "TS Check (Min~Max)": ts_txt,
-                    "YS Check (Min~Max)": ys_txt, # <--- Cột YS mới
-                    "EL Check (Min~Max)": el_txt
+                    "TS Check (Min~Max)": f"{ts_stat} ({row.TS_min:.0f}~{row.TS_max:.0f})",
+                    "YS Check (Min~Max)": f"{ys_stat} ({row.YS_min:.0f}~{row.YS_max:.0f})",
+                    "EL Check (Min~Max)": f"{el_stat} ({row.EL_min:.1f}~{row.EL_max:.1f})"
                 })
 
-            # Hiển thị dạng bảng
             if conclusion_data:
-                df_concl = pd.DataFrame(conclusion_data)
-                st.dataframe(df_concl, use_container_width=True, hide_index=True)
-
+                st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
     # ================================
     # 4. MECH PROPS ANALYSIS
     # ================================
