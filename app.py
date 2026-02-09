@@ -543,6 +543,18 @@ for _, g in valid.iterrows():
                         }).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']),
                         use_container_width=True, hide_index=True
                     )
+                    # Format bảng: TẤT CẢ LÀ 2 SỐ THẬP PHÂN
+                    st.dataframe(
+                        df_spc.style.format({
+                            "Mean": "{:.2f}", 
+                            "Std Dev": "{:.2f}",          # <--- Đã sửa thành .2f
+                            "Cp": "{:.2f}", 
+                            "Ca (Accuracy %)": "{:.2f}%", # <--- Đã sửa thành .2f%
+                            "Cpk": "{:.2f}"
+                        }).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']),
+                        use_container_width=True, 
+                        hide_index=True
+                    )
     # ================================
     # ================================
     # 3. CORRELATION (FULL CHART + TABLE)
