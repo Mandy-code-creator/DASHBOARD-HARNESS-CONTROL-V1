@@ -22,7 +22,52 @@ from plotly.subplots import make_subplots
 # ================================
 st.set_page_config(page_title="SPC Hardness Dashboard", layout="wide")
 st.title("📊 Hardness – Visual Analytics Dashboard")
+# ================================
+# GIAO DIỆN & MÀU NỀN (CSS)
+# ================================
+def add_custom_css():
+    st.markdown("""
+        <style>
+        /* 1. Đổi màu nền chính (Main Background) */
+        .stApp {
+            background-color: #F5F7F9; /* Màu xám xanh rất nhạt */
+            background-image: linear-gradient(to right, #F5F7F9, #EBF1F5); /* Hiệu ứng chuyển màu nhẹ */
+        }
 
+        /* 2. Đổi màu Sidebar (Thanh bên trái) */
+        [data-testid="stSidebar"] {
+            background-color: #FFFFFF; /* Màu trắng tinh */
+            border-right: 1px solid #D1D5DB; /* Viền xám ngăn cách */
+        }
+
+        /* 3. Trang trí Tiêu đề (Header) */
+        h1, h2, h3 {
+            color: #0E3B6B !important; /* Màu xanh đậm kỹ thuật */
+            font-family: 'Segoe UI', sans-serif;
+        }
+
+        /* 4. Trang trí các Block thông báo (Info/Warning) */
+        .stAlert {
+            border-radius: 8px; /* Bo tròn góc */
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05); /* Đổ bóng nhẹ */
+        }
+        
+        /* 5. Tùy chỉnh nút bấm (Button) */
+        .stButton button {
+            background-color: #0E3B6B;
+            color: white;
+            border-radius: 5px;
+            font-weight: bold;
+        }
+        .stButton button:hover {
+            background-color: #165696; /* Màu khi rê chuột vào */
+            color: white;
+        }
+        </style>
+    """, unsafe_allow_html=True)
+
+# Gọi hàm ngay lập tức để áp dụng
+add_custom_css()
 # ================================
 # UTILS (QUAN TRỌNG: KHÔNG ĐƯỢC XÓA)
 # ================================
