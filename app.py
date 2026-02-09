@@ -36,7 +36,7 @@ def add_custom_css():
 
         /* 2. Đổi màu Sidebar (Thanh bên trái) */
         [data-testid="stSidebar"] {
-            background-color: #FFFFFF; /* Màu trắng tinh */
+            background-color: #FAF9F6; /* Màu trắng tinh */
             border-right: 1px solid #D1D5DB; /* Viền xám ngăn cách */
         }
 
