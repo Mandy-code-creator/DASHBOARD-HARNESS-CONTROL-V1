@@ -994,11 +994,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["Min", "Max", "Range"]), use_container_width=True, hide_index=True)
                 
                 st.info("""
-                **Color Guide:**
-                * 🔵 **Blue Bar:** LINE Data.
-                * 🟠 **Orange Bar:** LAB Data.
-                """)
-                st.info("""
                 **Quick Comparison:**
                 * **M2 (IQR):** Filters out noise and outliers using robust algorithms.
                 * **M4 (I-MR):** Eliminates process drift influence using International SPC Standards.
