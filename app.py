@@ -1,6 +1,6 @@
 # ================================
-# FULL STREAMLIT APP – FINAL COMPLETE VERSION
-# INTEGRATED GLOBAL DASHBOARD + SMART LOGIC + COLD ROLLING RULES + VISUAL FIXES
+# FULL STREAMLIT APP – FINAL VERSION WITH TIMESTAMP
+# FEATURES: GLOBAL COLORS + NG HIGHLIGHT + COLD ROLLING RULES + TIME DISPLAY
 # ================================
 
 import streamlit as st
@@ -10,6 +10,7 @@ import requests, re
 from io import StringIO, BytesIO
 import matplotlib.pyplot as plt
 import uuid
+from datetime import datetime  # <--- THÊM THƯ VIỆN NÀY
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 import plotly.graph_objects as go
@@ -19,7 +20,12 @@ from plotly.subplots import make_subplots
 # PAGE CONFIG
 # ================================
 st.set_page_config(page_title="SPC Hardness Dashboard", layout="wide")
-st.title("📊 SPC Hardness – Material / Gauge Level Analysis")
+st.title("📊 SPC Hardness – Visual Analytics Dashboard")
+
+# --- [MỚI] HIỂN THỊ THỜI GIAN PHÂN TÍCH ---
+current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
+st.caption(f"🕒 Thời gian phân tích dữ liệu: **{current_time}**")
+st.markdown("---") # Đường kẻ phân cách cho đẹp
 
 # ================================
 # REFRESH
@@ -89,7 +95,7 @@ def split_std(x):
 
 df[["Std_Min","Std_Max"]] = df["Std_Text"].apply(lambda x: pd.Series(split_std(x)))
 
-# 4. Force Numeric (Include Spec Columns to avoid missing lines)
+# 4. Force Numeric
 numeric_cols = [
     "Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL", "Order_Gauge",
     "Standard TS min", "Standard TS max",
@@ -117,43 +123,27 @@ if "Quality_Code" in df.columns:
 # 7. APPLY GLOBAL COMPANY RULES (COLD ROLLING LOGIC)
 # =========================================================
 def apply_company_rules(row):
-    # Lấy giá trị mặc định từ Excel
     std_min = row["Std_Min"] if pd.notna(row["Std_Min"]) else 0
     std_max = row["Std_Max"] if pd.notna(row["Std_Max"]) else 0
-    
-    # Mặc định Lab Limit = 0 (Không áp dụng)
     lab_min, lab_max = 0, 0
     rule_name = "Standard (Excel)"
 
-    # --- KIỂM TRA ĐIỀU KIỆN ---
-    # 1. Phải là Cold Rolling (Chứa chữ COLD)
     is_cold = "COLD" in str(row["Rolling_Type"]).upper()
-    
-    # 2. Phải thuộc nhóm CQ
     q_grp = str(row["Quality_Group"])
     target_qs = ["CQ00", "CQ06", "CQ07", "CQB0"]
     is_target_q = any(q in q_grp for q in target_qs)
 
-    # NẾU THỎA MÃN CẢ 2:
     if is_cold and is_target_q:
         mat = str(row["Material"]).upper().strip()
-        
-        # Rule 1: A1081
         if mat == "A1081":
             return 56.0, 62.0, 52.0, 70.0, "Rule A1081 (Cold)"
-        
-        # Rule 2: A108M
         elif mat == "A108M":
             return 60.0, 68.0, 55.0, 72.0, "Rule A108M (Cold)"
-        
-        # Rule 3: Nhóm A108 General
         elif mat in ["A108", "A108G", "A108R", "A108MR", "A1081B"]:
-            return 58.0, 62.0, 52.0, 65.0, "Rule A108G (Cold)"
+            return 58.0, 62.0, 52.0, 65.0, "Rule A108-Gen (Cold)"
 
-    # Nếu không thỏa mãn rule nào -> Trả về giá trị gốc của Excel
     return std_min, std_max, lab_min, lab_max, rule_name
 
-# Áp dụng logic vào toàn bộ DataFrame (Tạo 5 cột mới)
 df[['Limit_Min', 'Limit_Max', 'Lab_Min', 'Lab_Max', 'Rule_Name']] = df.apply(
     apply_company_rules, axis=1, result_type="expand"
 )
@@ -238,17 +228,15 @@ if valid.empty:
     st.stop()
 
 # ==============================================================================
-#  🚀 GLOBAL SUMMARY DASHBOARD (FINAL: ADDED RULE & LAB COLUMNS)
+#  🚀 GLOBAL SUMMARY DASHBOARD
 # ==============================================================================
 if view_mode == "🚀 Global Summary Dashboard":
     st.markdown("## 🚀 Global Process Dashboard")
     
-    # Create Tabs
-    tab1, tab2 = st.tabs(["📊 1. Statistical Overview (With Limits)", "🎯 2. Prediction Simulator"])
+    tab1, tab2 = st.tabs(["📊 1. Performance Overview", "🎯 2. Prediction Simulator"])
 
-    # --- TAB 1: STATS TABLE WITH LIMITS ---
     with tab1:
-        st.info("ℹ️ This table compares ACTUAL statistics (Min/Max/Avg) against STANDARD & LAB LIMITS.")
+        st.info("ℹ️ Color Guide: 🟢 High Pass Rate | 🔴 Low Pass Rate | 🟡 Rule Applied")
         
         stats_rows = []
         
@@ -263,109 +251,94 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             if len(sub_grp) < 5: continue
 
-            # Specs List
             specs_str = ", ".join(sorted(sub_grp["Product_Spec"].astype(str).unique()))
 
-            # --- HELPER: GET LIMIT STRING ---
             def get_limit_str(s_min_col, s_max_col):
                 v_min = sub_grp[s_min_col].max() if s_min_col in sub_grp else 0 
                 v_max = sub_grp[s_max_col].min() if s_max_col in sub_grp else 0 
-                
                 if pd.isna(v_min): v_min = 0
                 if pd.isna(v_max): v_max = 0
+                if v_min > 0 and v_max > 0 and v_max < 9000: return f"{v_min:.0f}~{v_max:.0f}"
+                elif v_min > 0: return f"≥ {v_min:.0f}"
+                elif v_max > 0 and v_max < 9000: return f"≤ {v_max:.0f}"
+                else: return "-"
 
-                if v_min > 0 and v_max > 0 and v_max < 9000:
-                    return f"{v_min:.0f}~{v_max:.0f}"
-                elif v_min > 0:
-                    return f"≥ {v_min:.0f}"
-                elif v_max > 0 and v_max < 9000:
-                    return f"≤ {v_max:.0f}"
-                else:
-                    return "-"
-
-            # Get Limits Text (SỬ DỤNG LIMIT_MIN MỚI)
-            lim_hrb = f"{sub_grp['Limit_Min'].min():.0f}~{sub_grp['Limit_Max'].max():.0f}"
+            l_min_val = sub_grp['Limit_Min'].min()
+            l_max_val = sub_grp['Limit_Max'].max()
+            lim_hrb = f"{l_min_val:.0f}~{l_max_val:.0f}"
             
             lim_ts = get_limit_str("Standard TS min", "Standard TS max")
             lim_ys = get_limit_str("Standard YS min", "Standard YS max")
             lim_el = get_limit_str("Standard EL min", "Standard EL max")
 
-            # --- LẤY THÔNG TIN RULE & LAB LIMIT ---
             rule_name = sub_grp['Rule_Name'].iloc[0]
-            l_min = sub_grp['Lab_Min'].iloc[0]
-            l_max = sub_grp['Lab_Max'].iloc[0]
-            lim_lab = f"{l_min:.0f}~{l_max:.0f}" if (l_min > 0 and l_max > 0) else "-"
+            lab_min = sub_grp['Lab_Min'].iloc[0]
+            lab_max = sub_grp['Lab_Max'].iloc[0]
+            lim_lab = f"{lab_min:.0f}~{lab_max:.0f}" if (lab_min > 0 and lab_max > 0) else "-"
+
+            n_total = len(sub_grp)
+            n_ng = sub_grp[
+                (sub_grp["Hardness_LINE"] < sub_grp["Limit_Min"]) | 
+                (sub_grp["Hardness_LINE"] > sub_grp["Limit_Max"])
+            ].shape[0]
+            pass_rate = ((n_total - n_ng) / n_total) * 100
 
             stats_rows.append({
                 "Quality": g["Quality_Group"],
                 "Material": g["Material"],
                 "Gauge": g["Gauge_Range"],
-                "Specs": specs_str,
                 "Rule Applied": rule_name,   
                 "Lab Limit": lim_lab,        
-                "N": len(sub_grp),
-                
-                # Hardness Stats
                 "HRB Limit": lim_hrb,          
+                "N": len(sub_grp),
+                "Pass Rate (%)": pass_rate,
                 "HRB (Avg)": sub_grp["Hardness_LINE"].mean(),
+                "TS (Avg)": sub_grp["TS"].mean(),
+                "YS (Avg)": sub_grp["YS"].mean(),
+                "EL (Avg)": sub_grp["EL"].mean(),
                 "HRB (Min)": sub_grp["Hardness_LINE"].min(),
                 "HRB (Max)": sub_grp["Hardness_LINE"].max(),
-                
-                # TS Stats
                 "TS Limit": lim_ts,            
-                "TS (Avg)": sub_grp["TS"].mean(),
-                "TS (Min)": sub_grp["TS"].min(),
-                "TS (Max)": sub_grp["TS"].max(),
-
-                # YS Stats
                 "YS Limit": lim_ys,            
-                "YS (Avg)": sub_grp["YS"].mean(),
-                "YS (Min)": sub_grp["YS"].min(),
-                "YS (Max)": sub_grp["YS"].max(),
-                
-                # EL Stats
                 "EL Limit": lim_el,            
-                "EL (Avg)": sub_grp["EL"].mean(),
-                "EL (Min)": sub_grp["EL"].min(),
-                "EL (Max)": sub_grp["EL"].max(),
             })
 
         if stats_rows:
             df_stats = pd.DataFrame(stats_rows)
-            
-            # Reorder columns
             cols = [
-                "Quality", "Material", "Gauge", "Rule Applied", "Lab Limit", "HRB Limit", 
-                "HRB (Avg)", "HRB (Min)", "HRB (Max)", "N",
-                "TS Limit", "TS (Avg)", "TS (Min)", "TS (Max)",
-                "YS Limit", "YS (Avg)", "YS (Min)", "YS (Max)",
-                "EL Limit", "EL (Avg)", "EL (Min)", "EL (Max)"
+                "Quality", "Material", "Gauge", "Rule Applied", "Pass Rate (%)", 
+                "HRB Limit", "HRB (Avg)", "HRB (Min)", "HRB (Max)", "Lab Limit",
+                "TS (Avg)", "YS (Avg)", "EL (Avg)", "TS Limit", "YS Limit", "EL Limit", "N"
             ]
             cols = [c for c in cols if c in df_stats.columns]
             df_stats = df_stats[cols]
 
-            # Highlight Rule
+            def color_pass_rate(val):
+                color = '#d4edda' if val >= 98 else ('#fff3cd' if val >= 90 else '#f8d7da')
+                text_color = '#155724' if val >= 98 else ('#856404' if val >= 90 else '#721c24')
+                return f'background-color: {color}; color: {text_color}; font-weight: bold'
+
             def highlight_rule(s):
                 return ['background-color: #fffbe6' if "Rule" in str(s["Rule Applied"]) else '' for _ in s]
 
             st.dataframe(
-                df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c])
-                              .apply(highlight_rule, axis=1),
+                df_stats.style
+                    .format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c or "Pass" in c])
+                    .applymap(color_pass_rate, subset=["Pass Rate (%)"])
+                    .apply(highlight_rule, axis=1)
+                    .background_gradient(subset=["HRB (Avg)"], cmap="Blues"),
                 use_container_width=True
             )
         else:
             st.warning("Insufficient data for statistics.")
 
-    # --- TAB 2: PREDICTION SIMULATOR ---
     with tab2:
         st.info("🎯 Enter your Target Hardness. The system uses AI models per group to forecast Mechanical Properties.")
-        
         col_in, _ = st.columns([1, 3])
         with col_in:
             user_hrb = st.number_input("📥 Input Target Hardness (HRB):", value=60.0, step=0.5, format="%.1f")
 
         pred_rows = []
-
         for _, g in valid.iterrows():
             sub_grp = df[
                 (df["Rolling_Type"] == g["Rolling_Type"]) &
@@ -377,9 +350,7 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             if len(sub_grp) < 10: continue 
 
-            # 2. Get Standard Control Limits (NEW)
-            std_lo = sub_grp["Limit_Min"].min()
-            std_hi = sub_grp["Limit_Max"].max()
+            std_lo = sub_grp["Limit_Min"].min(); std_hi = sub_grp["Limit_Max"].max()
             h_min, h_max = sub_grp["Hardness_LINE"].min(), sub_grp["Hardness_LINE"].max()
             
             if pd.isna(std_lo): std_lo = 0
@@ -387,26 +358,18 @@ if view_mode == "🚀 Global Summary Dashboard":
             std_txt = f"{std_lo:.1f} ~ {std_hi:.1f}"
             if std_lo == 0 and std_hi == 0: std_txt = "No Spec"
 
-            # 3. Check Status
             status_msgs = []
-            if user_hrb < h_min or user_hrb > h_max:
-                status_msgs.append("⚠️ Extrapolated")
-            if (std_lo > 0 and user_hrb < std_lo) or (std_hi > 0 and user_hrb > std_hi):
-                 status_msgs.append("⛔ Out of Spec")
-            if not status_msgs:
-                status_msgs.append("✅ Safe Zone")
+            if user_hrb < h_min or user_hrb > h_max: status_msgs.append("⚠️ Extrapolated")
+            if (std_lo > 0 and user_hrb < std_lo) or (std_hi > 0 and user_hrb > std_hi): status_msgs.append("⛔ Out of Spec")
+            if not status_msgs: status_msgs.append("✅ Safe Zone")
             status_final = " | ".join(status_msgs)
 
-            # 4. AI Prediction
             X = sub_grp[["Hardness_LINE"]].values
-            
             m_ts = LinearRegression().fit(X, sub_grp["TS"].values)
             pred_ts = m_ts.predict([[user_hrb]])[0]
             r2_ts = r2_score(sub_grp["TS"], m_ts.predict(X))
-
             m_ys = LinearRegression().fit(X, sub_grp["YS"].values)
             pred_ys = m_ys.predict([[user_hrb]])[0]
-            
             m_el = LinearRegression().fit(X, sub_grp["EL"].values)
             pred_el = m_el.predict([[user_hrb]])[0]
 
@@ -414,23 +377,17 @@ if view_mode == "🚀 Global Summary Dashboard":
                 "Quality": g["Quality_Group"],
                 "Material": g["Material"],
                 "Gauge": g["Gauge_Range"],
-                "Std Limit (HRB)": std_txt,
-                "Hist Range (HRB)": f"{h_min:.1f}~{h_max:.1f}",
+                "Std Limit": std_txt,
+                "Hist Range": f"{h_min:.1f}~{h_max:.1f}",
                 "Status": status_final,
                 "Model Trust (R2)": r2_ts,
                 "Target HRB": user_hrb,
-                "Pred TS": pred_ts,
-                "Pred YS": pred_ys,
-                "Pred EL": pred_el
+                "Pred TS": pred_ts, "Pred YS": pred_ys, "Pred EL": pred_el
             })
 
         if pred_rows:
             df_pred = pd.DataFrame(pred_rows)
-            
-            def highlight_r2(val):
-                color = '#ffcccc' if val < 0.3 else ('#ccffcc' if val > 0.7 else '')
-                return f'background-color: {color}'
-            
+            def highlight_r2(val): return f'background-color: {"#ffcccc" if val < 0.3 else ("#ccffcc" if val > 0.7 else "")}'
             def highlight_status(val):
                 if "⛔" in val: return 'color: red; font-weight: bold'
                 if "⚠️" in val: return 'color: orange'
@@ -440,15 +397,11 @@ if view_mode == "🚀 Global Summary Dashboard":
                 df_pred.style.format({
                     "Pred TS": "{:.0f}", "Pred YS": "{:.0f}", "Pred EL": "{:.1f}",
                     "Model Trust (R2)": "{:.2f}", "Target HRB": "{:.1f}"
-                })
-                .applymap(highlight_r2, subset=["Model Trust (R2)"])
-                .applymap(highlight_status, subset=["Status"]),
+                }).applymap(highlight_r2, subset=["Model Trust (R2)"]).applymap(highlight_status, subset=["Status"]),
                 use_container_width=True
             )
-            st.caption("* Model Trust (R2): Closer to 1.0 is better. \n* Status: Checks if Target is within History and Standard Limits.")
         else:
-            st.warning("Insufficient data for prediction.")
-
+            st.warning("Insufficient data.")
     st.stop()
 
 # ==============================================================================
@@ -463,169 +416,130 @@ for i, (_, g) in enumerate(valid.iterrows()):
         (df["Material"] == g["Material"])
     ].sort_values("COIL_NO")
 
-    # --- [CẬP NHẬT] LẤY LIMIT MỚI ---
     lo, hi = sub.iloc[0][["Limit_Min", "Limit_Max"]] 
     rule_used = sub.iloc[0]["Rule_Name"]
     l_lo, l_hi = sub.iloc[0][["Lab_Min", "Lab_Max"]]
 
+    # Check NG based on NEW limits
     sub["NG_LAB"]  = (sub["Hardness_LAB"] < lo) | (sub["Hardness_LAB"] > hi)
     sub["NG_LINE"] = (sub["Hardness_LINE"] < lo) | (sub["Hardness_LINE"] > hi)
-    sub["NG"] = sub["NG_LAB"] | sub["NG_LINE"]
-    qa = "FAIL" if sub["NG"].any() else "PASS"
+    sub["NG"] = sub["NG_LAB"] | sub["NG_LINE"] 
+
     specs = ", ".join(sorted(sub["Product_Spec"].unique()))
 
     if view_mode != "🚀 Global Summary Dashboard":
         st.markdown(f"### 🧱 {g['Quality_Group']} | {g['Material']} | {g['Gauge_Range']}")
         st.markdown(f"**Specs:** {specs} | **Coils:** {sub['COIL_NO'].nunique()} | **Limit:** {lo:.1f}~{hi:.1f}")
         
-        # --- [CẬP NHẬT] ẨN RULE Ở VIEW MECH PROPS ---
         if view_mode != "⚙️ Mech Props Analysis":
             if "Rule" in rule_used:
-                # Dùng dấu "-" thay vì "~" để tránh lỗi strikethrough
                 st.success(f"✅ Applied: **{rule_used}** (Control: {lo:.0f} - {hi:.0f} | Lab: {l_lo:.0f} - {l_hi:.0f})")
             else:
                 st.caption(f"ℹ️ Applied: **Standard Excel Spec**")
 
     # ================================
-    # 1. DATA INSPECTION
+    # 1. DATA INSPECTION (COLORFUL)
     # ================================
     if view_mode == "📋 Data Inspection":
-        st.dataframe(sub, use_container_width=True)
+        def highlight_ng_rows(row):
+            if row['NG']:
+                return ['background-color: #ffe6e6'] * len(row)
+            return [''] * len(row)
+
+        st.dataframe(
+            sub.style.apply(highlight_ng_rows, axis=1), 
+            use_container_width=True
+        )
 
     # ================================
-    # 2. HARDNESS ANALYSIS (FULL FINAL VERSION)
+    # 2. HARDNESS ANALYSIS
     # ================================
     elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
-        
         st.markdown("### 📉 Hardness Analysis: Process Stability & Capability")
-        
         tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
 
-        # --- TAB 1: TREND CHART ---
         with tab_trend:
             x = np.arange(1, len(sub)+1)
             fig, ax = plt.subplots(figsize=(10, 4.5))
-            
-            # Vẽ cả 2 để đối chiếu xu hướng
             ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.5)
             ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.9) 
-            
-            # Vẽ Control Limits (Màu Đỏ)
             ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"Control LSL={lo}")
             ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"Control USL={hi}")
-            
-            # Vẽ Lab Limits (Màu Tím)
             if l_lo > 0 and l_hi > 0:
                 ax.axhline(l_lo, linestyle="-.", linewidth=1.5, color="purple", label=f"Lab LSL={l_lo}", alpha=0.7)
                 ax.axhline(l_hi, linestyle="-.", linewidth=1.5, color="purple", label=f"Lab USL={l_hi}", alpha=0.7)
-
             ax.set_title("Hardness Trend by Coil Sequence", weight="bold")
             ax.set_xlabel("Coil Sequence"); ax.set_ylabel("Hardness (HRB)")
             ax.grid(alpha=0.25, linestyle="--")
             ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=4)
             plt.tight_layout()
             st.pyplot(fig)
-            
-            buf = fig_to_png(fig)
-            st.download_button("📥 Download Trend Chart", data=buf, file_name=f"trend_{g['Material']}.png", mime="image/png", key=f"dl_tr_{uuid.uuid4()}")
+            st.download_button("📥 Download Trend Chart", data=fig_to_png(fig), file_name=f"trend_{g['Material']}.png", mime="image/png", key=f"dl_tr_{uuid.uuid4()}")
 
-        # --- TAB 2: DISTRIBUTION & SPC (LINE FOCUS + LAB REF) ---
         with tab_dist:
             line = sub["Hardness_LINE"].dropna()
             lab = sub["Hardness_LAB"].dropna()
-            
-            if len(line) < 5:
-                st.warning("⚠️ Not enough LINE data (N < 5) to calculate SPC.")
+            if len(line) < 5: st.warning("⚠️ Not enough LINE data (N < 5).")
             else:
                 def calc_spc_metrics(data, lsl, usl):
                     if len(data) < 2: return None
-                    mean = data.mean()
-                    std = data.std(ddof=1)
+                    mean = data.mean(); std = data.std(ddof=1)
                     if std == 0: return None 
-                    
                     cp = (usl - lsl) / (6 * std)
-                    mid = (usl + lsl) / 2
-                    tol = (usl - lsl)
+                    mid = (usl + lsl) / 2; tol = (usl - lsl)
                     ca = ((mean - mid) / (tol / 2)) * 100
-                    cpu = (usl - mean) / (3 * std)
-                    cpl = (mean - lsl) / (3 * std)
-                    cpk = min(cpu, cpl)
-                    return mean, std, cp, ca, cpk
+                    cpu = (usl - mean) / (3 * std); cpl = (mean - lsl) / (3 * std)
+                    return mean, std, cp, ca, min(cpu, cpl)
 
                 spc_line = calc_spc_metrics(line, lo, hi)
-
                 mean_line, std_line = line.mean(), line.std(ddof=1)
-                if not lab.empty: mean_lab, std_lab = lab.mean(), lab.std(ddof=1)
-                else: mean_lab, std_lab = 0, 0
+                mean_lab, std_lab = (lab.mean(), lab.std(ddof=1)) if not lab.empty else (0, 0)
                 
-                # Auto scale trục X (Bao gồm cả Lab Limit)
                 vals = [line.min(), line.max(), lo, hi]
                 if l_lo > 0: vals.extend([l_lo, l_hi])
                 if not lab.empty: vals.extend([lab.min(), lab.max()])
                 x_min = min(vals) - 2; x_max = max(vals) + 2
-                
                 bins = np.linspace(x_min, x_max, 30)
                 
-                # Extended Range for Curve (± 5 Sigma)
+                # Curve range ±5 sigma
                 range_curve = max(5 * std_line, (x_max - x_min)/2)
                 xs = np.linspace(mean_line - range_curve, mean_line + range_curve, 400)
                 
                 fig, ax = plt.subplots(figsize=(10, 5))
-                
                 ax.hist(line, bins=bins, density=True, alpha=0.6, color="#ff7f0e", edgecolor="white", label="LINE Hist")
-                if not lab.empty:
-                    ax.hist(lab, bins=bins, density=True, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
+                if not lab.empty: ax.hist(lab, bins=bins, density=True, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
                 
                 if std_line > 0:
                     ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
                     ax.plot(xs, ys_line, linewidth=2.5, color="#b25e00", label="LINE Fit")
-
                 if not lab.empty and std_lab > 0:
                     ys_lab = (1/(std_lab*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_lab)/std_lab)**2)
                     ax.plot(xs, ys_lab, linewidth=2, linestyle="--", color="#1f77b4", label="LAB Fit")
                 
-                # Limits (Màu Đỏ)
                 ax.axvline(lo, linestyle="--", linewidth=2, color="red", label="Control LSL")
                 ax.axvline(hi, linestyle="--", linewidth=2, color="red", label="Control USL")
-                
-                # Lab Limits (Màu Tím)
                 if l_lo > 0 and l_hi > 0:
                     ax.axvline(l_lo, linestyle="-.", linewidth=2, color="purple", label="Lab LSL")
                     ax.axvline(l_hi, linestyle="-.", linewidth=2, color="purple", label="Lab USL")
                 
-                # Set X Limits để curve đi xuyên qua
                 ax.set_xlim(x_min, x_max)
-
                 ax.set_title(f"Hardness Distribution (LINE vs LAB)", weight="bold")
-                ax.legend()
-                ax.grid(alpha=0.3)
+                ax.legend(); ax.grid(alpha=0.3)
                 st.pyplot(fig)
 
                 st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
-                
                 if spc_line:
                     mean_val, std_val, cp_val, ca_val, cpk_val = spc_line
                     eval_msg = "Excellent" if cpk_val >= 1.33 else ("Good" if cpk_val >= 1.0 else "Poor")
                     color_code = "green" if cpk_val >= 1.33 else ("orange" if cpk_val >= 1.0 else "red")
-
-                    df_spc = pd.DataFrame([{
-                        "N": len(line), "Mean": mean_val, "Std": std_val,
-                        "Cp": cp_val, "Ca (%)": ca_val, "Cpk": cpk_val,
-                        "Rating": eval_msg
-                    }])
-
-                    st.dataframe(
-                        df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"])
-                        .applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']),
-                        hide_index=True
-                    )
+                    df_spc = pd.DataFrame([{"N": len(line), "Mean": mean_val, "Std": std_val, "Cp": cp_val, "Ca (%)": ca_val, "Cpk": cpk_val, "Rating": eval_msg}])
+                    st.dataframe(df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"]).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), hide_index=True)
 
     # ================================
-    # 3. CORRELATION (FULL CHART + TABLE)
+    # 3. CORRELATION
     # ================================
     elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
         st.markdown("### 🔗 Correlation: Hardness vs Mechanical Properties")
-        
         sub_corr = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"])
         bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
         labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
@@ -645,11 +559,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
         if not summary.empty:
             x = np.arange(len(summary))
             fig, ax = plt.subplots(figsize=(15,6))
-            
             def plot_prop(x, y, ymin, ymax, c, lbl, m):
                 ax.plot(x, y, marker=m, color=c, label=lbl, lw=2)
                 ax.fill_between(x, ymin, ymax, color=c, alpha=0.1)
-
             plot_prop(x, summary["TS_mean"], summary["TS_min"], summary["TS_max"], "#1f77b4", "TS", "o")
             plot_prop(x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "#2ca02c", "YS", "s")
             plot_prop(x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL", "^")
@@ -657,7 +569,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             for j, row in enumerate(summary.itertuples()):
                 ax.annotate(f"{row.TS_mean:.0f}", (x[j], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#1f77b4")
                 ax.annotate(f"{row.YS_mean:.0f}", (x[j], row.YS_mean), xytext=(0,-15), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#2ca02c")
-                
                 el_spec = row.Std_EL_min
                 is_fail = (el_spec > 0) and (row.EL_mean < el_spec)
                 lbl = f"{row.EL_mean:.1f}%" + ("❌" if is_fail else "")
@@ -665,49 +576,38 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ax.annotate(lbl, (x[j], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color=clr, fontweight=("bold" if is_fail else "normal"))
 
             ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
-            ax.set_title("Hardness vs Mechanical Properties (Mean & Range)"); ax.grid(True, ls="--", alpha=0.5); ax.legend()
+            ax.set_title("Hardness vs Mechanical Properties"); ax.grid(True, ls="--", alpha=0.5); ax.legend()
             st.pyplot(fig)
             
-            st.markdown("#### 📌 Quick Conclusion per Hardness Bin (Table View)")
+            st.markdown("#### 📌 Quick Conclusion per Hardness Bin")
             conclusion_data = []
-
             for row in summary.itertuples():
                 def get_status(val_min, val_max, spec_min, spec_max):
                     pass_min = (val_min >= spec_min) if (pd.notna(spec_min) and spec_min > 0) else True
                     pass_max = (val_max <= spec_max) if (pd.notna(spec_max) and spec_max > 0) else True
                     return "✅" if (pass_min and pass_max) else "⚠️"
-
-                ts_stat = get_status(row.TS_min, row.TS_max, row.Std_TS_min, row.Std_TS_max)
-                ys_stat = get_status(row.YS_min, row.YS_max, row.Std_YS_min, row.Std_YS_max)
-                el_stat = get_status(row.EL_min, row.EL_max, row.Std_EL_min, row.Std_EL_max)
-
                 conclusion_data.append({
                     "Hardness Range": row.HRB_bin,
-                    "TS Check (Min~Max)": f"{ts_stat} ({row.TS_min:.0f}~{row.TS_max:.0f})",
-                    "YS Check (Min~Max)": f"{ys_stat} ({row.YS_min:.0f}~{row.YS_max:.0f})",
-                    "EL Check (Min~Max)": f"{el_stat} ({row.EL_min:.1f}~{row.EL_max:.1f})"
+                    "TS Check": f"{get_status(row.TS_min, row.TS_max, row.Std_TS_min, row.Std_TS_max)}",
+                    "YS Check": f"{get_status(row.YS_min, row.YS_max, row.Std_YS_min, row.Std_YS_max)}",
+                    "EL Check": f"{get_status(row.EL_min, row.EL_max, row.Std_EL_min, row.Std_EL_max)}"
                 })
-
-            if conclusion_data:
-                st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
+            if conclusion_data: st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
 
     # ================================
-    # 4. MECH PROPS ANALYSIS (UPDATED: WITH LIMITS & STATS & LONG CURVE)
+    # 4. MECH PROPS ANALYSIS
     # ================================
     elif view_mode == "⚙️ Mech Props Analysis":
         st.markdown("### ⚙️ Mechanical Properties Analysis (Distribution vs Specs)")
-        
         sub_mech = sub.dropna(subset=["TS","YS","EL"])
         
-        if sub_mech.empty:
-            st.warning("⚠️ No Mechanical Property data available for this group.")
+        if sub_mech.empty: st.warning("⚠️ No Mech Data.")
         else:
             props_config = [
                 {"col": "TS", "name": "Tensile Strength (TS)", "color": "#1f77b4", "min_c": "Standard TS min", "max_c": "Standard TS max"},
                 {"col": "YS", "name": "Yield Strength (YS)", "color": "#2ca02c", "min_c": "Standard YS min", "max_c": "Standard YS max"},
                 {"col": "EL", "name": "Elongation (EL)", "color": "#ff7f0e", "min_c": "Standard EL min", "max_c": "Standard EL max"}
             ]
-
             fig, axes = plt.subplots(1, 3, figsize=(18, 6))
             stats_data = []
 
@@ -715,67 +615,42 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 col = cfg["col"]
                 data = sub_mech[col]
                 mean, std = data.mean(), data.std()
-                
-                # Get Specs
                 spec_min = sub_mech[cfg["min_c"]].max() if cfg["min_c"] in sub_mech else 0
                 spec_max = sub_mech[cfg["max_c"]].min() if cfg["max_c"] in sub_mech else 0
                 if pd.isna(spec_min): spec_min = 0
                 if pd.isna(spec_max): spec_max = 0
                 
-                # Calculate Process Limits (3 Sigma)
-                proc_min = mean - 3 * std
-                proc_max = mean + 3 * std
+                proc_min = mean - 3 * std; proc_max = mean + 3 * std
 
-                # Vẽ Histogram
                 axes[j].hist(data, bins=20, color=cfg["color"], alpha=0.5, density=True, label="Actual Dist")
                 
-                # Vẽ đường Normal Curve dài (± 5 Sigma)
                 if std > 0:
                     x_p = np.linspace(mean - 5 * std, mean + 5 * std, 200)
                     y_p = (1/(std*np.sqrt(2*np.pi))) * np.exp(-0.5*((x_p-mean)/std)**2)
                     axes[j].plot(x_p, y_p, color=cfg["color"], lw=2, label="Normal Fit")
-
-                    # Set X-Limits wide enough
+                    
                     view_min = min(data.min(), spec_min if spec_min > 0 else data.min(), proc_min)
                     view_max = max(data.max(), spec_max if spec_max < 9000 else data.max(), proc_max)
                     margin = (view_max - view_min) * 0.4
                     axes[j].set_xlim(view_min - margin, view_max + margin)
 
-                # 1. Vẽ đường SPEC (Màu Đỏ - Nét đứt)
-                if spec_min > 0:
-                    axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2, label=f"Spec Min {spec_min:.0f}")
-                if spec_max > 0 and spec_max < 9000:
-                    axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2, label=f"Spec Max {spec_max:.0f}")
-
-                # 2. Vẽ đường PROCESS CONTROL (Màu Xanh - Nét chấm) -> Đảm bảo luôn có vạch
-                axes[j].axvline(proc_min, color="blue", linestyle=":", linewidth=2, label=f"-3σ ({proc_min:.1f})")
-                axes[j].axvline(proc_max, color="blue", linestyle=":", linewidth=2, label=f"+3σ ({proc_max:.1f})")
+                if spec_min > 0: axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2, label=f"Spec Min {spec_min:.0f}")
+                if spec_max > 0 and spec_max < 9000: axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2, label=f"Spec Max {spec_max:.0f}")
+                axes[j].axvline(proc_min, color="blue", linestyle=":", linewidth=2, label=f"-3σ")
+                axes[j].axvline(proc_max, color="blue", linestyle=":", linewidth=2, label=f"+3σ")
 
                 axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
-                axes[j].legend(loc="upper right", fontsize="small")
-                axes[j].grid(alpha=0.3, linestyle="--")
+                axes[j].legend(loc="upper right", fontsize="small"); axes[j].grid(alpha=0.3, linestyle="--")
 
                 stats_data.append({
                     "Property": col,
-                    "Limit (Spec)": f"{spec_min:.0f} ~ {spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else f"≥ {spec_min:.0f}",
-                    "Actual (Range)": f"{data.min():.1f} ~ {data.max():.1f}",
-                    "Mean": mean,
-                    "Std Dev": std,
+                    "Limit (Spec)": f"{spec_min:.0f}~{spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else f"≥ {spec_min:.0f}",
+                    "Actual (Range)": f"{data.min():.1f}~{data.max():.1f}",
+                    "Mean": mean, "Std Dev": std,
                     "Pass Rate": f"{(data >= spec_min).mean() * 100:.1f}%" if spec_min > 0 else "100%"
                 })
-
             st.pyplot(fig)
-            
-            st.markdown("#### 📊 Statistics Summary & Spec Check")
-            df_stat = pd.DataFrame(stats_data)
-            st.dataframe(
-                df_stat.style.format({
-                    "Mean": "{:.1f}", 
-                    "Std Dev": "{:.1f}"
-                }), 
-                use_container_width=True, 
-                hide_index=True
-            )
+            st.dataframe(pd.DataFrame(stats_data).style.format({"Mean": "{:.1f}", "Std Dev": "{:.1f}"}), use_container_width=True, hide_index=True)
 
     # ================================
     # 5. LOOKUP
@@ -784,28 +659,23 @@ for i, (_, g) in enumerate(valid.iterrows()):
         c1, c2 = st.columns(2)
         mn = st.number_input("Min HRB", 58.0, step=0.5, key=f"lk1_{uuid.uuid4()}")
         mx = st.number_input("Max HRB", 65.0, step=0.5, key=f"lk2_{uuid.uuid4()}")
-        
         filt = sub[(sub["Hardness_LINE"]>=mn) & (sub["Hardness_LINE"]<=mx)].dropna(subset=["TS","YS","EL"])
         st.success(f"Found {len(filt)} coils.")
-        if not filt.empty:
-            st.dataframe(filt[["TS","YS","EL"]].describe().T)
+        if not filt.empty: st.dataframe(filt[["TS","YS","EL"]].describe().T)
 
     # ================================
     # 6. REVERSE LOOKUP
     # ================================
     elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
         st.subheader("🎯 Target Hardness Calculator (Smart Limits)")
-        
         def calculate_smart_limits(name, col_val, col_spec_min, col_spec_max, step=5.0):
             try:
                 series_val = pd.to_numeric(sub[col_val], errors='coerce')
                 valid_data = series_val[series_val > 0.1].dropna()
                 if valid_data.empty: return 0.0, 0.0
-                
-                mean = float(valid_data.mean())
-                std = float(valid_data.std()) if len(valid_data) > 1 else 0.0
+                mean = float(valid_data.mean()); std = float(valid_data.std()) if len(valid_data) > 1 else 0.0
                 stat_min = mean - (3 * std); stat_max = mean + (3 * std)
-
+                
                 spec_min = 0.0
                 if col_spec_min in sub.columns:
                     s_min = pd.to_numeric(sub[col_spec_min], errors='coerce').max()
@@ -818,49 +688,30 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     if not s_max_valid.empty: spec_max = float(s_max_valid.min())
 
                 is_no_spec = (spec_min < 1.0) and (spec_max > 9000.0)
-
                 final_min = max(stat_min, spec_min)
-                if spec_max < 9000:
-                    final_max = min(stat_max, spec_max)
-                else:
-                    final_max = stat_max + (1 * std) if is_no_spec else stat_max
-
+                final_max = min(stat_max, spec_max) if spec_max < 9000 else (stat_max + (1 * std) if is_no_spec else stat_max)
                 if final_min >= final_max: final_min, final_max = stat_min, stat_max + std
-
-                rec_min = float(round(max(0.0, final_min) / step) * step)
-                rec_max = float(round(final_max / step) * step)
-                return rec_min, rec_max
-            except:
-                return 0.0, 0.0
+                return float(round(max(0.0, final_min) / step) * step), float(round(final_max / step) * step)
+            except: return 0.0, 0.0
 
         d_ys_min, d_ys_max = calculate_smart_limits('YS', 'YS', 'Standard YS min', 'Standard YS max', 5.0)
         d_ts_min, d_ts_max = calculate_smart_limits('TS', 'TS', 'Standard TS min', 'Standard TS max', 5.0)
         d_el_min, d_el_max = calculate_smart_limits('EL', 'EL', 'Standard EL min', 'Standard EL max', 1.0)
 
         c1, c2, c3 = st.columns(3)
-        with c1: 
-            r_ys_min = st.number_input("Min YS", value=d_ys_min, step=5.0, key=f"rys1_{uuid.uuid4()}")
-            r_ys_max = st.number_input("Max YS", value=d_ys_max, step=5.0, key=f"rys2_{uuid.uuid4()}")
-        with c2:
-            r_ts_min = st.number_input("Min TS", value=d_ts_min, step=5.0, key=f"rts1_{uuid.uuid4()}")
-            r_ts_max = st.number_input("Max TS", value=d_ts_max, step=5.0, key=f"rts2_{uuid.uuid4()}")
-        with c3:
-            r_el_min = st.number_input("Min EL", value=d_el_min, step=1.0, key=f"rel1_{uuid.uuid4()}")
-            r_el_max = st.number_input("Max EL", value=d_el_max, step=1.0, key=f"rel2_{uuid.uuid4()}")
+        r_ys_min = c1.number_input("Min YS", value=d_ys_min, step=5.0); r_ys_max = c1.number_input("Max YS", value=d_ys_max, step=5.0)
+        r_ts_min = c2.number_input("Min TS", value=d_ts_min, step=5.0); r_ts_max = c2.number_input("Max TS", value=d_ts_max, step=5.0)
+        r_el_min = c3.number_input("Min EL", value=d_el_min, step=1.0); r_el_max = c3.number_input("Max EL", value=d_el_max, step=1.0)
 
         filtered = sub[
             (sub['YS'] >= r_ys_min) & (sub['YS'] <= r_ys_max) &
             (sub['TS'] >= r_ts_min) & (sub['TS'] <= r_ts_max) &
             ((sub['EL'] >= r_el_min) | (r_el_min==0)) & (sub['EL'] <= r_el_max)
         ]
-        
         if not filtered.empty:
-            rec_min_hrb = filtered['Hardness_LINE'].min()
-            rec_max_hrb = filtered['Hardness_LINE'].max()
-            st.success(f"✅ Target Hardness: **{rec_min_hrb:.1f} ~ {rec_max_hrb:.1f} HRB** (N={len(filtered)})")
+            st.success(f"✅ Target Hardness: **{filtered['Hardness_LINE'].min():.1f} ~ {filtered['Hardness_LINE'].max():.1f} HRB** (N={len(filtered)})")
             st.dataframe(filtered[['COIL_NO','Hardness_LINE','YS','TS','EL']], height=300)
-        else:
-            st.error("❌ No coils found matching these specs.")
+        else: st.error("❌ No coils found matching these specs.")
 
     # ================================
     # 7. AI PREDICTION
@@ -868,13 +719,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown("### 🚀 AI Forecast (Linear Regression)")
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
-        
-        if len(train_df) < 5:
-            st.warning("⚠️ Need at least 5 coils.")
+        if len(train_df) < 5: st.warning("⚠️ Need at least 5 coils.")
         else:
             mean_h = train_df["Hardness_LINE"].mean()
             target_h = st.number_input("Target Hardness", value=round(mean_h, 1), step=0.1, key=f"ai_{uuid.uuid4()}")
-            
             X_train = train_df[["Hardness_LINE"]].values
             preds = {}
             for col in ["TS", "YS", "EL"]:
@@ -884,104 +732,61 @@ for i, (_, g) in enumerate(valid.iterrows()):
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             colors = {"TS": "#004BA0", "YS": "#1B5E20", "EL": "#B71C1C"}
             idx = list(range(len(train_df))); nxt = len(train_df)
-
             for col in ["TS","YS","EL"]:
                 sec = (col=="EL")
                 fig.add_trace(go.Scatter(x=idx, y=train_df[col], mode='lines', line=dict(color=colors[col], width=1, dash='dot'), opacity=0.3, name=col), secondary_y=sec)
                 fig.add_trace(go.Scatter(x=[nxt], y=[preds[col]], mode='markers+text', text=[f"{preds[col]:.0f}"], marker=dict(color=colors[col], size=15, symbol='diamond'), name=f"Pred {col}"), secondary_y=sec)
-            
             fig.update_layout(height=500, title="Prediction Visualization")
             st.plotly_chart(fig, use_container_width=True)
-            
             c1, c2, c3 = st.columns(3)
-            c1.metric("Pred TS", f"{preds['TS']:.0f}")
-            c2.metric("Pred YS", f"{preds['YS']:.0f}")
-            c3.metric("Pred EL", f"{preds['EL']:.1f}")
+            c1.metric("Pred TS", f"{preds['TS']:.0f}"); c2.metric("Pred YS", f"{preds['YS']:.0f}"); c3.metric("Pred EL", f"{preds['EL']:.1f}")
 
     # ================================
-# ================================
-    # 8. CONTROL LIMIT CALCULATOR (FINAL: COLOR FIXED + LAB DATA)
+    # 8. CONTROL LIMIT CALCULATOR
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
-        
         st.markdown(f"### 🎛️ Control Limits Analysis: {g['Material']} | {g['Gauge_Range']}")
-
-        # Lấy dữ liệu
         data = sub["Hardness_LINE"].dropna()
-        data_lab = sub["Hardness_LAB"].dropna() # Lấy thêm dữ liệu Lab để vẽ đối chiếu
+        data_lab = sub["Hardness_LAB"].dropna()
         
-        if len(data) < 10:
-            st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
+        if len(data) < 10: st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
         else:
-            unique_key_sigma = f"ctrl_sigma_{i}_{g['Material']}"
-            unique_key_iqr = f"ctrl_iqr_{i}_{g['Material']}"
-
             with st.expander("⚙️ 設定參數 (Settings)", expanded=False):
-                col_par1, col_par2 = st.columns(2)
-                with col_par1:
-                    sigma_n = st.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 3.0, 0.5, key=unique_key_sigma)
-                with col_par2:
-                    iqr_k = st.number_input("2. IQR Sensitivity", 0.5, 3.0, 0.7, 0.1, key=unique_key_iqr)
+                c1, c2 = st.columns(2)
+                sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 3.0, 0.5, key=f"sig_{i}")
+                iqr_k = c2.number_input("2. IQR Sensitivity", 0.5, 3.0, 0.7, 0.1, key=f"iqr_{i}")
 
-            # --- TÍNH TOÁN LIMIT (Dựa trên LINE) ---
-            spec_min = sub["Limit_Min"].max() 
-            spec_max = sub["Limit_Max"].min()
+            spec_min = sub["Limit_Min"].max(); spec_max = sub["Limit_Max"].min()
             if pd.isna(spec_min): spec_min = 0
             if pd.isna(spec_max): spec_max = 0
             display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
-
-            mu = data.mean()
-
-            # Method 1: Standard
-            std_dev = data.std()
-            m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
+            mu = data.mean(); std_dev = data.std()
             
-            # Method 2: IQR
+            m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
             Q1 = data.quantile(0.25); Q3 = data.quantile(0.75); IQR = Q3 - Q1
             clean_data = data[~((data < (Q1 - iqr_k * IQR)) | (data > (Q3 + iqr_k * IQR)))]
             if clean_data.empty: clean_data = data
             mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
-
-            # Method 3: Hybrid
             m3_min = max(m2_min, spec_min)
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
-
-            # Method 4: I-MR
-            mrs = np.abs(np.diff(data))
-            mr_bar = np.mean(mrs)
-            sigma_imr = mr_bar / 1.128
+            mrs = np.abs(np.diff(data)); mr_bar = np.mean(mrs); sigma_imr = mr_bar / 1.128
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
-            # --- VẼ BIỂU ĐỒ (CẬP NHẬT MÀU SẮC) ---
             col_chart, col_table = st.columns([2, 1])
-            
             with col_chart:
                 fig, ax = plt.subplots(figsize=(10, 5))
-                
-                # 1. Vẽ LINE (Màu Xanh Dương)
                 ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
-                
-                # 2. Vẽ LAB (Màu Cam - Vẽ chồng lên để so sánh)
-                if not data_lab.empty:
-                    ax.hist(data_lab, bins=30, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Reference)")
-                
-                # Vẽ các đường giới hạn
+                if not data_lab.empty: ax.hist(data_lab, bins=30, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
                 ax.axvline(m1_min, c="red", ls=":", alpha=0.4); ax.axvline(m1_max, c="red", ls=":", alpha=0.4, label="M1: Standard")
                 ax.axvline(m2_min, c="blue", ls="--", alpha=0.5); ax.axvline(m2_max, c="blue", ls="--", alpha=0.5, label="M2: IQR")
                 ax.axvline(m4_min, c="purple", ls="-.", lw=2); ax.axvline(m4_max, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
-                
-                # Vùng tối ưu (Hybrid)
                 ax.axvspan(m3_min, m3_max, color="green", alpha=0.15, label="M3: Hybrid Zone")
-                
-                # Spec Khách hàng
                 if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
                 if display_max > 0: ax.axvline(display_max, c="black", lw=2)
-
-                ax.set_title(f"Control Limits Analysis (Line vs Lab)", fontsize=10, fontweight="bold")
-                ax.legend(loc="upper right", fontsize="small")
-                st.pyplot(fig)
+                ax.set_title(f"Limits Comparison (σ={sigma_n})", fontsize=10, fontweight="bold")
+                ax.legend(loc="upper right", fontsize="small"); st.pyplot(fig)
 
             with col_table:
                 comp_data = [
@@ -992,10 +797,4 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     {"Method": "4. I-MR (SPC)", "Min": m4_min, "Max": m4_max, "Range": m4_max-m4_min, "Note": "✅ Professional"}
                 ]
                 st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["Min", "Max", "Range"]), use_container_width=True, hide_index=True)
-                
-                st.info("""
-                **Quick Comparison:**
-                * **M2 (IQR):** Filters out noise and outliers using robust algorithms.
-                * **M4 (I-MR):** Eliminates process drift influence using International SPC Standards.
-                * **Insight:** If **M4 is narrower than M1**, it indicates the presence of **Process Drift**.
-                """)
+                st.info("**Color Guide:**\n* 🔵 LINE (Blue) vs 🟠 LAB (Orange)\n* **M4 (I-MR)** is best for detecting process drift.")
