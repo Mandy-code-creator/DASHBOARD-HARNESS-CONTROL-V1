@@ -495,6 +495,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
     # ================================
     # 2. HARDNESS ANALYSIS (FULL FINAL VERSION)
     # ================================
+    # 2. HARDNESS ANALYSIS (UPDATED: SHOW LAB & CONTROL LIMITS)
+    # ================================
     elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
         
         st.markdown("### 📉 Hardness Analysis: Process Stability & Capability")
@@ -506,22 +508,28 @@ for i, (_, g) in enumerate(valid.iterrows()):
             x = np.arange(1, len(sub)+1)
             fig, ax = plt.subplots(figsize=(10, 4.5))
             
-            # Vẽ cả 2 để đối chiếu xu hướng
-            ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.5)
-            ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.9) 
+            # Vẽ cả 2 đường dữ liệu
+            ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB Data", alpha=0.5)
+            ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE Data", alpha=0.9) 
             
-            # Vẽ giới hạn (SỬ DỤNG LO/HI ĐÃ CẬP NHẬT THEO RULE)
-            ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
-            ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
+            # Vẽ Control Limits (Rule)
+            ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"Control LSL={lo}")
+            ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"Control USL={hi}")
             
-            ax.set_title("Hardness Trend by Coil Sequence", weight="bold")
+            # Vẽ Lab Limits (Nếu có) - Thêm vào biểu đồ Trend luôn cho đồng bộ
+            if l_lo > 0 and l_hi > 0:
+                ax.axhline(l_lo, linestyle="-.", linewidth=1.5, color="purple", label=f"Lab LSL={l_lo}", alpha=0.7)
+                ax.axhline(l_hi, linestyle="-.", linewidth=1.5, color="purple", label=f"Lab USL={l_hi}", alpha=0.7)
+
+            ax.set_title(f"Hardness Trend: {g['Material']} (Rule: {rule_used})", weight="bold")
             ax.set_xlabel("Coil Sequence"); ax.set_ylabel("Hardness (HRB)")
             ax.grid(alpha=0.25, linestyle="--")
+            
+            # Đưa chú thích ra ngoài cho thoáng
             ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=4)
             plt.tight_layout()
             st.pyplot(fig)
             
-            # Nút download
             buf = fig_to_png(fig)
             st.download_button("📥 Download Trend Chart", data=buf, file_name=f"trend_{g['Material']}.png", mime="image/png", key=f"dl_tr_{uuid.uuid4()}")
 
@@ -533,48 +541,39 @@ for i, (_, g) in enumerate(valid.iterrows()):
             if len(line) < 5:
                 st.warning("⚠️ Not enough LINE data (N < 5) to calculate SPC.")
             else:
-                # 1. Hàm tính toán SPC Helper
+                # 1. Tính toán SPC (Giữ nguyên)
                 def calc_spc_metrics(data, lsl, usl):
                     if len(data) < 2: return None
                     mean = data.mean()
                     std = data.std(ddof=1)
                     if std == 0: return None 
                     
-                    # Cp: Process Potential
                     cp = (usl - lsl) / (6 * std)
-                    
-                    # Ca: Accuracy (%)
                     mid = (usl + lsl) / 2
                     tol = (usl - lsl)
                     ca = ((mean - mid) / (tol / 2)) * 100
-                    
-                    # Cpk: Process Capability
                     cpu = (usl - mean) / (3 * std)
                     cpl = (mean - lsl) / (3 * std)
                     cpk = min(cpu, cpl)
-                    
                     return mean, std, cp, ca, cpk
 
-                # CHỈ TÍNH TOÁN SPC CHO LINE (Để hiển thị bảng)
                 spc_line = calc_spc_metrics(line, lo, hi)
 
-                # 2. Chuẩn bị vẽ biểu đồ
+                # 2. Vẽ Biểu đồ Phân bố (Updated)
                 mean_line, std_line = line.mean(), line.std(ddof=1)
+                if not lab.empty: mean_lab, std_lab = lab.mean(), lab.std(ddof=1)
+                else: mean_lab, std_lab = 0, 0
                 
-                # Tính toán cho LAB (chỉ để vẽ đường curve tham khảo)
-                if not lab.empty:
-                    mean_lab, std_lab = lab.mean(), lab.std(ddof=1)
-                else:
-                    mean_lab, std_lab = 0, 0
+                # Auto scale trục X để bao trùm cả Lab Limit
+                vals = [line.min(), line.max(), lo, hi]
+                if l_lo > 0: vals.extend([l_lo, l_hi])
+                if not lab.empty: vals.extend([lab.min(), lab.max()])
                 
-                # Auto scale trục X
-                data_min = min(line.min(), lab.min()) if not lab.empty else line.min()
-                data_max = max(line.max(), lab.max()) if not lab.empty else line.max()
-                x_min = min(data_min, lo) - 2
-                x_max = max(data_max, hi) + 2
+                x_min = min(vals) - 2
+                x_max = max(vals) + 2
                 
                 bins = np.linspace(x_min, x_max, 30)
-                xs = np.linspace(x_min, x_max, 400) # Trục X cho đường cong chuẩn
+                xs = np.linspace(x_min, x_max, 400)
                 
                 fig, ax = plt.subplots(figsize=(10, 5))
                 
@@ -583,54 +582,45 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 if not lab.empty:
                     ax.hist(lab, bins=bins, density=True, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
                 
-                # --- VẼ NORMAL CURVE (LINE - Nét liền đậm) ---
+                # Curve
                 if std_line > 0:
                     ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
                     ax.plot(xs, ys_line, linewidth=2.5, color="#b25e00", label="LINE Fit")
 
-                # --- VẼ NORMAL CURVE (LAB - Nét đứt màu xanh) ---
                 if not lab.empty and std_lab > 0:
                     ys_lab = (1/(std_lab*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_lab)/std_lab)**2)
                     ax.plot(xs, ys_lab, linewidth=2, linestyle="--", color="#1f77b4", label="LAB Fit")
                 
-                # Limits (SỬ DỤNG LO/HI ĐÃ CẬP NHẬT)
-                ax.axvline(lo, linestyle="--", linewidth=2, color="red", label="LSL")
-                ax.axvline(hi, linestyle="--", linewidth=2, color="red", label="USL")
+                # --- VẼ GIỚI HẠN (PHẦN QUAN TRỌNG) ---
                 
-                ax.set_title(f"Hardness Distribution (LINE vs LAB)", weight="bold")
+                # 1. Control Limits (Màu Đỏ - Quy tắc công ty)
+                ax.axvline(lo, linestyle="--", linewidth=2, color="red", label="Control LSL")
+                ax.axvline(hi, linestyle="--", linewidth=2, color="red", label="Control USL")
+                
+                # 2. Lab Limits (Màu Tím - Nếu có) - ĐÂY LÀ PHẦN "VẼ THÊM"
+                if l_lo > 0 and l_hi > 0:
+                    ax.axvline(l_lo, linestyle="-.", linewidth=2, color="purple", label="Lab LSL")
+                    ax.axvline(l_hi, linestyle="-.", linewidth=2, color="purple", label="Lab USL")
+                    # Tô màu vùng Lab Limit để dễ nhìn
+                    # ax.axvspan(l_lo, l_hi, color='purple', alpha=0.05) 
+
+                ax.set_title(f"Distribution: {g['Material']} (Control: {lo:.0f}-{hi:.0f} | Lab: {l_lo:.0f}-{l_hi:.0f})", weight="bold")
                 ax.legend()
                 ax.grid(alpha=0.3)
                 st.pyplot(fig)
 
-                # 3. Hiển thị bảng chỉ số SPC (CHỈ LINE)
+                # 3. Bảng SPC (Giữ nguyên)
                 st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
-                
                 if spc_line:
                     mean_val, std_val, cp_val, ca_val, cpk_val = spc_line
-                    
                     eval_msg = "Excellent" if cpk_val >= 1.33 else ("Good" if cpk_val >= 1.0 else "Poor")
                     color_code = "green" if cpk_val >= 1.33 else ("orange" if cpk_val >= 1.0 else "red")
 
                     df_spc = pd.DataFrame([{
-                        "N (Coils)": len(line),
-                        "Mean": mean_val, "Std Dev": std_val,
-                        "Cp": cp_val, "Ca (%)": ca_val, "Cpk": cpk_val,
-                        "Rating": eval_msg
+                        "N": len(line), "Mean": mean_val, "Std": std_val,
+                        "Cp": cp_val, "Ca (%)": ca_val, "Cpk": cpk_val, "Rating": eval_msg
                     }])
-
-                    # Format bảng: TẤT CẢ LÀ 2 SỐ THẬP PHÂN
-                    st.dataframe(
-                        df_spc.style.format({
-                            "Mean": "{:.2f}", 
-                            "Std Dev": "{:.2f}",          
-                            "Cp": "{:.2f}", 
-                            "Ca (%)": "{:.2f}%", 
-                            "Cpk": "{:.2f}"
-                        }).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']),
-                        use_container_width=True, 
-                        hide_index=True
-                    )
-
+                    st.dataframe(df_spc.style.format("{:.2f}").applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), hide_index=True)
     # ================================
     # 3. CORRELATION (FULL CHART + TABLE)
     # ================================
