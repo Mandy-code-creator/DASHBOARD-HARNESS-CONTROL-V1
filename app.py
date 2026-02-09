@@ -792,19 +792,17 @@ for _, g in valid.iterrows():
             c3.metric("Pred EL", f"{preds['EL']:.1f}")
 # ================================
 # ================================
-# ================================
-    # 8. CONTROL LIMIT CALCULATOR (FIXED: UNIQUE KEYS USING DATAFRAME INDEX)
+    # 8. CONTROL LIMIT CALCULATOR (FIXED: ENUMERATE KEYS)
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         st.markdown("### 🎛️ 最佳控制限計算器 (Optimal Control Limit Calculator)")
         st.info("比較三種確定控制限的方法。每個材料組都可以單獨設定參數。")
 
-        # Lưu ý: 'valid' là dataframe chứa danh sách các cuộn/nhóm vật liệu
-        # Chúng ta dùng 'index' của dataframe để làm key duy nhất
-        for index, row in valid.iterrows():
-            g = row # Dòng dữ liệu hiện tại
+        # --- QUAN TRỌNG: Sử dụng enumerate(valid.iterrows()) ---
+        # 'i' sẽ là số thứ tự tăng dần (0, 1, 2,...) đảm bảo KHÔNG BAO GIỜ TRÙNG
+        for i, (_, g) in enumerate(valid.iterrows()):
             
-            # Lọc dữ liệu chi tiết cho nhóm này
+            # 1. Lọc dữ liệu cho nhóm hiện tại
             sub_grp = df[
                 (df["Rolling_Type"] == g["Rolling_Type"]) &
                 (df["Metallic_Type"] == g["Metallic_Type"]) &
@@ -815,7 +813,7 @@ for _, g in valid.iterrows():
             
             # Tiêu đề nhóm
             st.markdown(f"---")
-            st.markdown(f"#### 📦 Group: {g['Material']} | {g['Gauge_Range']}")
+            st.markdown(f"#### 📦 Group {i+1}: {g['Material']} | {g['Gauge_Range']}")
 
             data = sub_grp["Hardness_LINE"].dropna()
             
@@ -823,28 +821,27 @@ for _, g in valid.iterrows():
                 st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
                 continue
 
-            # --- 1. CẤU HÌNH THAM SỐ (RIÊNG CHO TỪNG BIỂU ĐỒ) ---
-            # Tạo Key duy nhất dựa trên Index của dòng dữ liệu -> Không bao giờ trùng
-            unique_sigma_key = f"sigma_{index}_{g['Material']}"
-            unique_iqr_key = f"iqr_{index}_{g['Material']}"
+            # --- 2. CẤU HÌNH THAM SỐ (Settings) ---
+            # Tạo Key dựa trên số thứ tự 'i' -> Đảm bảo duy nhất
+            key_sigma = f"sigma_input_{i}"
+            key_iqr = f"iqr_input_{i}"
 
-            with st.expander(f"⚙️ 設定參數 (Settings for {g['Material']})", expanded=False):
+            with st.expander(f"⚙️ 設定參數 (Settings for Group {i+1})", expanded=False):
                 col_par1, col_par2 = st.columns(2)
                 with col_par1:
                     sigma_n = st.number_input(
                         "1. Sigma 倍數", 
                         min_value=1.0, max_value=6.0, value=3.0, step=0.5,
-                        key=unique_sigma_key  # <--- FIX: Key theo Index
+                        key=key_sigma  # <--- FIX: Key theo số thứ tự i
                     )
                 with col_par2:
                     iqr_k = st.number_input(
                         "2. IQR 靈敏度", 
                         min_value=0.5, max_value=3.0, value=1.0, step=0.1,
-                        key=unique_iqr_key    # <--- FIX: Key theo Index
+                        key=key_iqr    # <--- FIX: Key theo số thứ tự i
                     )
 
-            # --- 2. TÍNH TOÁN ---
-            # Lấy Spec
+            # --- 3. TÍNH TOÁN ---
             spec_min = sub_grp["Std_Min"].max() if "Std_Min" in sub_grp else 0
             spec_max = sub_grp["Std_Max"].min() if "Std_Max" in sub_grp else 0
             if pd.isna(spec_min): spec_min = 0
@@ -869,14 +866,13 @@ for _, g in valid.iterrows():
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
 
-            # --- 3. HIỂN THỊ BẢNG & BIỂU ĐỒ ---
+            # --- 4. HIỂN THỊ BẢNG & BIỂU ĐỒ ---
             col_chart, col_table = st.columns([2, 1])
             
             with col_chart:
                 fig, ax = plt.subplots(figsize=(10, 4))
                 ax.hist(data, bins=30, density=True, alpha=0.3, color="gray", label="Raw Data")
                 
-                # Limit lines
                 ax.axvline(m1_min, color="red", ls=":", alpha=0.5); ax.axvline(m1_max, color="red", ls=":", alpha=0.5)
                 ax.axvline(m2_min, color="blue", ls="--", alpha=0.8); ax.axvline(m2_max, color="blue", ls="--", alpha=0.8)
                 ax.axvspan(m3_min, m3_max, color="green", alpha=0.2, label="Smart Hybrid")
