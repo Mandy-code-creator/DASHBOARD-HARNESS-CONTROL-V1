@@ -792,42 +792,19 @@ for _, g in valid.iterrows():
             c3.metric("Pred EL", f"{preds['EL']:.1f}")
 # ================================
 # ================================
-    # 8. CONTROL LIMIT CALCULATOR (GLOBAL SETTINGS - NO DUPLICATE ERROR)
+# ================================
+    # 8. CONTROL LIMIT CALCULATOR (FIXED: UNIQUE KEYS USING DATAFRAME INDEX)
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         st.markdown("### 🎛️ 最佳控制限計算器 (Optimal Control Limit Calculator)")
-        st.info("比較三種確定控制限的方法。請在下方設定全域參數 (Global Parameters)。")
+        st.info("比較三種確定控制限的方法。每個材料組都可以單獨設定參數。")
 
-        # --- 1. GLOBAL SETTINGS (CẤU HÌNH TOÀN CỤC - CHỈ TẠO 1 LẦN) ---
-        # Đặt bên ngoài vòng lặp để tránh lỗi Duplicate Key tuyệt đối
-        with st.container():
-            st.markdown("#### ⚙️ 全域參數設定 (Global Settings)")
-            col_par1, col_par2 = st.columns(2)
+        # Lưu ý: 'valid' là dataframe chứa danh sách các cuộn/nhóm vật liệu
+        # Chúng ta dùng 'index' của dataframe để làm key duy nhất
+        for index, row in valid.iterrows():
+            g = row # Dòng dữ liệu hiện tại
             
-            with col_par1:
-                # Key cố định, không bao giờ trùng
-                sigma_n = st.number_input(
-                    "1. Sigma 倍數 (Sigma Multiplier)", 
-                    min_value=1.0, max_value=6.0, value=3.0, step=0.5,
-                    help="標準為 3.0。若需更嚴格控制，可降至 2.0 或 2.5。",
-                    key="global_sigma_input" 
-                )
-            
-            with col_par2:
-                # Key cố định, không bao giờ trùng
-                iqr_k = st.number_input(
-                    "2. IQR 靈敏度 (IQR Factor K)", 
-                    min_value=0.5, max_value=3.0, value=1.0, step=0.1,
-                    help="標準為 1.5。建議值 0.8~1.0 用於嚴格過濾。",
-                    key="global_iqr_input"
-                )
-            st.divider()
-
-        # --- 2. VÒNG LẶP HIỂN THỊ BIỂU ĐỒ ---
-        # Chỉ lặp để tính toán và vẽ, KHÔNG tạo ô nhập liệu trong này nữa
-        for i, (_, g) in enumerate(valid.iterrows()):
-            
-            # Lọc dữ liệu
+            # Lọc dữ liệu chi tiết cho nhóm này
             sub_grp = df[
                 (df["Rolling_Type"] == g["Rolling_Type"]) &
                 (df["Metallic_Type"] == g["Metallic_Type"]) &
@@ -837,17 +814,36 @@ for _, g in valid.iterrows():
             ]
             
             # Tiêu đề nhóm
-            st.markdown(f"#### 📦 Group {i+1}: {g['Material']} | {g['Gauge_Range']}")
+            st.markdown(f"---")
+            st.markdown(f"#### 📦 Group: {g['Material']} | {g['Gauge_Range']}")
 
             data = sub_grp["Hardness_LINE"].dropna()
             
             if len(data) < 10:
                 st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
-                st.divider() # Kẻ dòng phân cách
                 continue
 
-            # --- TÍNH TOÁN (Dùng sigma_n và iqr_k từ Global Settings) ---
-            
+            # --- 1. CẤU HÌNH THAM SỐ (RIÊNG CHO TỪNG BIỂU ĐỒ) ---
+            # Tạo Key duy nhất dựa trên Index của dòng dữ liệu -> Không bao giờ trùng
+            unique_sigma_key = f"sigma_{index}_{g['Material']}"
+            unique_iqr_key = f"iqr_{index}_{g['Material']}"
+
+            with st.expander(f"⚙️ 設定參數 (Settings for {g['Material']})", expanded=False):
+                col_par1, col_par2 = st.columns(2)
+                with col_par1:
+                    sigma_n = st.number_input(
+                        "1. Sigma 倍數", 
+                        min_value=1.0, max_value=6.0, value=3.0, step=0.5,
+                        key=unique_sigma_key  # <--- FIX: Key theo Index
+                    )
+                with col_par2:
+                    iqr_k = st.number_input(
+                        "2. IQR 靈敏度", 
+                        min_value=0.5, max_value=3.0, value=1.0, step=0.1,
+                        key=unique_iqr_key    # <--- FIX: Key theo Index
+                    )
+
+            # --- 2. TÍNH TOÁN ---
             # Lấy Spec
             spec_min = sub_grp["Std_Min"].max() if "Std_Min" in sub_grp else 0
             spec_max = sub_grp["Std_Max"].min() if "Std_Max" in sub_grp else 0
@@ -873,7 +869,7 @@ for _, g in valid.iterrows():
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
 
-            # --- HIỂN THỊ BẢNG & BIỂU ĐỒ ---
+            # --- 3. HIỂN THỊ BẢNG & BIỂU ĐỒ ---
             col_chart, col_table = st.columns([2, 1])
             
             with col_chart:
@@ -888,8 +884,7 @@ for _, g in valid.iterrows():
                 if spec_min > 0: ax.axvline(spec_min, color="black", lw=2)
                 if display_max > 0: ax.axvline(display_max, color="black", lw=2)
 
-                ax.set_title(f"Control Limits: {g['Material']} (σ={sigma_n}, K={iqr_k})", fontsize=10)
-                ax.legend(loc='upper right', fontsize='small')
+                ax.set_title(f"Limits: {g['Material']} (σ={sigma_n}, K={iqr_k})", fontsize=10)
                 st.pyplot(fig)
 
             with col_table:
@@ -900,5 +895,3 @@ for _, g in valid.iterrows():
                     {"Method": "3. Hybrid", "Min": m3_min, "Max": m3_max, "Range": m3_max-m3_min, "Note": "✅ Best"}
                 ]
                 st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["Min", "Max", "Range"]), use_container_width=True, hide_index=True)
-            
-            st.divider() # Kẻ dòng phân cách giữa các nhóm
