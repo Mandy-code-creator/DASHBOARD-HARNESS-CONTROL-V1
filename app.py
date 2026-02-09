@@ -30,7 +30,7 @@ def add_custom_css():
         <style>
         /* 1. Đổi màu nền chính (Main Background) */
         .stApp {
-            background-color: #F5F7F9; /* Màu xám xanh rất nhạt */
+            background-color: ##F5F5F7; /* Màu xám xanh rất nhạt */
             background-image: linear-gradient(to right, #F5F7F9, #EBF1F5); /* Hiệu ứng chuyển màu nhẹ */
         }
 
