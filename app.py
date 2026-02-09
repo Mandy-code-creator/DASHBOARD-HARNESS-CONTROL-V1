@@ -187,17 +187,17 @@ if valid.empty:
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-#  🚀 GLOBAL SUMMARY DASHBOARD (ENGLISH VERSION + STD LIMITS)
+#  🚀 GLOBAL SUMMARY DASHBOARD (FINAL: STATS + LIMITS + SIMULATION)
 # ==============================================================================
 if view_mode == "🚀 Global Summary Dashboard":
     st.markdown("## 🚀 Global Process Dashboard")
     
     # Create Tabs
-    tab1, tab2 = st.tabs(["📊 1. Statistical Overview", "🎯 2. Prediction Simulator"])
+    tab1, tab2 = st.tabs(["📊 1. Statistical Overview (With Limits)", "🎯 2. Prediction Simulator"])
 
-    # --- TAB 1: STATS TABLE ---
+    # --- TAB 1: STATS TABLE WITH LIMITS ---
     with tab1:
-        st.info("ℹ️ This table displays ACTUAL historical data (Min/Max/Average) to assess process capability.")
+        st.info("ℹ️ This table compares ACTUAL statistics (Min/Max/Avg) against STANDARD LIMITS.")
         
         stats_rows = []
         
@@ -215,6 +215,31 @@ if view_mode == "🚀 Global Summary Dashboard":
             # Specs List
             specs_str = ", ".join(sorted(sub_grp["Product_Spec"].astype(str).unique()))
 
+            # --- HELPER: GET LIMIT STRING ---
+            def get_limit_str(s_min_col, s_max_col):
+                # Lấy giá trị Min/Max đại diện của nhóm (Lấy cái chặt nhất hoặc phổ biến nhất)
+                v_min = sub_grp[s_min_col].max() if s_min_col in sub_grp else 0 # Lấy Min lớn nhất (chặt nhất)
+                v_max = sub_grp[s_max_col].min() if s_max_col in sub_grp else 0 # Lấy Max nhỏ nhất (chặt nhất)
+                
+                # Xử lý NaN
+                if pd.isna(v_min): v_min = 0
+                if pd.isna(v_max): v_max = 0
+
+                if v_min > 0 and v_max > 0 and v_max < 9000:
+                    return f"{v_min:.0f}~{v_max:.0f}"
+                elif v_min > 0:
+                    return f"≥ {v_min:.0f}"
+                elif v_max > 0 and v_max < 9000:
+                    return f"≤ {v_max:.0f}"
+                else:
+                    return "-"
+
+            # Get Limits Text
+            lim_hrb = f"{sub_grp['Std_Min'].min():.0f}~{sub_grp['Std_Max'].max():.0f}"
+            lim_ts = get_limit_str("Standard TS min", "Standard TS max")
+            lim_ys = get_limit_str("Standard YS min", "Standard YS max")
+            lim_el = get_limit_str("Standard EL min", "Standard EL max")
+
             stats_rows.append({
                 "Quality": g["Quality_Group"],
                 "Material": g["Material"],
@@ -223,21 +248,25 @@ if view_mode == "🚀 Global Summary Dashboard":
                 "N": len(sub_grp),
                 
                 # Hardness Stats
+                "HRB Limit": lim_hrb,          # <--- NEW
                 "HRB (Avg)": sub_grp["Hardness_LINE"].mean(),
                 "HRB (Min)": sub_grp["Hardness_LINE"].min(),
                 "HRB (Max)": sub_grp["Hardness_LINE"].max(),
                 
                 # TS Stats
+                "TS Limit": lim_ts,            # <--- NEW
                 "TS (Avg)": sub_grp["TS"].mean(),
                 "TS (Min)": sub_grp["TS"].min(),
                 "TS (Max)": sub_grp["TS"].max(),
 
                 # YS Stats
+                "YS Limit": lim_ys,            # <--- NEW
                 "YS (Avg)": sub_grp["YS"].mean(),
                 "YS (Min)": sub_grp["YS"].min(),
                 "YS (Max)": sub_grp["YS"].max(),
                 
                 # EL Stats
+                "EL Limit": lim_el,            # <--- NEW
                 "EL (Avg)": sub_grp["EL"].mean(),
                 "EL (Min)": sub_grp["EL"].min(),
                 "EL (Max)": sub_grp["EL"].max(),
@@ -245,7 +274,20 @@ if view_mode == "🚀 Global Summary Dashboard":
 
         if stats_rows:
             df_stats = pd.DataFrame(stats_rows)
-            # Format display
+            
+            # Reorder columns for easy comparison (Limit next to Actual)
+            cols = [
+                "Quality", "Material", "Gauge", "Specs", "N",
+                "HRB Limit", "HRB (Avg)", "HRB (Min)", "HRB (Max)",
+                "TS Limit", "TS (Avg)", "TS (Min)", "TS (Max)",
+                "YS Limit", "YS (Avg)", "YS (Min)", "YS (Max)",
+                "EL Limit", "EL (Avg)", "EL (Min)", "EL (Max)"
+            ]
+            # Chỉ lấy các cột tồn tại (đề phòng lỗi)
+            cols = [c for c in cols if c in df_stats.columns]
+            df_stats = df_stats[cols]
+
+            # Format & Style
             st.dataframe(
                 df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c])
                               .background_gradient(subset=["HRB (Avg)"], cmap="Blues"),
@@ -282,46 +324,34 @@ if view_mode == "🚀 Global Summary Dashboard":
             # 1. Get Historical Range
             h_min, h_max = sub_grp["Hardness_LINE"].min(), sub_grp["Hardness_LINE"].max()
             
-            # 2. Get Standard Control Limits (Standard Hardness)
-            # Logic: Take the min of Std_Min and max of Std_Max in the group to show full allowable range
+            # 2. Get Standard Control Limits (Hardness)
             std_lo = sub_grp["Std_Min"].min()
             std_hi = sub_grp["Std_Max"].max()
-            
             if pd.isna(std_lo): std_lo = 0
             if pd.isna(std_hi): std_hi = 0
-            
             std_txt = f"{std_lo:.1f} ~ {std_hi:.1f}"
             if std_lo == 0 and std_hi == 0: std_txt = "No Spec"
 
             # 3. Check Status
             status_msgs = []
-            
-            # Check Extrapolation (History)
             if user_hrb < h_min or user_hrb > h_max:
-                status_msgs.append("⚠️ Extrapolated (No History)")
-            
-            # Check Out of Spec (Standard)
+                status_msgs.append("⚠️ Extrapolated")
             if (std_lo > 0 and user_hrb < std_lo) or (std_hi > 0 and user_hrb > std_hi):
                  status_msgs.append("⛔ Out of Spec")
-            
             if not status_msgs:
                 status_msgs.append("✅ Safe Zone")
-            
             status_final = " | ".join(status_msgs)
 
             # 4. AI Prediction
             X = sub_grp[["Hardness_LINE"]].values
             
-            # TS Prediction
             m_ts = LinearRegression().fit(X, sub_grp["TS"].values)
             pred_ts = m_ts.predict([[user_hrb]])[0]
             r2_ts = r2_score(sub_grp["TS"], m_ts.predict(X))
 
-            # YS Prediction
             m_ys = LinearRegression().fit(X, sub_grp["YS"].values)
             pred_ys = m_ys.predict([[user_hrb]])[0]
             
-            # EL Prediction
             m_el = LinearRegression().fit(X, sub_grp["EL"].values)
             pred_el = m_el.predict([[user_hrb]])[0]
 
@@ -329,12 +359,10 @@ if view_mode == "🚀 Global Summary Dashboard":
                 "Quality": g["Quality_Group"],
                 "Material": g["Material"],
                 "Gauge": g["Gauge_Range"],
-                "Std Limit (HRB)": std_txt,   # <--- NEW COLUMN
+                "Std Limit (HRB)": std_txt,
                 "Hist Range (HRB)": f"{h_min:.1f}~{h_max:.1f}",
-                "Status": status_final,       # <--- UPDATED STATUS
+                "Status": status_final,
                 "Model Trust (R2)": r2_ts,
-
-                # Predicted Values
                 "Target HRB": user_hrb,
                 "Pred TS": pred_ts,
                 "Pred YS": pred_ys,
@@ -344,7 +372,6 @@ if view_mode == "🚀 Global Summary Dashboard":
         if pred_rows:
             df_pred = pd.DataFrame(pred_rows)
             
-            # Coloring Logic
             def highlight_r2(val):
                 color = '#ffcccc' if val < 0.3 else ('#ccffcc' if val > 0.7 else '')
                 return f'background-color: {color}'
@@ -356,18 +383,14 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             st.dataframe(
                 df_pred.style.format({
-                    "Pred TS": "{:.0f}", 
-                    "Pred YS": "{:.0f}", 
-                    "Pred EL": "{:.1f}",
-                    "Model Trust (R2)": "{:.2f}",
-                    "Target HRB": "{:.1f}"
+                    "Pred TS": "{:.0f}", "Pred YS": "{:.0f}", "Pred EL": "{:.1f}",
+                    "Model Trust (R2)": "{:.2f}", "Target HRB": "{:.1f}"
                 })
                 .applymap(highlight_r2, subset=["Model Trust (R2)"])
                 .applymap(highlight_status, subset=["Status"]),
-                use_container_width=True,
-                height=600
+                use_container_width=True, height=600
             )
-            st.caption("* Model Trust (R2): Closer to 1.0 is better. If < 0.3, prediction is unreliable. \n* Status: Checks if Target is within History and within Standard Limits.")
+            st.caption("* Model Trust (R2): Closer to 1.0 is better. \n* Status: Checks if Target is within History and Standard Limits.")
         else:
             st.warning("Insufficient data for prediction.")
 
