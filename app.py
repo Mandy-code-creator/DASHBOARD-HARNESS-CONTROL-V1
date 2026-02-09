@@ -186,6 +186,7 @@ if valid.empty:
     st.stop()
 
 # ==============================================================================
+# ==============================================================================
 #  🚀 GLOBAL SUMMARY DASHBOARD (FINAL: STATS + LIMITS + SIMULATION)
 # ==============================================================================
 if view_mode == "🚀 Global Summary Dashboard":
@@ -210,8 +211,6 @@ if view_mode == "🚀 Global Summary Dashboard":
             ].dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
 
             if len(sub_grp) < 5: continue
-# ... (Code phía trên giữ nguyên)
-            if len(sub_grp) < 5: continue
 
             # Specs List
             specs_str = ", ".join(sorted(sub_grp["Product_Spec"].astype(str).unique()))
@@ -285,93 +284,11 @@ if view_mode == "🚀 Global Summary Dashboard":
             cols = [c for c in cols if c in df_stats.columns]
             df_stats = df_stats[cols]
 
-            # Format & Style (ĐÃ XÓA height=600)
+            # Format & Style (FIX: Xóa height=600)
             st.dataframe(
                 df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c])
                               .background_gradient(subset=["HRB (Avg)"], cmap="Blues"),
                 use_container_width=True
-                # height=600  <-- ĐÃ XÓA DÒNG NÀY ĐỂ BẢNG TỰ CO GIÃN
-            )
-        else:
-            st.warning("Insufficient data for statistics.")
-            # Specs List
-            specs_str = ", ".join(sorted(sub_grp["Product_Spec"].astype(str).unique()))
-
-            # --- HELPER: GET LIMIT STRING ---
-            def get_limit_str(s_min_col, s_max_col):
-                v_min = sub_grp[s_min_col].max() if s_min_col in sub_grp else 0 
-                v_max = sub_grp[s_max_col].min() if s_max_col in sub_grp else 0 
-                
-                if pd.isna(v_min): v_min = 0
-                if pd.isna(v_max): v_max = 0
-
-                if v_min > 0 and v_max > 0 and v_max < 9000:
-                    return f"{v_min:.0f}~{v_max:.0f}"
-                elif v_min > 0:
-                    return f"≥ {v_min:.0f}"
-                elif v_max > 0 and v_max < 9000:
-                    return f"≤ {v_max:.0f}"
-                else:
-                    return "-"
-
-            # Get Limits Text
-            lim_hrb = f"{sub_grp['Std_Min'].min():.0f}~{sub_grp['Std_Max'].max():.0f}"
-            lim_ts = get_limit_str("Standard TS min", "Standard TS max")
-            lim_ys = get_limit_str("Standard YS min", "Standard YS max")
-            lim_el = get_limit_str("Standard EL min", "Standard EL max")
-
-            stats_rows.append({
-                "Quality": g["Quality_Group"],
-                "Material": g["Material"],
-                "Gauge": g["Gauge_Range"],
-                "Specs": specs_str,
-                "N": len(sub_grp),
-                
-                # Hardness Stats
-                "HRB Limit": lim_hrb,          
-                "HRB (Avg)": sub_grp["Hardness_LINE"].mean(),
-                "HRB (Min)": sub_grp["Hardness_LINE"].min(),
-                "HRB (Max)": sub_grp["Hardness_LINE"].max(),
-                
-                # TS Stats
-                "TS Limit": lim_ts,            
-                "TS (Avg)": sub_grp["TS"].mean(),
-                "TS (Min)": sub_grp["TS"].min(),
-                "TS (Max)": sub_grp["TS"].max(),
-
-                # YS Stats
-                "YS Limit": lim_ys,            
-                "YS (Avg)": sub_grp["YS"].mean(),
-                "YS (Min)": sub_grp["YS"].min(),
-                "YS (Max)": sub_grp["YS"].max(),
-                
-                # EL Stats
-                "EL Limit": lim_el,            
-                "EL (Avg)": sub_grp["EL"].mean(),
-                "EL (Min)": sub_grp["EL"].min(),
-                "EL (Max)": sub_grp["EL"].max(),
-            })
-
-        if stats_rows:
-            df_stats = pd.DataFrame(stats_rows)
-            
-            # Reorder columns
-            cols = [
-                "Quality", "Material", "Gauge", "Specs", "N",
-                "HRB Limit", "HRB (Avg)", "HRB (Min)", "HRB (Max)",
-                "TS Limit", "TS (Avg)", "TS (Min)", "TS (Max)",
-                "YS Limit", "YS (Avg)", "YS (Min)", "YS (Max)",
-                "EL Limit", "EL (Avg)", "EL (Min)", "EL (Max)"
-            ]
-            cols = [c for c in cols if c in df_stats.columns]
-            df_stats = df_stats[cols]
-
-            # Format & Style
-            st.dataframe(
-                df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c])
-                              .background_gradient(subset=["HRB (Avg)"], cmap="Blues"),
-                use_container_width=True,
-                height=600
             )
         else:
             st.warning("Insufficient data for statistics.")
@@ -459,6 +376,7 @@ if view_mode == "🚀 Global Summary Dashboard":
                 if "⚠️" in val: return 'color: orange'
                 return 'color: green'
 
+            # Format & Style (FIX: Xóa height=600)
             st.dataframe(
                 df_pred.style.format({
                     "Pred TS": "{:.0f}", "Pred YS": "{:.0f}", "Pred EL": "{:.1f}",
@@ -466,7 +384,7 @@ if view_mode == "🚀 Global Summary Dashboard":
                 })
                 .applymap(highlight_r2, subset=["Model Trust (R2)"])
                 .applymap(highlight_status, subset=["Status"]),
-                use_container_width=True, height=600
+                use_container_width=True
             )
             st.caption("* Model Trust (R2): Closer to 1.0 is better. \n* Status: Checks if Target is within History and Standard Limits.")
         else:
