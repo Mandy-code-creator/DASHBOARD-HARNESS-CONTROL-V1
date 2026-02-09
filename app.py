@@ -1,6 +1,6 @@
 # ================================
 # FULL STREAMLIT APP – FINAL COMPLETE VERSION
-# INTEGRATED GLOBAL DASHBOARD + SMART LOGIC
+# INTEGRATED GLOBAL DASHBOARD + SMART LOGIC + BUG FIXES
 # ================================
 
 import streamlit as st
@@ -170,7 +170,7 @@ view_mode = st.sidebar.radio(
         "🔍 Lookup: Hardness Range → Actual Mech Props",
         "🎯 Find Target Hardness (Reverse Lookup)",
         "🧮 Predict TS/YS/EL from Std Hardness",
-        "🎛️ Control Limit Calculator (Compare 3 Methods)", # <--- THÊM DÒNG NÀY
+        "🎛️ Control Limit Calculator (Compare 3 Methods)",
     ]
 )
 
@@ -185,8 +185,6 @@ if valid.empty:
     st.warning("⚠️ No group with ≥30 coils found.")
     st.stop()
 
-# ==============================================================================
-# ==============================================================================
 # ==============================================================================
 #  🚀 GLOBAL SUMMARY DASHBOARD (FINAL: STATS + LIMITS + SIMULATION)
 # ==============================================================================
@@ -218,11 +216,9 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             # --- HELPER: GET LIMIT STRING ---
             def get_limit_str(s_min_col, s_max_col):
-                # Lấy giá trị Min/Max đại diện của nhóm (Lấy cái chặt nhất hoặc phổ biến nhất)
-                v_min = sub_grp[s_min_col].max() if s_min_col in sub_grp else 0 # Lấy Min lớn nhất (chặt nhất)
-                v_max = sub_grp[s_max_col].min() if s_max_col in sub_grp else 0 # Lấy Max nhỏ nhất (chặt nhất)
+                v_min = sub_grp[s_min_col].max() if s_min_col in sub_grp else 0 
+                v_max = sub_grp[s_max_col].min() if s_max_col in sub_grp else 0 
                 
-                # Xử lý NaN
                 if pd.isna(v_min): v_min = 0
                 if pd.isna(v_max): v_max = 0
 
@@ -249,25 +245,25 @@ if view_mode == "🚀 Global Summary Dashboard":
                 "N": len(sub_grp),
                 
                 # Hardness Stats
-                "HRB Limit": lim_hrb,          # <--- NEW
+                "HRB Limit": lim_hrb,          
                 "HRB (Avg)": sub_grp["Hardness_LINE"].mean(),
                 "HRB (Min)": sub_grp["Hardness_LINE"].min(),
                 "HRB (Max)": sub_grp["Hardness_LINE"].max(),
                 
                 # TS Stats
-                "TS Limit": lim_ts,            # <--- NEW
+                "TS Limit": lim_ts,            
                 "TS (Avg)": sub_grp["TS"].mean(),
                 "TS (Min)": sub_grp["TS"].min(),
                 "TS (Max)": sub_grp["TS"].max(),
 
                 # YS Stats
-                "YS Limit": lim_ys,            # <--- NEW
+                "YS Limit": lim_ys,            
                 "YS (Avg)": sub_grp["YS"].mean(),
                 "YS (Min)": sub_grp["YS"].min(),
                 "YS (Max)": sub_grp["YS"].max(),
                 
                 # EL Stats
-                "EL Limit": lim_el,            # <--- NEW
+                "EL Limit": lim_el,            
                 "EL (Avg)": sub_grp["EL"].mean(),
                 "EL (Min)": sub_grp["EL"].min(),
                 "EL (Max)": sub_grp["EL"].max(),
@@ -276,7 +272,7 @@ if view_mode == "🚀 Global Summary Dashboard":
         if stats_rows:
             df_stats = pd.DataFrame(stats_rows)
             
-            # Reorder columns for easy comparison (Limit next to Actual)
+            # Reorder columns
             cols = [
                 "Quality", "Material", "Gauge", "Specs", "N",
                 "HRB Limit", "HRB (Avg)", "HRB (Min)", "HRB (Max)",
@@ -284,7 +280,6 @@ if view_mode == "🚀 Global Summary Dashboard":
                 "YS Limit", "YS (Avg)", "YS (Min)", "YS (Max)",
                 "EL Limit", "EL (Avg)", "EL (Min)", "EL (Max)"
             ]
-            # Chỉ lấy các cột tồn tại (đề phòng lỗi)
             cols = [c for c in cols if c in df_stats.columns]
             df_stats = df_stats[cols]
 
@@ -298,11 +293,10 @@ if view_mode == "🚀 Global Summary Dashboard":
         else:
             st.warning("Insufficient data for statistics.")
 
-    # --- TAB 2: PREDICTION SIMULATOR (ENGLISH) ---
+    # --- TAB 2: PREDICTION SIMULATOR ---
     with tab2:
         st.info("🎯 Enter your Target Hardness. The system uses AI models per group to forecast Mechanical Properties.")
         
-        # User Input
         col_in, _ = st.columns([1, 3])
         with col_in:
             user_hrb = st.number_input("📥 Input Target Hardness (HRB):", value=60.0, step=0.5, format="%.1f")
@@ -396,10 +390,12 @@ if view_mode == "🚀 Global Summary Dashboard":
             st.warning("Insufficient data for prediction.")
 
     st.stop()
+
 # ==============================================================================
 # MAIN LOOP (DETAILS)
 # ==============================================================================
-for _, g in valid.iterrows():
+# Sử dụng enumerate để có thể sử dụng biến i cho key duy nhất nếu cần
+for i, (_, g) in enumerate(valid.iterrows()):
     sub = df[
         (df["Rolling_Type"] == g["Rolling_Type"]) &
         (df["Metallic_Type"] == g["Metallic_Type"]) &
@@ -415,8 +411,10 @@ for _, g in valid.iterrows():
     qa = "FAIL" if sub["NG"].any() else "PASS"
     specs = ", ".join(sorted(sub["Product_Spec"].unique()))
 
-    st.markdown(f"### 🧱 {g['Quality_Group']} | {g['Material']} | {g['Gauge_Range']}")
-    st.markdown(f"**Specs:** {specs} | **Coils:** {sub['COIL_NO'].nunique()} | **Limit:** {lo:.1f}~{hi:.1f}")
+    # Chỉ hiển thị Header nếu không phải Global view (đã có ở trên)
+    if view_mode != "🚀 Global Summary Dashboard":
+        st.markdown(f"### 🧱 {g['Quality_Group']} | {g['Material']} | {g['Gauge_Range']}")
+        st.markdown(f"**Specs:** {specs} | **Coils:** {sub['COIL_NO'].nunique()} | **Limit:** {lo:.1f}~{hi:.1f}")
 
     # ================================
     # 1. DATA INSPECTION
@@ -425,9 +423,6 @@ for _, g in valid.iterrows():
         st.dataframe(sub, use_container_width=True)
 
     # ================================
-   # ================================
-  # ================================
- # ================================
     # 2. HARDNESS ANALYSIS (FULL FINAL VERSION)
     # ================================
     elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
@@ -565,7 +560,7 @@ for _, g in valid.iterrows():
                         use_container_width=True, 
                         hide_index=True
                     )
-    # ================================
+
     # ================================
     # 3. CORRELATION (FULL CHART + TABLE)
     # ================================
@@ -605,28 +600,28 @@ for _, g in valid.iterrows():
             plot_prop(x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL", "^")
 
             # 3. Annotations (Gắn nhãn số lên biểu đồ)
-            for i, row in enumerate(summary.itertuples()):
+            for j, row in enumerate(summary.itertuples()):
                 # TS Label (Blue)
-                ax.annotate(f"{row.TS_mean:.0f}", (x[i], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#1f77b4")
+                ax.annotate(f"{row.TS_mean:.0f}", (x[j], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#1f77b4")
                 
-                # YS Label (Green) - ĐÃ CÓ
-                ax.annotate(f"{row.YS_mean:.0f}", (x[i], row.YS_mean), xytext=(0,-15), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#2ca02c")
+                # YS Label (Green)
+                ax.annotate(f"{row.YS_mean:.0f}", (x[j], row.YS_mean), xytext=(0,-15), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#2ca02c")
                 
                 # EL Label (Orange/Red)
                 el_spec = row.Std_EL_min
                 is_fail = (el_spec > 0) and (row.EL_mean < el_spec)
                 lbl = f"{row.EL_mean:.1f}%" + ("❌" if is_fail else "")
                 clr = "red" if is_fail else "#ff7f0e"
-                ax.annotate(lbl, (x[i], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color=clr, fontweight=("bold" if is_fail else "normal"))
+                ax.annotate(lbl, (x[j], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color=clr, fontweight=("bold" if is_fail else "normal"))
 
             # Settings
             ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
             ax.set_title("Hardness vs Mechanical Properties (Mean & Range)"); ax.grid(True, ls="--", alpha=0.5); ax.legend()
             
-            # 4. RENDER CHART (LỆNH QUAN TRỌNG ĐỂ HIỆN BIỂU ĐỒ)
+            # 4. RENDER CHART
             st.pyplot(fig)
             
-            # 5. Quick Conclusion Table (Bảng kết luận bên dưới)
+            # 5. Quick Conclusion Table
             st.markdown("#### 📌 Quick Conclusion per Hardness Bin (Table View)")
             conclusion_data = []
 
@@ -649,6 +644,7 @@ for _, g in valid.iterrows():
 
             if conclusion_data:
                 st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
+
     # ================================
     # 4. MECH PROPS ANALYSIS
     # ================================
@@ -656,15 +652,15 @@ for _, g in valid.iterrows():
         sub_mech = sub.dropna(subset=["TS","YS","EL"])
         if not sub_mech.empty:
             fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-            for i, (col, c) in enumerate([("TS","#1f77b4"),("YS","#2ca02c"),("EL","#ff7f0e")]):
+            for j, (col, c) in enumerate([("TS","#1f77b4"),("YS","#2ca02c"),("EL","#ff7f0e")]):
                 data = sub_mech[col]
                 mean, std = data.mean(), data.std()
-                axes[i].hist(data, bins=15, color=c, alpha=0.5, density=True)
+                axes[j].hist(data, bins=15, color=c, alpha=0.5, density=True)
                 if std > 0:
                     x_p = np.linspace(mean-4*std, mean+4*std, 100)
                     y_p = (1/(std*np.sqrt(2*np.pi))) * np.exp(-0.5*((x_p-mean)/std)**2)
-                    axes[i].plot(x_p, y_p, color=c, lw=2)
-                axes[i].set_title(f"{col} Distribution")
+                    axes[j].plot(x_p, y_p, color=c, lw=2)
+                axes[j].set_title(f"{col} Distribution")
             st.pyplot(fig)
 
     # ================================
@@ -790,9 +786,9 @@ for _, g in valid.iterrows():
             c1.metric("Pred TS", f"{preds['TS']:.0f}")
             c2.metric("Pred YS", f"{preds['YS']:.0f}")
             c3.metric("Pred EL", f"{preds['EL']:.1f}")
-# ================================
-# ================================
-    # 8. CONTROL LIMIT CALCULATOR (FIXED: ENUMERATE KEYS)
+
+    # ================================
+    # 8. CONTROL LIMIT CALCULATOR (FIXED: UNIQUE KEYS WITH ENUMERATE)
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         st.markdown("### 🎛️ 最佳控制限計算器 (Optimal Control Limit Calculator)")
