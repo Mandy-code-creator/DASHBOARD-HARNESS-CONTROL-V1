@@ -241,14 +241,14 @@ if valid.empty:
 
 # ==============================================================================
 # ==============================================================================
-#  🚀 GLOBAL SUMMARY DASHBOARD (FINAL: 3 PARALLEL TABLES LAYOUT)
+#  🚀 GLOBAL SUMMARY DASHBOARD (FINAL: LAYOUT 2-1 WITH SPECS)
 # ==============================================================================
 if view_mode == "🚀 Global Summary Dashboard":
     st.markdown("## 🚀 Global Process Dashboard")
     
     tab1, tab2 = st.tabs(["📊 1. Performance Overview", "🧠 2. Decision Support (Risk AI)"])
 
-    # --- TAB 1: THỐNG KÊ HIỆU SUẤT (Giữ nguyên) ---
+    # --- TAB 1: THỐNG KÊ HIỆU SUẤT ---
     with tab1:
         st.info("ℹ️ Color Guide: 🟢 High Pass Rate (>98%) | 🔴 Low Pass Rate (<90%) | 🟡 Rule Applied")
         stats_rows = []
@@ -262,6 +262,9 @@ if view_mode == "🚀 Global Summary Dashboard":
             ].dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
 
             if len(sub_grp) < 5: continue
+
+            # [CẬP NHẬT] Lấy danh sách Specs
+            specs_str = ", ".join(sorted(sub_grp["Product_Spec"].astype(str).unique()))
 
             l_min_val = sub_grp['Limit_Min'].min(); l_max_val = sub_grp['Limit_Max'].max()
             lim_hrb = f"{l_min_val:.0f}~{l_max_val:.0f}"
@@ -290,6 +293,7 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             stats_rows.append({
                 "Quality": g["Quality_Group"], "Material": g["Material"], "Gauge": g["Gauge_Range"],
+                "Specs": specs_str, # Đã thêm lại cột Specs
                 "Rule": rule_name, "Lab Limit": lim_lab, "HRB Limit": lim_hrb, "N": len(sub_grp),
                 "Pass Rate": pass_rate,
                 "HRB (Avg)": sub_grp["Hardness_LINE"].mean(), "TS (Avg)": sub_grp["TS"].mean(),
@@ -300,7 +304,8 @@ if view_mode == "🚀 Global Summary Dashboard":
 
         if stats_rows:
             df_stats = pd.DataFrame(stats_rows)
-            cols = ["Quality", "Material", "Gauge", "Rule", "Pass Rate", "HRB Limit", "HRB (Avg)", "TS (Avg)", "YS (Avg)", "EL (Avg)", "TS Limit", "YS Limit", "EL Limit", "N"]
+            # Sắp xếp lại cột cho đẹp
+            cols = ["Quality", "Material", "Gauge", "Specs", "Rule", "Pass Rate", "HRB Limit", "HRB (Avg)", "TS (Avg)", "YS (Avg)", "EL (Avg)", "N"]
             cols = [c for c in cols if c in df_stats.columns]
             df_stats = df_stats[cols]
 
@@ -317,10 +322,10 @@ if view_mode == "🚀 Global Summary Dashboard":
             )
         else: st.warning("Insufficient data.")
 
-    # --- TAB 2: PHÂN TÍCH RỦI RO (3 BẢNG SONG SONG) ---
+    # --- TAB 2: PHÂN TÍCH RỦI RO (LAYOUT: TRÊN 2 - DƯỚI 1) ---
     with tab2:
         st.markdown("#### 🧠 AI Decision Support (Risk-Based)")
-        st.caption("Phân tích rủi ro độc lập cho từng cơ tính (TS / YS / EL).")
+        st.caption("Phân tích rủi ro độc lập cho từng cơ tính.")
 
         col_in1, col_in2 = st.columns([1, 1])
         with col_in1:
@@ -342,6 +347,9 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             if len(sub_grp) < 10: continue 
 
+            # [CẬP NHẬT] Lấy Specs cho từng dòng
+            specs_str = ", ".join(sorted(sub_grp["Product_Spec"].astype(str).unique()))
+
             spec_ts_min = sub_grp["Standard TS min"].max() if "Standard TS min" in sub_grp else 0
             spec_ys_min = sub_grp["Standard YS min"].max() if "Standard YS min" in sub_grp else 0
             spec_el_min = sub_grp["Standard EL min"].max() if "Standard EL min" in sub_grp else 0
@@ -356,7 +364,9 @@ if view_mode == "🚀 Global Summary Dashboard":
             risk_ts = "🔴 High Risk" if (spec_ts_min > 0 and safe_ts < spec_ts_min) else "🟢 Safe"
             
             rows_ts.append({
-                "Material": f"{g['Material']} ({g['Gauge_Range']})",
+                "Material": f"{g['Material']}",
+                "Gauge": g["Gauge_Range"],
+                "Specs": specs_str, # Add Specs
                 "Pred TS": f"{pred_ts:.0f}",
                 "Worst Case": f"{safe_ts:.0f}",
                 "Limit": f"≥ {spec_ts_min:.0f}" if spec_ts_min > 0 else "-",
@@ -371,7 +381,9 @@ if view_mode == "🚀 Global Summary Dashboard":
             risk_ys = "🔴 High Risk" if (spec_ys_min > 0 and safe_ys < spec_ys_min) else "🟢 Safe"
 
             rows_ys.append({
-                "Material": f"{g['Material']}", # Rút gọn tên cho đỡ rối
+                "Material": f"{g['Material']}",
+                "Gauge": g["Gauge_Range"],
+                "Specs": specs_str, # Add Specs
                 "Pred YS": f"{pred_ys:.0f}",
                 "Worst Case": f"{safe_ys:.0f}",
                 "Limit": f"≥ {spec_ys_min:.0f}" if spec_ys_min > 0 else "-",
@@ -387,6 +399,8 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             rows_el.append({
                 "Material": f"{g['Material']}",
+                "Gauge": g["Gauge_Range"],
+                "Specs": specs_str, # Add Specs
                 "Pred EL": f"{pred_el:.1f}",
                 "Worst Case": f"{safe_el:.1f}",
                 "Limit": f"≥ {spec_el_min:.1f}" if spec_el_min > 0 else "-",
@@ -394,22 +408,29 @@ if view_mode == "🚀 Global Summary Dashboard":
             })
 
         if rows_ts:
-            c1, c2, c3 = st.columns(3)
-            
             def style_risk(val):
                 return 'color: red; font-weight: bold' if "🔴" in val else 'color: green; font-weight: bold'
 
-            with c1:
+            # --- LAYOUT: HÀNG TRÊN (2 CỘT) ---
+            c_top1, c_top2 = st.columns(2)
+            
+            with c_top1:
                 st.markdown("##### 🔹 Tensile Strength (TS)")
-                st.dataframe(pd.DataFrame(rows_ts).style.applymap(style_risk, subset=["Status"]), use_container_width=True, hide_index=True)
+                # Ẩn cột Specs ở hàng trên cho đỡ chật, chỉ hiện ở bảng dưới cùng
+                df_ts = pd.DataFrame(rows_ts).drop(columns=["Specs"]) 
+                st.dataframe(df_ts.style.applymap(style_risk, subset=["Status"]), use_container_width=True, hide_index=True)
             
-            with c2:
+            with c_top2:
                 st.markdown("##### 🔸 Yield Strength (YS)")
-                st.dataframe(pd.DataFrame(rows_ys).style.applymap(style_risk, subset=["Status"]), use_container_width=True, hide_index=True)
+                df_ys = pd.DataFrame(rows_ys).drop(columns=["Specs"])
+                st.dataframe(df_ys.style.applymap(style_risk, subset=["Status"]), use_container_width=True, hide_index=True)
             
-            with c3:
-                st.markdown("##### 🔻 Elongation (EL)")
-                st.dataframe(pd.DataFrame(rows_el).style.applymap(style_risk, subset=["Status"]), use_container_width=True, hide_index=True)
+            # --- LAYOUT: HÀNG DƯỚI (1 CỘT - Full Width) ---
+            st.markdown("---")
+            st.markdown("##### 🔻 Elongation (EL) & Specifications Detail")
+            # Bảng dưới cùng sẽ hiện đầy đủ Specs
+            st.dataframe(pd.DataFrame(rows_el).style.applymap(style_risk, subset=["Status"]), use_container_width=True, hide_index=True)
+
         else:
             st.warning("Insufficient data.")
     
