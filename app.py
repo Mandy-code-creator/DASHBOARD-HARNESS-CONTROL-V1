@@ -656,12 +656,15 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
     # ================================
     # ================================
-    # 7. AI PREDICTION (HIGH CONTRAST & CLEAN NUMBERS)
+    # ================================
+    # 7. AI PREDICTION (FINAL PRO: TOOLTIP FIXED)
     # ================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown("### 🚀 AI Forecast (Linear Regression)")
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
-        if len(train_df) < 5: st.warning("⚠️ Need at least 5 coils.")
+        
+        if len(train_df) < 5:
+            st.warning("⚠️ Need at least 5 coils.")
         else:
             col1, col2 = st.columns([1, 3])
             with col1:
@@ -670,12 +673,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             X_train = train_df[["Hardness_LINE"]].values
             preds = {}
+            # Tính toán dự báo
             for col in ["TS", "YS", "EL"]:
                 model = LinearRegression().fit(X_train, train_df[col].values)
                 val = model.predict([[target_h]])[0]
-                # CLEAN NUMBERS: Int for TS/YS, 1 decimal for EL
-                preds[col] = round(val, 1) if col == "EL" else int(round(val))
+                preds[col] = val # Giữ nguyên giá trị thô để tính toán
 
+            # --- VẼ BIỂU ĐỒ ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             colors = {"TS": "#2980b9", "YS": "#27ae60", "EL": "#c0392b"} 
             idx = list(range(len(train_df)))
@@ -683,56 +687,83 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             for col in ["TS", "YS", "EL"]:
                 sec = (col == "EL")
-                # 1. History Line
+                
+                # 1. Đường lịch sử
                 fig.add_trace(go.Scatter(
                     x=idx, y=train_df[col], 
                     mode='lines', 
                     line=dict(color=colors[col], width=2, shape='spline'), 
                     name=f"{col} (History)",
-                    opacity=0.8
+                    opacity=0.6,
+                    hoverinfo='y' # Chỉ hiện giá trị khi rê vào đường dây
                 ), secondary_y=sec)
                 
-                # 2. Connector
-                last_y = train_df[col].iloc[-1]
+                # Lấy giá trị cuộn cuối cùng (Last Value)
+                last_val_raw = train_df[col].iloc[-1]
+                
+                # Làm sạch số liệu (Clean Numbers)
+                pred_clean = round(preds[col], 1) if col == "EL" else int(round(preds[col]))
+                last_clean = round(last_val_raw, 1) if col == "EL" else int(round(last_val_raw))
+                
+                # 2. Đường nối (Connector)
                 fig.add_trace(go.Scatter(
-                    x=[idx[-1], nxt], y=[last_y, preds[col]],
+                    x=[idx[-1], nxt], y=[last_val_raw, preds[col]],
                     mode='lines',
                     line=dict(color=colors[col], width=2, dash='dot'),
                     showlegend=False,
                     hoverinfo='skip'
                 ), secondary_y=sec)
 
-                # 3. Forecast Point (Clean Label)
+                # 3. Điểm Dự Báo (Với Tooltip Đầy Đủ)
                 fig.add_trace(go.Scatter(
                     x=[nxt], y=[preds[col]], 
                     mode='markers+text', 
-                    text=[f"<b>{preds[col]}</b>"], 
+                    text=[f"<b>{pred_clean}</b>"], 
                     textposition="middle right" if nxt < 10 else "top center",
                     marker=dict(color=colors[col], size=14, symbol='diamond', line=dict(width=2, color='white')), 
-                    name=f"🎯 Pred {col}"
+                    name=f"Pred {col}",
+                    # [QUAN TRỌNG] Custom Tooltip hiển thị cả Pred và Last
+                    hovertemplate=(
+                        f"<b>🎯 Pred {col}: {pred_clean}</b><br>"
+                        f"🔙 Last {col}: {last_clean}<br>"
+                        f"📈 Change: {pred_clean - last_clean:.1f}"
+                        "<extra></extra>" # Ẩn tên trace thừa
+                    )
                 ), secondary_y=sec)
 
+            # Trang trí
             fig.add_vline(x=nxt - 0.5, line_width=1, line_dash="dash", line_color="gray")
             fig.add_annotation(x=nxt - 0.5, y=1.05, yref="paper", text="Forecast Zone ➔", showarrow=False, font=dict(color="gray"))
 
             fig.update_layout(
                 height=500,
-                title=dict(text="📈 Prediction Trajectory Visualization", font=dict(size=20)),
+                title=dict(text="📈 Prediction Trajectory (With History Comparison)", font=dict(size=18)),
                 plot_bgcolor="white",
-                hovermode="x unified",
+                hovermode="closest", # Đổi sang closest để focus vào từng điểm
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 margin=dict(l=20, r=20, t=80, b=20)
             )
-            fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#eee')
-            fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#eee', secondary_y=False)
+            fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#eee', title="Coil Sequence")
+            fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#eee', secondary_y=False, title="Strength (MPa)")
+            fig.update_yaxes(showgrid=False, secondary_y=True, title="Elongation (%)")
 
             st.plotly_chart(fig, use_container_width=True)
             
-            st.markdown("#### 🏁 Forecast Results")
+            # Cards summary
+            st.markdown("#### 🏁 Forecast Summary")
             c1, c2, c3 = st.columns(3)
-            c1.metric("Tensile Strength (TS)", f"{preds['TS']} MPa", delta_color="off")
-            c2.metric("Yield Strength (YS)", f"{preds['YS']} MPa", delta_color="off")
-            c3.metric("Elongation (EL)", f"{preds['EL']} %", delta_color="off")
+            
+            # Tính toán Delta để hiển thị mũi tên tăng giảm
+            def get_delta(p, l): return round(p - l, 1)
+            
+            # Lấy giá trị cuối để so sánh
+            last_ts = train_df["TS"].iloc[-1]
+            last_ys = train_df["YS"].iloc[-1]
+            last_el = train_df["EL"].iloc[-1]
+
+            c1.metric("Tensile Strength (TS)", f"{int(round(preds['TS']))} MPa", f"{get_delta(preds['TS'], last_ts)} vs Last")
+            c2.metric("Yield Strength (YS)", f"{int(round(preds['YS']))} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last")
+            c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
     # ================================
     # 8. CONTROL LIMIT CALCULATOR
     # ================================
