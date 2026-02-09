@@ -792,48 +792,64 @@ for _, g in valid.iterrows():
             c3.metric("Pred EL", f"{preds['EL']:.1f}")
 # ================================
 # ================================
-    # 8. CONTROL LIMIT CALCULATOR (FIXED DUPLICATE ID ERROR)
+    # 8. CONTROL LIMIT CALCULATOR (FIXED: SETTINGS OUTSIDE LOOP)
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         st.markdown("### 🎛️ 最佳控制限計算器 (Optimal Control Limit Calculator)")
         st.info("比較三種確定控制限的方法，並與當前規格進行對比。您可以自定義參數以收緊控制。")
 
-        # --- 1. CẤU HÌNH THAM SỐ (SETTINGS) ---
+        # --- 1. CẤU HÌNH THAM SỐ (ĐƯA RA NGOÀI VÒNG LẶP) ---
+        # Phần này chỉ chạy 1 lần duy nhất để tạo Widget, tránh lỗi Duplicate Key
         with st.expander("⚙️ 參數設定 (Parameter Settings)", expanded=True):
             col_par1, col_par2 = st.columns(2)
             
             with col_par1:
-                # Điều chỉnh Sigma (Thêm key="sigma_mult_key" để tránh lỗi)
                 sigma_n = st.number_input(
                     "1. Sigma 倍數 (Sigma Multiplier)", 
                     min_value=1.0, max_value=6.0, value=3.0, step=0.5,
                     help="標準為 3.0。若需更嚴格控制，可降至 2.0 或 2.5。",
-                    key="sigma_mult_key"  # <--- FIX LỖI TẠI ĐÂY
+                    key="sigma_mult_key_global" 
                 )
             
             with col_par2:
-                # Điều chỉnh IQR (Thêm key="iqr_factor_key" để tránh lỗi)
                 iqr_k = st.number_input(
                     "2. IQR 靈敏度 (IQR Factor K)", 
                     min_value=0.5, max_value=3.0, value=1.0, step=0.1,
                     help="標準為 1.5。建議值 0.8~1.0 用於嚴格過濾。",
-                    key="iqr_factor_key"  # <--- FIX LỖI TẠI ĐÂY
+                    key="iqr_factor_key_global"
                 )
 
-        # Lấy dữ liệu
-        data = sub["Hardness_LINE"].dropna()
-        
-        if len(data) < 10:
-            st.warning("⚠️ 數據不足：需要至少 10 卷數據才能進行可靠計算。")
-        else:
-            # --- 0. LẤY GIỚI HẠN HIỆN TẠI (CURRENT SPEC) ---
-            spec_min = sub["Std_Min"].max() if "Std_Min" in sub else 0
-            spec_max = sub["Std_Max"].min() if "Std_Max" in sub else 0
+        # --- 2. VÒNG LẶP XỬ LÝ DỮ LIỆU (LOOP) ---
+        # Bây giờ mới bắt đầu lặp qua từng nhóm vật liệu
+        for _, g in valid.iterrows():
+            
+            # Lọc lại dữ liệu cho nhóm hiện tại
+            sub_grp = df[
+                (df["Rolling_Type"] == g["Rolling_Type"]) &
+                (df["Metallic_Type"] == g["Metallic_Type"]) &
+                (df["Quality_Group"] == g["Quality_Group"]) &
+                (df["Gauge_Range"] == g["Gauge_Range"]) &
+                (df["Material"] == g["Material"])
+            ]
+            
+            # Tiêu đề cho từng nhóm
+            st.markdown(f"---")
+            st.markdown(f"#### 📦 Group: {g['Material']} | {g['Gauge_Range']}")
+
+            data = sub_grp["Hardness_LINE"].dropna()
+            
+            if len(data) < 10:
+                st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
+                continue # Bỏ qua nhóm này nếu ít dữ liệu
+
+            # --- 0. LẤY GIỚI HẠN HIỆN TẠI ---
+            spec_min = sub_grp["Std_Min"].max() if "Std_Min" in sub_grp else 0
+            spec_max = sub_grp["Std_Max"].min() if "Std_Max" in sub_grp else 0
             if pd.isna(spec_min): spec_min = 0
             if pd.isna(spec_max): spec_max = 0
             display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
 
-            # --- TÍNH TOÁN 3 PHƯƠNG PHÁP ---
+            # --- TÍNH TOÁN (DÙNG BIẾN sigma_n, iqr_k TỪ BÊN NGOÀI) ---
             
             # METHOD 1: STANDARD N-SIGMA
             mu, sigma = data.mean(), data.std()
@@ -843,12 +859,8 @@ for _, g in valid.iterrows():
             Q1 = data.quantile(0.25)
             Q3 = data.quantile(0.75)
             IQR = Q3 - Q1
-            
-            # Lọc bỏ nhiễu bằng IQR Factor (K)
             clean_data = data[~((data < (Q1 - iqr_k * IQR)) | (data > (Q3 + iqr_k * IQR)))]
             if clean_data.empty: clean_data = data
-            
-            # Tính giới hạn dựa trên dữ liệu sạch
             mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
 
@@ -857,71 +869,46 @@ for _, g in valid.iterrows():
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
 
-            # --- HIỂN THỊ BẢNG SO SÁNH ---
-            st.markdown("#### 1. 比較表 (Comparison Table)")
-            
+            # --- HIỂN THỊ BẢNG ---
             comp_data = [
                 {
                     "計算方法 (Method)": "0. 當前規格 (Current Spec)", 
-                    "描述 (Description)": "客戶或工廠現有標準 (Baseline)。",
+                    "描述": "客戶或工廠現有標準。",
                     "下限 (Min)": spec_min, "上限 (Max)": display_max, 
-                    "寬度 (Range)": (display_max - spec_min) if display_max > 0 else 0,
-                    "建議 (Recommendation)": "僅供參考 (Reference)"
+                    "寬度": (display_max - spec_min) if display_max > 0 else 0,
+                    "建議": "Reference"
                 },
                 {
-                    "計算方法 (Method)": f"1. 標準 {sigma_n}-Sigma 法",
-                    "描述 (Description)": f"反映原始數據波動 (±{sigma_n}σ)。",
-                    "下限 (Min)": m1_min, "上限 (Max)": m1_max, "寬度 (Range)": m1_max - m1_min,
-                    "建議 (Recommendation)": "若數據噪聲大，範圍會很寬。"
+                    "計算方法 (Method)": f"1. 標準 {sigma_n}-Sigma",
+                    "描述": f"原始波動 (±{sigma_n}σ)。",
+                    "下限 (Min)": m1_min, "上限 (Max)": m1_max, "寬度": m1_max - m1_min,
+                    "建議": "寬鬆控制"
                 },
                 {
-                    "計算方法 (Method)": f"2. IQR 過濾法 (K={iqr_k})", 
-                    "描述 (Description)": f"已過濾異常值並應用 ±{sigma_n}σ。",
-                    "下限 (Min)": m2_min, "上限 (Max)": m2_max, "寬度 (Range)": m2_max - m2_min,
-                    "建議 (Recommendation)": "反映真實且穩定的機器能力。"
+                    "計算方法 (Method)": f"2. IQR 過濾 (K={iqr_k})", 
+                    "描述": f"過濾異常後 (±{sigma_n}σ)。",
+                    "下限 (Min)": m2_min, "上限 (Max)": m2_max, "寬度": m2_max - m2_min,
+                    "建議": "真實機器能力"
                 },
                 {
                     "計算方法 (Method)": "3. 智能混合法 (推薦)",
-                    "描述 (Description)": "結合機器能力 (M2) 與客戶規格 (Spec)。",
-                    "下限 (Min)": m3_min, "上限 (Max)": m3_max, "寬度 (Range)": m3_max - m3_min,
-                    "建議 (Recommendation)": "✅ 生產設定的最佳選擇。"
+                    "描述": "機器能力 + 客戶規格。",
+                    "下限 (Min)": m3_min, "上限 (Max)": m3_max, "寬度": m3_max - m3_min,
+                    "建議": "✅ 最佳設定"
                 }
             ]
-            
-            df_comp = pd.DataFrame(comp_data)
-            st.dataframe(
-                df_comp.style.format({
-                    "下限 (Min)": "{:.1f}", "上限 (Max)": "{:.1f}", "寬度 (Range)": "{:.1f}"
-                }), 
-                use_container_width=True, hide_index=True
-            )
+            st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["下限 (Min)", "上限 (Max)", "寬度"]), use_container_width=True, hide_index=True)
 
-            # --- VẼ BIỂU ĐỒ TRỰC QUAN ---
-            st.markdown("#### 2. 可視化比較 (Visual Comparison)")
+            # --- VẼ BIỂU ĐỒ ---
+            fig, ax = plt.subplots(figsize=(12, 4)) # Vẽ nhỏ hơn chút cho gọn
+            ax.hist(data, bins=30, density=True, alpha=0.3, color="gray", label="Raw Data")
             
-            fig, ax = plt.subplots(figsize=(12, 6))
-            
-            # Histogram
-            ax.hist(data, bins=30, density=True, alpha=0.3, color="gray", label="Raw Data (原始數據)")
-            
-            # M1: Red
-            ax.axvline(m1_min, color="red", linestyle=":", linewidth=2, alpha=0.6)
-            ax.axvline(m1_max, color="red", linestyle=":", linewidth=2, alpha=0.6)
-            ax.plot([], [], color="red", linestyle=":", label=f"M1: {sigma_n}-Sigma")
-            
-            # M2: Blue (IQR)
-            ax.axvline(m2_min, color="blue", linestyle="--", linewidth=2, alpha=0.8)
-            ax.axvline(m2_max, color="blue", linestyle="--", linewidth=2, alpha=0.8)
-            ax.plot([], [], color="blue", linestyle="--", label=f"M2: Robust (K={iqr_k}, {sigma_n}σ)")
-            
-            # M3: Green Zone
-            ax.axvspan(m3_min, m3_max, color="green", alpha=0.2, label=f"M3: Smart Hybrid")
-            
-            # Spec Limits
-            if spec_min > 0: ax.axvline(spec_min, color="black", linewidth=3, label=f"Spec Min")
-            if display_max > 0: ax.axvline(display_max, color="black", linewidth=3, label=f"Spec Max")
+            # Vẽ các đường limit (M1, M2, Spec)
+            ax.axvline(m1_min, color="red", ls=":", alpha=0.5); ax.axvline(m1_max, color="red", ls=":", alpha=0.5)
+            ax.axvline(m2_min, color="blue", ls="--", alpha=0.8); ax.axvline(m2_max, color="blue", ls="--", alpha=0.8)
+            ax.axvspan(m3_min, m3_max, color="green", alpha=0.2, label="Smart Hybrid")
+            if spec_min > 0: ax.axvline(spec_min, color="black", lw=2)
+            if display_max > 0: ax.axvline(display_max, color="black", lw=2)
 
-            ax.set_title(f"Control Limits Comparison (Sigma={sigma_n}, IQR K={iqr_k})", weight="bold")
-            ax.set_xlabel("Hardness (HRB)")
-            ax.legend(loc='upper right')
+            ax.set_title(f"Limits: {g['Material']} (σ={sigma_n}, K={iqr_k})", fontsize=10)
             st.pyplot(fig)
