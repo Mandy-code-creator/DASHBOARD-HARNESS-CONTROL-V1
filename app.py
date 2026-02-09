@@ -656,50 +656,43 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
     # ================================
     # ================================
-    # 7. AI PREDICTION (PRO UI EDITION)
+    # 7. AI PREDICTION (HIGH CONTRAST & CLEAN NUMBERS)
     # ================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown("### 🚀 AI Forecast (Linear Regression)")
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
-        
-        if len(train_df) < 5:
-            st.warning("⚠️ Need at least 5 coils.")
+        if len(train_df) < 5: st.warning("⚠️ Need at least 5 coils.")
         else:
-            # Input
             col1, col2 = st.columns([1, 3])
             with col1:
                 mean_h = train_df["Hardness_LINE"].mean()
                 target_h = st.number_input("🎯 Target Hardness", value=round(mean_h, 1), step=0.1, key=f"ai_{uuid.uuid4()}")
             
-            # Predict
             X_train = train_df[["Hardness_LINE"]].values
             preds = {}
             for col in ["TS", "YS", "EL"]:
                 model = LinearRegression().fit(X_train, train_df[col].values)
-                preds[col] = model.predict([[target_h]])[0]
+                val = model.predict([[target_h]])[0]
+                # CLEAN NUMBERS: Int for TS/YS, 1 decimal for EL
+                preds[col] = round(val, 1) if col == "EL" else int(round(val))
 
-            # --- VẼ BIỂU ĐỒ PRO ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
-            
-            # Màu sắc chuẩn đẹp (Flat Design)
-            colors = {"TS": "#2980b9", "YS": "#27ae60", "EL": "#c0392b"} # Xanh, Lục, Đỏ đậm
+            colors = {"TS": "#2980b9", "YS": "#27ae60", "EL": "#c0392b"} 
             idx = list(range(len(train_df)))
             nxt = len(train_df)
 
             for col in ["TS", "YS", "EL"]:
-                sec = (col == "EL") # EL trục phải, TS/YS trục trái
-                
-                # 1. Đường lịch sử (History Line) - Cong mềm mại + Fill nhẹ
+                sec = (col == "EL")
+                # 1. History Line
                 fig.add_trace(go.Scatter(
                     x=idx, y=train_df[col], 
                     mode='lines', 
-                    line=dict(color=colors[col], width=2, shape='spline'), # shape='spline' làm mượt đường
+                    line=dict(color=colors[col], width=2, shape='spline'), 
                     name=f"{col} (History)",
-                    # fill='tozeroy' if not sec else None, # Bỏ fill nếu thấy rối, hoặc giữ lại để đẹp
                     opacity=0.8
                 ), secondary_y=sec)
                 
-                # 2. Điểm nối (Link) - Nét đứt nối từ điểm cuối đến dự báo
+                # 2. Connector
                 last_y = train_df[col].iloc[-1]
                 fig.add_trace(go.Scatter(
                     x=[idx[-1], nxt], y=[last_y, preds[col]],
@@ -709,47 +702,37 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     hoverinfo='skip'
                 ), secondary_y=sec)
 
-                # 3. Điểm Dự Báo (Forecast Point) - Ngôi sao lớn nổi bật
+                # 3. Forecast Point (Clean Label)
                 fig.add_trace(go.Scatter(
                     x=[nxt], y=[preds[col]], 
                     mode='markers+text', 
-                    text=[f"<b>{preds[col]:.0f}</b>"], # In đậm số
+                    text=[f"<b>{preds[col]}</b>"], 
                     textposition="middle right" if nxt < 10 else "top center",
-                    marker=dict(
-                        color=colors[col], 
-                        size=14, 
-                        symbol='diamond', 
-                        line=dict(width=2, color='white') # Viền trắng cho nổi
-                    ), 
+                    marker=dict(color=colors[col], size=14, symbol='diamond', line=dict(width=2, color='white')), 
                     name=f"🎯 Pred {col}"
                 ), secondary_y=sec)
 
-            # --- TRANG TRÍ LAYOUT ---
             fig.add_vline(x=nxt - 0.5, line_width=1, line_dash="dash", line_color="gray")
             fig.add_annotation(x=nxt - 0.5, y=1.05, yref="paper", text="Forecast Zone ➔", showarrow=False, font=dict(color="gray"))
 
             fig.update_layout(
                 height=500,
                 title=dict(text="📈 Prediction Trajectory Visualization", font=dict(size=20)),
-                plot_bgcolor="white", # Nền trắng sạch sẽ
-                hovermode="x unified", # Rê chuột hiện tất cả thông số
+                plot_bgcolor="white",
+                hovermode="x unified",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 margin=dict(l=20, r=20, t=80, b=20)
             )
-            
-            # Kẻ lưới mờ nhạt
             fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#eee')
             fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#eee', secondary_y=False)
 
             st.plotly_chart(fig, use_container_width=True)
             
-            # --- METRIC CARDS ---
             st.markdown("#### 🏁 Forecast Results")
             c1, c2, c3 = st.columns(3)
-            c1.metric("Tensile Strength (TS)", f"{preds['TS']:.0f} MPa", delta_color="off")
-            c2.metric("Yield Strength (YS)", f"{preds['YS']:.0f} MPa", delta_color="off")
-            c3.metric("Elongation (EL)", f"{preds['EL']:.1f} %", delta_color="off")
-
+            c1.metric("Tensile Strength (TS)", f"{preds['TS']} MPa", delta_color="off")
+            c2.metric("Yield Strength (YS)", f"{preds['YS']} MPa", delta_color="off")
+            c3.metric("Elongation (EL)", f"{preds['EL']} %", delta_color="off")
     # ================================
     # 8. CONTROL LIMIT CALCULATOR
     # ================================
