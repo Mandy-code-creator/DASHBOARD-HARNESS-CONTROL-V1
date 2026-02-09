@@ -89,9 +89,16 @@ def split_std(x):
 
 df[["Std_Min","Std_Max"]] = df["Std_Text"].apply(lambda x: pd.Series(split_std(x)))
 
-# 4. Force Numeric
-for c in ["Hardness_LAB","Hardness_LINE","YS","TS","EL","Order_Gauge"]:
-    df[c] = pd.to_numeric(df[c], errors="coerce")
+# 4. Force Numeric (Include Spec Columns to avoid missing lines)
+numeric_cols = [
+    "Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL", "Order_Gauge",
+    "Standard TS min", "Standard TS max",
+    "Standard YS min", "Standard YS max",
+    "Standard EL min", "Standard EL max"
+]
+for c in numeric_cols:
+    if c in df.columns:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
 
 # 5. Quality Group Merge
 df["Quality_Group"] = df["Quality_Code"].replace({
@@ -559,7 +566,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 
                 bins = np.linspace(x_min, x_max, 30)
                 
-                # [UPDATE] Extended Range for Curve (± 5 Sigma)
+                # Extended Range for Curve (± 5 Sigma)
                 range_curve = max(5 * std_line, (x_max - x_min)/2)
                 xs = np.linspace(mean_line - range_curve, mean_line + range_curve, 400)
                 
@@ -586,7 +593,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     ax.axvline(l_lo, linestyle="-.", linewidth=2, color="purple", label="Lab LSL")
                     ax.axvline(l_hi, linestyle="-.", linewidth=2, color="purple", label="Lab USL")
                 
-                # Thiết lập giới hạn trục X để nhìn vừa vặn histogram nhưng curve vẫn đi tiếp
+                # Set X Limits để curve đi xuyên qua
                 ax.set_xlim(x_min, x_max)
 
                 ax.set_title(f"Hardness Distribution (LINE vs LAB)", weight="bold")
@@ -709,40 +716,40 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 data = sub_mech[col]
                 mean, std = data.mean(), data.std()
                 
+                # Get Specs
                 spec_min = sub_mech[cfg["min_c"]].max() if cfg["min_c"] in sub_mech else 0
                 spec_max = sub_mech[cfg["max_c"]].min() if cfg["max_c"] in sub_mech else 0
-                
                 if pd.isna(spec_min): spec_min = 0
                 if pd.isna(spec_max): spec_max = 0
                 
+                # Calculate Process Limits (3 Sigma)
+                proc_min = mean - 3 * std
+                proc_max = mean + 3 * std
+
                 # Vẽ Histogram
                 axes[j].hist(data, bins=20, color=cfg["color"], alpha=0.5, density=True, label="Actual Dist")
                 
-                # [UPDATE] Vẽ đường Normal Curve dài (± 5 Sigma)
+                # Vẽ đường Normal Curve dài (± 5 Sigma)
                 if std > 0:
-                    # Tạo khoảng vẽ rộng hơn dữ liệu thực tế
-                    x_start = mean - 5 * std
-                    x_end = mean + 5 * std
-                    x_p = np.linspace(x_start, x_end, 200)
+                    x_p = np.linspace(mean - 5 * std, mean + 5 * std, 200)
                     y_p = (1/(std*np.sqrt(2*np.pi))) * np.exp(-0.5*((x_p-mean)/std)**2)
                     axes[j].plot(x_p, y_p, color=cfg["color"], lw=2, label="Normal Fit")
 
-                    # Giới hạn trục X để không bị zoom quá xa, nhưng đủ rộng để thấy đuôi
-                    # Lấy min/max của cả dữ liệu thực tế VÀ spec để set trục X hợp lý
-                    view_min = min(data.min(), spec_min if spec_min > 0 else data.min())
-                    view_max = max(data.max(), spec_max if spec_max < 9000 else data.max())
-                    margin = (view_max - view_min) * 0.5 # Mở rộng lề 50%
+                    # Set X-Limits wide enough
+                    view_min = min(data.min(), spec_min if spec_min > 0 else data.min(), proc_min)
+                    view_max = max(data.max(), spec_max if spec_max < 9000 else data.max(), proc_max)
+                    margin = (view_max - view_min) * 0.4
                     axes[j].set_xlim(view_min - margin, view_max + margin)
 
-                # Vẽ đường giới hạn (Spec Lines)
-                has_limit = False
+                # 1. Vẽ đường SPEC (Màu Đỏ - Nét đứt)
                 if spec_min > 0:
-                    axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2, label=f"Min {spec_min:.0f}")
-                    has_limit = True
-                
+                    axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2, label=f"Spec Min {spec_min:.0f}")
                 if spec_max > 0 and spec_max < 9000:
-                    axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2, label=f"Max {spec_max:.0f}")
-                    has_limit = True
+                    axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2, label=f"Spec Max {spec_max:.0f}")
+
+                # 2. Vẽ đường PROCESS CONTROL (Màu Xanh - Nét chấm) -> Đảm bảo luôn có vạch
+                axes[j].axvline(proc_min, color="blue", linestyle=":", linewidth=2, label=f"-3σ ({proc_min:.1f})")
+                axes[j].axvline(proc_max, color="blue", linestyle=":", linewidth=2, label=f"+3σ ({proc_max:.1f})")
 
                 axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
                 axes[j].legend(loc="upper right", fontsize="small")
