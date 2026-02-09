@@ -464,11 +464,20 @@ for i, (_, g) in enumerate(valid.iterrows()):
             else: st.caption(f"ℹ️ Applied: **Standard Excel Spec**")
 
     # ================================
-    # 1. DATA INSPECTION
+    # 1. DATA INSPECTION (CLEAN - INTEGERS ONLY)
     # ================================
     if view_mode == "📋 Data Inspection":
+        st.markdown(f"### 📋 {g['Material']} | {g['Gauge_Range']}")
         def highlight_ng_rows(row): return ['background-color: #ffe6e6'] * len(row) if row['NG'] else [''] * len(row)
-        st.dataframe(sub.style.apply(highlight_ng_rows, axis=1), use_container_width=True)
+        
+        # Lấy danh sách các cột số để làm tròn
+        num_cols = sub.select_dtypes(include=[np.number]).columns.tolist()
+        
+        st.dataframe(
+            sub.style.format("{:.0f}", subset=num_cols) # <--- LÀM TRÒN TẤT CẢ CỘT SỐ
+            .apply(highlight_ng_rows, axis=1), 
+            use_container_width=True
+        )
 
     # ================================
     # 2. HARDNESS ANALYSIS
