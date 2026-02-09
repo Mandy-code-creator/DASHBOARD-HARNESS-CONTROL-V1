@@ -185,83 +185,159 @@ if valid.empty:
     st.stop()
 
 # ==============================================================================
-#  🚀 GLOBAL SUMMARY DASHBOARD
+# ==============================================================================
+#  🚀 GLOBAL SUMMARY DASHBOARD (SPLIT VERSION: STATS + SIMULATION)
 # ==============================================================================
 if view_mode == "🚀 Global Summary Dashboard":
-    st.markdown("## 🚀 Global Process Summary & Forecast Dashboard")
-    st.info("Bảng tổng hợp toàn bộ các nhóm vật liệu (Material/Gauge). Cột **'Specs List'** hiển thị các tiêu chuẩn chi tiết.")
+    st.markdown("## 🚀 Global Process Dashboard")
+    
+    # Tạo 2 Tab riêng biệt
+    tab1, tab2 = st.tabs(["📊 1. Statistical Overview (Thống kê Thực tế)", "🎯 2. Prediction Simulator (Dự báo theo Độ cứng)"])
 
-    summary_rows = []
-
-    for _, g in valid.iterrows():
-        sub_grp = df[
-            (df["Rolling_Type"] == g["Rolling_Type"]) &
-            (df["Metallic_Type"] == g["Metallic_Type"]) &
-            (df["Quality_Group"] == g["Quality_Group"]) &
-            (df["Gauge_Range"] == g["Gauge_Range"]) &
-            (df["Material"] == g["Material"])
-        ].dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
-
-        if len(sub_grp) < 10: continue
-
-        specs_list = sorted(sub_grp["Product_Spec"].astype(str).unique())
-        specs_str = ", ".join(specs_list)
-
-        avg_h = sub_grp["Hardness_LINE"].mean()
-        avg_ts = sub_grp["TS"].mean()
-        avg_ys = sub_grp["YS"].mean()
-        avg_el = sub_grp["EL"].mean()
-
-        X = sub_grp[["Hardness_LINE"]].values
+    # --- TAB 1: BẢNG THỐNG KÊ (MIN/MAX/MEAN) ---
+    with tab1:
+        st.info("ℹ️ Bảng này chỉ hiển thị dữ liệu thực tế (Min/Max/Average) để đánh giá năng lực quy trình.")
         
-        m_ts = LinearRegression().fit(X, sub_grp["TS"].values)
-        pred_ts = m_ts.predict([[avg_h]])[0]
-        r2_ts = r2_score(sub_grp["TS"], m_ts.predict(X))
+        stats_rows = []
+        
+        for _, g in valid.iterrows():
+            sub_grp = df[
+                (df["Rolling_Type"] == g["Rolling_Type"]) &
+                (df["Metallic_Type"] == g["Metallic_Type"]) &
+                (df["Quality_Group"] == g["Quality_Group"]) &
+                (df["Gauge_Range"] == g["Gauge_Range"]) &
+                (df["Material"] == g["Material"])
+            ].dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
 
-        m_ys = LinearRegression().fit(X, sub_grp["YS"].values)
-        pred_ys = m_ys.predict([[avg_h]])[0]
+            if len(sub_grp) < 5: continue
 
-        m_el = LinearRegression().fit(X, sub_grp["EL"].values)
-        pred_el = m_el.predict([[avg_h]])[0]
+            # Specs List
+            specs_str = ", ".join(sorted(sub_grp["Product_Spec"].astype(str).unique()))
 
-        summary_rows.append({
-            "Quality Group": g["Quality_Group"],
-            "Material": g["Material"],
-            "Gauge Range": g["Gauge_Range"],
-            "Specs List": specs_str,
-            "Coils": len(sub_grp),
-            "HRB Avg": float(f"{avg_h:.1f}"),
-            "TS (Act)": float(f"{avg_ts:.0f}"),
-            "TS (Model)": float(f"{pred_ts:.0f}"),
-            "TS Diff": float(f"{avg_ts - pred_ts:.0f}"),
-            "TS R2": float(f"{r2_ts:.2f}"),
-            "YS (Act)": float(f"{avg_ys:.0f}"),
-            "YS (Model)": float(f"{pred_ys:.0f}"),
-            "YS Diff": float(f"{avg_ys - pred_ys:.0f}"),
-            "EL (Act)": float(f"{avg_el:.1f}"),
-            "EL (Model)": float(f"{pred_el:.1f}"),
-            "EL Diff": float(f"{avg_el - pred_el:.1f}"),
-        })
+            stats_rows.append({
+                "Quality": g["Quality_Group"],
+                "Material": g["Material"],
+                "Gauge": g["Gauge_Range"],
+                "Specs": specs_str,
+                "N": len(sub_grp),
+                
+                # Hardness Stats
+                "HRB (Avg)": sub_grp["Hardness_LINE"].mean(),
+                "HRB (Min)": sub_grp["Hardness_LINE"].min(),
+                "HRB (Max)": sub_grp["Hardness_LINE"].max(),
+                
+                # TS Stats
+                "TS (Avg)": sub_grp["TS"].mean(),
+                "TS (Min)": sub_grp["TS"].min(),
+                "TS (Max)": sub_grp["TS"].max(),
 
-    if summary_rows:
-        df_sum = pd.DataFrame(summary_rows)
-        cols_order = [
-            "Quality Group", "Material", "Gauge Range", "Specs List", "Coils", "HRB Avg",
-            "TS (Act)", "TS (Model)", "TS Diff", "TS R2",
-            "YS (Act)", "YS (Model)", "YS Diff",
-            "EL (Act)", "EL (Model)", "EL Diff"
-        ]
-        df_sum = df_sum[cols_order]
+                # YS Stats
+                "YS (Avg)": sub_grp["YS"].mean(),
+                "YS (Min)": sub_grp["YS"].min(),
+                "YS (Max)": sub_grp["YS"].max(),
+                
+                # EL Stats
+                "EL (Avg)": sub_grp["EL"].mean(),
+                "EL (Min)": sub_grp["EL"].min(),
+                "EL (Max)": sub_grp["EL"].max(),
+            })
 
-        st.dataframe(
-            df_sum.style.background_gradient(subset=["TS Diff", "YS Diff"], cmap="coolwarm", vmin=-20, vmax=20)
-                  .format("{:.1f}", subset=["EL (Act)", "EL (Model)", "EL Diff"])
-                  .format("{:.0f}", subset=["TS (Act)", "TS (Model)", "TS Diff", "YS (Act)", "YS (Model)", "YS Diff"]),
-            use_container_width=True, height=800
-        )
-        st.success(f"✅ Đã phân tích xong {len(df_sum)} nhóm điều kiện.")
-    else:
-        st.warning("⚠️ Không có đủ dữ liệu để tạo bảng tổng hợp.")
+        if stats_rows:
+            df_stats = pd.DataFrame(stats_rows)
+            # Format hiển thị đẹp
+            st.dataframe(
+                df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c])
+                              .background_gradient(subset=["HRB (Avg)"], cmap="Blues"),
+                use_container_width=True,
+                height=600
+            )
+        else:
+            st.warning("Chưa đủ dữ liệu thống kê.")
+
+    # --- TAB 2: BẢNG DỰ BÁO (THEO INPUT NGƯỜI DÙNG) ---
+    with tab2:
+        st.info("🎯 Nhập độ cứng bạn dự định chạy, hệ thống sẽ dùng mô hình AI của từng nhóm để dự báo cơ tính.")
+        
+        # Ô nhập liệu của người dùng
+        col_in, _ = st.columns([1, 3])
+        with col_in:
+            user_hrb = st.number_input("📥 Nhập Độ Cứng Mục Tiêu (HRB):", value=60.0, step=0.5, format="%.1f")
+
+        pred_rows = []
+
+        for _, g in valid.iterrows():
+            sub_grp = df[
+                (df["Rolling_Type"] == g["Rolling_Type"]) &
+                (df["Metallic_Type"] == g["Metallic_Type"]) &
+                (df["Quality_Group"] == g["Quality_Group"]) &
+                (df["Gauge_Range"] == g["Gauge_Range"]) &
+                (df["Material"] == g["Material"])
+            ].dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
+
+            if len(sub_grp) < 10: continue # Cần ít nhất 10 cuộn để dự báo chuẩn
+
+            specs_str = ", ".join(sorted(sub_grp["Product_Spec"].astype(str).unique()))
+            
+            # Kiểm tra xem input có nằm trong vùng an toàn không
+            h_min, h_max = sub_grp["Hardness_LINE"].min(), sub_grp["Hardness_LINE"].max()
+            is_extrapolated = (user_hrb < h_min) or (user_hrb > h_max)
+            note = "⚠️ Ngoài vùng data" if is_extrapolated else "✅ Trong vùng data"
+
+            # Train Model & Predict
+            X = sub_grp[["Hardness_LINE"]].values
+            
+            # TS Prediction
+            m_ts = LinearRegression().fit(X, sub_grp["TS"].values)
+            pred_ts = m_ts.predict([[user_hrb]])[0]
+            r2_ts = r2_score(sub_grp["TS"], m_ts.predict(X))
+
+            # YS Prediction
+            m_ys = LinearRegression().fit(X, sub_grp["YS"].values)
+            pred_ys = m_ys.predict([[user_hrb]])[0]
+            
+            # EL Prediction
+            m_el = LinearRegression().fit(X, sub_grp["EL"].values)
+            pred_el = m_el.predict([[user_hrb]])[0]
+
+            pred_rows.append({
+                "Quality": g["Quality_Group"],
+                "Material": g["Material"],
+                "Gauge": g["Gauge_Range"],
+                "Specs": specs_str,
+                "Range HRB (History)": f"{h_min:.1f}~{h_max:.1f}",
+                "Status": note,
+                "Model Trust (R2)": r2_ts, # Độ tin cậy
+
+                # Predicted Values
+                "Target HRB": user_hrb,
+                "Pred TS": pred_ts,
+                "Pred YS": pred_ys,
+                "Pred EL": pred_el
+            })
+
+        if pred_rows:
+            df_pred = pd.DataFrame(pred_rows)
+            
+            # Tô màu để cảnh báo độ tin cậy
+            def highlight_r2(val):
+                color = '#ffcccc' if val < 0.3 else ('#ccffcc' if val > 0.7 else '')
+                return f'background-color: {color}'
+
+            st.dataframe(
+                df_pred.style.format({
+                    "Pred TS": "{:.0f}", 
+                    "Pred YS": "{:.0f}", 
+                    "Pred EL": "{:.1f}",
+                    "Model Trust (R2)": "{:.2f}",
+                    "Target HRB": "{:.1f}"
+                }).applymap(highlight_r2, subset=["Model Trust (R2)"]),
+                use_container_width=True,
+                height=600
+            )
+            st.caption("* Model Trust (R2): Càng gần 1.0 thì dự báo càng chính xác. Nếu < 0.3 thì dự báo chỉ mang tính tham khảo.")
+        else:
+            st.warning("Không đủ dữ liệu để chạy mô hình dự báo.")
+
     st.stop()
 
 # ==============================================================================
