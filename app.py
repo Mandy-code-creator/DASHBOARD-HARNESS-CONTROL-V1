@@ -903,8 +903,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["Min", "Max", "Range"]), use_container_width=True, hide_index=True)
                 
                 st.info("""
-                **So sánh nhanh:**
-                * **M2 (IQR):** Loại bỏ nhiễu bằng thuật toán lọc.
-                * **M4 (I-MR):** Loại bỏ xu hướng trôi (Drift) bằng công thức SPC chuẩn Quốc tế.
-                * *Mẹo:* Nếu M4 hẹp hơn M1, quy trình của bạn có sự trôi dạt (Process Drift).
+                **Quick Comparison:**
+                * **M2 (IQR):** Filters out noise and outliers using robust algorithms.
+                * **M4 (I-MR):** Eliminates process drift influence using International SPC Standards.
+                * **Insight:** If **M4 is narrower than M1**, it indicates the presence of **Process Drift**.
                 """)
