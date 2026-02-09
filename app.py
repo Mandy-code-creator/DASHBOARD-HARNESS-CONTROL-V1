@@ -680,22 +680,90 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
 
     # ================================
-    # 4. MECH PROPS ANALYSIS
+    # ================================
+    # 4. MECH PROPS ANALYSIS (UPDATED: WITH LIMITS & STATS)
     # ================================
     elif view_mode == "⚙️ Mech Props Analysis":
+        st.markdown("### ⚙️ Mechanical Properties Analysis (Distribution vs Specs)")
+        
+        # Lọc dữ liệu có cơ tính
         sub_mech = sub.dropna(subset=["TS","YS","EL"])
-        if not sub_mech.empty:
-            fig, axes = plt.subplots(1, 3, figsize=(15, 5))
-            for j, (col, c) in enumerate([("TS","#1f77b4"),("YS","#2ca02c"),("EL","#ff7f0e")]):
+        
+        if sub_mech.empty:
+            st.warning("⚠️ No Mechanical Property data available for this group.")
+        else:
+            # Cấu hình cho 3 chỉ số
+            props_config = [
+                {"col": "TS", "name": "Tensile Strength (TS)", "color": "#1f77b4", "min_c": "Standard TS min", "max_c": "Standard TS max"},
+                {"col": "YS", "name": "Yield Strength (YS)", "color": "#2ca02c", "min_c": "Standard YS min", "max_c": "Standard YS max"},
+                {"col": "EL", "name": "Elongation (EL)", "color": "#ff7f0e", "min_c": "Standard EL min", "max_c": "Standard EL max"}
+            ]
+
+            fig, axes = plt.subplots(1, 3, figsize=(18, 6))
+            stats_data = []
+
+            for j, cfg in enumerate(props_config):
+                col = cfg["col"]
                 data = sub_mech[col]
                 mean, std = data.mean(), data.std()
-                axes[j].hist(data, bins=15, color=c, alpha=0.5, density=True)
+                
+                # 1. Lấy giới hạn Spec (Xử lý NaN và số 0)
+                # Lấy max của cột min (để lấy tiêu chuẩn chặt nhất trong nhóm)
+                spec_min = sub_mech[cfg["min_c"]].max() if cfg["min_c"] in sub_mech else 0
+                spec_max = sub_mech[cfg["max_c"]].min() if cfg["max_c"] in sub_mech else 0
+                
+                if pd.isna(spec_min): spec_min = 0
+                if pd.isna(spec_max): spec_max = 0
+                
+                # 2. Vẽ Histogram
+                # Tự động tính bins cho đẹp
+                axes[j].hist(data, bins=20, color=cfg["color"], alpha=0.5, density=True, label="Actual Dist")
+                
+                # 3. Vẽ đường cong phân phối chuẩn (Normal Curve)
                 if std > 0:
-                    x_p = np.linspace(mean-4*std, mean+4*std, 100)
+                    x_p = np.linspace(data.min() - 5, data.max() + 5, 100)
                     y_p = (1/(std*np.sqrt(2*np.pi))) * np.exp(-0.5*((x_p-mean)/std)**2)
-                    axes[j].plot(x_p, y_p, color=c, lw=2)
-                axes[j].set_title(f"{col} Distribution")
+                    axes[j].plot(x_p, y_p, color=cfg["color"], lw=2, label="Normal Fit")
+
+                # 4. Vẽ đường giới hạn (Spec Lines) - MÀU ĐỎ
+                has_limit = False
+                if spec_min > 0:
+                    axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2, label=f"Min {spec_min:.0f}")
+                    has_limit = True
+                
+                # Chỉ vẽ Max nếu nó hợp lý (nhỏ hơn 9000 - tránh giá trị rác trong Excel)
+                if spec_max > 0 and spec_max < 9000:
+                    axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2, label=f"Max {spec_max:.0f}")
+                    has_limit = True
+
+                # Trang trí biểu đồ
+                axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
+                axes[j].legend(loc="upper right", fontsize="small")
+                axes[j].grid(alpha=0.3, linestyle="--")
+
+                # 5. Tổng hợp số liệu cho bảng bên dưới
+                stats_data.append({
+                    "Property": col,
+                    "Limit (Spec)": f"{spec_min:.0f} ~ {spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else f"≥ {spec_min:.0f}",
+                    "Actual (Range)": f"{data.min():.1f} ~ {data.max():.1f}",
+                    "Mean": mean,
+                    "Std Dev": std,
+                    "Pass Rate": f"{(data >= spec_min).mean() * 100:.1f}%" if spec_min > 0 else "100%"
+                })
+
             st.pyplot(fig)
+            
+            # Hiển thị bảng tóm tắt
+            st.markdown("#### 📊 Statistics Summary & Spec Check")
+            df_stat = pd.DataFrame(stats_data)
+            st.dataframe(
+                df_stat.style.format({
+                    "Mean": "{:.1f}", 
+                    "Std Dev": "{:.1f}"
+                }), 
+                use_container_width=True, 
+                hide_index=True
+            )
 
     # ================================
     # 5. LOOKUP
