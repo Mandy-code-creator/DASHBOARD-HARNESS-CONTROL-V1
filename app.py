@@ -790,52 +790,57 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
     # ================================
 # ================================
-    # 8. CONTROL LIMIT CALCULATOR (FIXED: REMOVE NESTED LOOP)
+# ================================
+    # 8. CONTROL LIMIT CALCULATOR (UPDATED: 4 METHODS INCLUDING I-MR)
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
-        # Tiêu đề (Sử dụng biến 'g' từ vòng lặp chính bên ngoài)
-        st.markdown(f"### 🎛️ Limits Analysis: {g['Material']} | {g['Gauge_Range']}")
+        st.markdown(f"### 🎛️ Control Limits Analysis: {g['Material']} | {g['Gauge_Range']}")
 
-        # Lấy dữ liệu (Sử dụng biến 'sub' đã được lọc ở vòng lặp chính)
+        # Lấy dữ liệu
         data = sub["Hardness_LINE"].dropna()
         
         if len(data) < 10:
             st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
         else:
             # --- 1. CẤU HÌNH THAM SỐ (Settings) ---
-            # Tạo Key duy nhất dựa trên 'i' và tên vật liệu từ vòng lặp chính
-            # Đảm bảo không bao giờ trùng lặp
-            key_sigma = f"sigma_{i}_{g['Material']}_{g['Gauge_Range']}"
-            key_iqr = f"iqr_{i}_{g['Material']}_{g['Gauge_Range']}"
+            # Key duy nhất theo i và tên vật liệu
+            unique_key_sigma = f"ctrl_sigma_{i}_{g['Material']}"
+            unique_key_iqr = f"ctrl_iqr_{i}_{g['Material']}"
 
             with st.expander("⚙️ 設定參數 (Settings)", expanded=False):
                 col_par1, col_par2 = st.columns(2)
                 with col_par1:
                     sigma_n = st.number_input(
-                        "1. Sigma 倍數", 
+                        "1. Sigma Multiplier (K)", 
                         min_value=1.0, max_value=6.0, value=3.0, step=0.5,
-                        key=key_sigma 
+                        help="Dùng cho tất cả các phương pháp (Std, IQR, I-MR).",
+                        key=unique_key_sigma 
                     )
                 with col_par2:
                     iqr_k = st.number_input(
-                        "2. IQR 靈敏度", 
-                        min_value=0.5, max_value=3.0, value=1.0, step=0.1,
-                        key=key_iqr
+                        "2. IQR Sensitivity", 
+                        min_value=0.5, max_value=3.0, value=0.7, step=0.1, # Mặc định 0.7 cho sát thực tế
+                        help="Dùng riêng cho phương pháp IQR.",
+                        key=unique_key_iqr
                     )
 
-            # --- 2. TÍNH TOÁN ---
+            # --- 2. TÍNH TOÁN (4 PHƯƠNG PHÁP) ---
+            
+            # Spec (Method 0)
             spec_min = sub["Std_Min"].max() if "Std_Min" in sub else 0
             spec_max = sub["Std_Max"].min() if "Std_Max" in sub else 0
             if pd.isna(spec_min): spec_min = 0
             if pd.isna(spec_max): spec_max = 0
             display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
 
-            # Method 1: N-Sigma
-            mu, sigma = data.mean(), data.std()
-            m1_min, m1_max = mu - sigma_n*sigma, mu + sigma_n*sigma
+            mu = data.mean()
+
+            # Method 1: Standard N-Sigma (Cũ)
+            std_dev = data.std()
+            m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
             
-            # Method 2: IQR Robust
+            # Method 2: IQR Robust (Cũ)
             Q1 = data.quantile(0.25)
             Q3 = data.quantile(0.75)
             IQR = Q3 - Q1
@@ -844,34 +849,62 @@ for i, (_, g) in enumerate(valid.iterrows()):
             mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
 
-            # Method 3: Smart Hybrid
+            # Method 3: Smart Hybrid (Cũ)
             m3_min = max(m2_min, spec_min)
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
+
+            # Method 4: I-MR (Individual Moving Range) - MỚI
+            # Công thức SPC: Sigma_est = Average(Moving Range) / 1.128
+            mrs = np.abs(np.diff(data))
+            mr_bar = np.mean(mrs)
+            sigma_imr = mr_bar / 1.128
+            m4_min = mu - sigma_n * sigma_imr
+            m4_max = mu + sigma_n * sigma_imr
 
             # --- 3. HIỂN THỊ BẢNG & BIỂU ĐỒ ---
             col_chart, col_table = st.columns([2, 1])
             
             with col_chart:
-                fig, ax = plt.subplots(figsize=(10, 4))
+                fig, ax = plt.subplots(figsize=(10, 5))
                 ax.hist(data, bins=30, density=True, alpha=0.3, color="gray", label="Raw Data")
                 
-                # Limit lines
-                ax.axvline(m1_min, color="red", ls=":", alpha=0.5); ax.axvline(m1_max, color="red", ls=":", alpha=0.5)
-                ax.axvline(m2_min, color="blue", ls="--", alpha=0.8); ax.axvline(m2_max, color="blue", ls="--", alpha=0.8)
-                ax.axvspan(m3_min, m3_max, color="green", alpha=0.2, label="Smart Hybrid")
+                # Vẽ các đường giới hạn
+                # M1: Red Dotted
+                ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="_nolegend_")
+                ax.axvline(m1_max, c="red", ls=":", alpha=0.4, label="M1: Standard")
                 
-                if spec_min > 0: ax.axvline(spec_min, color="black", lw=2)
-                if display_max > 0: ax.axvline(display_max, color="black", lw=2)
+                # M2: Blue Dashed
+                ax.axvline(m2_min, c="blue", ls="--", alpha=0.5, label="_nolegend_")
+                ax.axvline(m2_max, c="blue", ls="--", alpha=0.5, label="M2: IQR")
 
-                ax.set_title(f"Limits: {g['Material']} (σ={sigma_n}, K={iqr_k})", fontsize=10)
+                # M4 (I-MR): Purple Dash-Dot (Nổi bật - SPC)
+                ax.axvline(m4_min, c="purple", ls="-.", lw=2, label="_nolegend_")
+                ax.axvline(m4_max, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
+                
+                # M3: Green Area (Vùng tối ưu cũ)
+                ax.axvspan(m3_min, m3_max, color="green", alpha=0.15, label="M3: Hybrid Zone")
+                
+                if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
+                if display_max > 0: ax.axvline(display_max, c="black", lw=2)
+
+                ax.set_title(f"Limits Comparison (σ={sigma_n})", fontsize=10, fontweight="bold")
+                ax.legend(loc="upper right", fontsize="small")
                 st.pyplot(fig)
 
             with col_table:
                 comp_data = [
-                    {"Method": "0. Spec", "Min": spec_min, "Max": display_max, "Range": (display_max-spec_min) if display_max>0 else 0, "Note": "Ref"},
-                    {"Method": f"1. {sigma_n}σ", "Min": m1_min, "Max": m1_max, "Range": m1_max-m1_min, "Note": "Loose"},
-                    {"Method": f"2. IQR", "Min": m2_min, "Max": m2_max, "Range": m2_max-m2_min, "Note": "Robust"},
-                    {"Method": "3. Hybrid", "Min": m3_min, "Max": m3_max, "Range": m3_max-m3_min, "Note": "✅ Best"}
+                    {"Method": "0. Spec", "Min": spec_min, "Max": display_max, "Range": display_max-spec_min if display_max>0 else 0, "Note": "Reference"},
+                    {"Method": "1. Standard", "Min": m1_min, "Max": m1_max, "Range": m1_max-m1_min, "Note": "Basic Stats"},
+                    {"Method": "2. IQR Robust", "Min": m2_min, "Max": m2_max, "Range": m2_max-m2_min, "Note": "Filtered"},
+                    {"Method": "3. Smart Hybrid", "Min": m3_min, "Max": m3_max, "Range": m3_max-m3_min, "Note": "Configurable"},
+                    {"Method": "4. I-MR (SPC)", "Min": m4_min, "Max": m4_max, "Range": m4_max-m4_min, "Note": "✅ Professional"}
                 ]
                 st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["Min", "Max", "Range"]), use_container_width=True, hide_index=True)
+                
+                st.info("""
+                **So sánh nhanh:**
+                * **M2 (IQR):** Loại bỏ nhiễu bằng thuật toán lọc.
+                * **M4 (I-MR):** Loại bỏ xu hướng trôi (Drift) bằng công thức SPC chuẩn Quốc tế.
+                * *Mẹo:* Nếu M4 hẹp hơn M1, quy trình của bạn có sự trôi dạt (Process Drift).
+                """)
