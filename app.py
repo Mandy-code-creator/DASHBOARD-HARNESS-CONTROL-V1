@@ -170,6 +170,7 @@ view_mode = st.sidebar.radio(
         "🔍 Lookup: Hardness Range → Actual Mech Props",
         "🎯 Find Target Hardness (Reverse Lookup)",
         "🧮 Predict TS/YS/EL from Std Hardness",
+        "🎛️ Control Limit Calculator (Compare 3 Methods)", # <--- THÊM DÒNG NÀY
     ]
 )
 
@@ -426,7 +427,8 @@ for _, g in valid.iterrows():
     # ================================
    # ================================
   # ================================
-    # 2. HARDNESS ANALYSIS (RESTORED LAB CURVE)
+ # ================================
+    # 2. HARDNESS ANALYSIS (FULL FINAL VERSION)
     # ================================
     elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
         
@@ -443,6 +445,7 @@ for _, g in valid.iterrows():
             ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.5)
             ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.9) 
             
+            # Vẽ giới hạn
             ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
             ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
             
@@ -453,6 +456,7 @@ for _, g in valid.iterrows():
             plt.tight_layout()
             st.pyplot(fig)
             
+            # Nút download
             buf = fig_to_png(fig)
             st.download_button("📥 Download Trend Chart", data=buf, file_name=f"trend_{g['Material']}.png", mime="image/png", key=f"dl_tr_{uuid.uuid4()}")
 
@@ -471,13 +475,18 @@ for _, g in valid.iterrows():
                     std = data.std(ddof=1)
                     if std == 0: return None 
                     
-                    # Cp & Ca
+                    # Cp: Process Potential
                     cp = (usl - lsl) / (6 * std)
-                    mid = (usl + lsl) / 2
-                    ca = ((mean - mid) / ((usl - lsl) / 2)) * 100
                     
-                    # Cpk
-                    cpk = min((usl - mean) / (3 * std), (mean - lsl) / (3 * std))
+                    # Ca: Accuracy (%)
+                    mid = (usl + lsl) / 2
+                    tol = (usl - lsl)
+                    ca = ((mean - mid) / (tol / 2)) * 100
+                    
+                    # Cpk: Process Capability
+                    cpu = (usl - mean) / (3 * std)
+                    cpl = (mean - lsl) / (3 * std)
+                    cpk = min(cpu, cpl)
                     
                     return mean, std, cp, ca, cpk
 
@@ -486,11 +495,19 @@ for _, g in valid.iterrows():
 
                 # 2. Chuẩn bị vẽ biểu đồ
                 mean_line, std_line = line.mean(), line.std(ddof=1)
-                mean_lab, std_lab = lab.mean(), lab.std(ddof=1) # Tính mean/std cho LAB để vẽ curve
                 
-                # Auto scale
-                x_min = min(line.min(), lab.min(), lo) - 2
-                x_max = max(line.max(), lab.max(), hi) + 2
+                # Tính toán cho LAB (chỉ để vẽ đường curve tham khảo)
+                if not lab.empty:
+                    mean_lab, std_lab = lab.mean(), lab.std(ddof=1)
+                else:
+                    mean_lab, std_lab = 0, 0
+                
+                # Auto scale trục X
+                data_min = min(line.min(), lab.min()) if not lab.empty else line.min()
+                data_max = max(line.max(), lab.max()) if not lab.empty else line.max()
+                x_min = min(data_min, lo) - 2
+                x_max = max(data_max, hi) + 2
+                
                 bins = np.linspace(x_min, x_max, 30)
                 xs = np.linspace(x_min, x_max, 400) # Trục X cho đường cong chuẩn
                 
@@ -506,7 +523,7 @@ for _, g in valid.iterrows():
                     ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
                     ax.plot(xs, ys_line, linewidth=2.5, color="#b25e00", label="LINE Fit")
 
-                # --- VẼ NORMAL CURVE (LAB - Nét đứt màu xanh) --- <--- ĐÃ KHÔI PHỤC ĐOẠN NÀY
+                # --- VẼ NORMAL CURVE (LAB - Nét đứt màu xanh) ---
                 if not lab.empty and std_lab > 0:
                     ys_lab = (1/(std_lab*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_lab)/std_lab)**2)
                     ax.plot(xs, ys_lab, linewidth=2, linestyle="--", color="#1f77b4", label="LAB Fit")
@@ -520,7 +537,7 @@ for _, g in valid.iterrows():
                 ax.grid(alpha=0.3)
                 st.pyplot(fig)
 
-                # 3. Hiển thị bảng chỉ số SPC (CHỈ LINE - Giữ nguyên yêu cầu cũ)
+                # 3. Hiển thị bảng chỉ số SPC (CHỈ LINE)
                 st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
                 
                 if spc_line:
@@ -536,20 +553,13 @@ for _, g in valid.iterrows():
                         "Rating": eval_msg
                     }])
 
-                    st.dataframe(
-                        df_spc.style.format({
-                            "Mean": "{:.2f}", "Std Dev": "{:.3f}", 
-                            "Cp": "{:.2f}", "Ca (Accuracy %)": "{:.1f}%", "Cpk": "{:.2f}"
-                        }).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']),
-                        use_container_width=True, hide_index=True
-                    )
                     # Format bảng: TẤT CẢ LÀ 2 SỐ THẬP PHÂN
                     st.dataframe(
                         df_spc.style.format({
                             "Mean": "{:.2f}", 
-                            "Std Dev": "{:.2f}",          # <--- Đã sửa thành .2f
+                            "Std Dev": "{:.2f}",          
                             "Cp": "{:.2f}", 
-                            "Ca (Accuracy %)": "{:.2f}%", # <--- Đã sửa thành .2f%
+                            "Ca (%)": "{:.2f}%", 
                             "Cpk": "{:.2f}"
                         }).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']),
                         use_container_width=True, 
@@ -780,3 +790,109 @@ for _, g in valid.iterrows():
             c1.metric("Pred TS", f"{preds['TS']:.0f}")
             c2.metric("Pred YS", f"{preds['YS']:.0f}")
             c3.metric("Pred EL", f"{preds['EL']:.1f}")
+# ================================
+    # 8. CONTROL LIMIT CALCULATOR (COMPARE 3 METHODS)
+    # ================================
+    elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
+        st.markdown("### 🎛️ Optimal Control Limit Calculator")
+        st.info("So sánh 3 phương pháp xác định giới hạn kiểm soát để tìm ra phương án tối ưu nhất cho nhóm vật liệu này.")
+
+        # Lấy dữ liệu độ cứng
+        data = sub["Hardness_LINE"].dropna()
+        
+        if len(data) < 10:
+            st.warning("⚠️ Cần ít nhất 10 cuộn để tính toán tin cậy.")
+        else:
+            # --- TÍNH TOÁN 3 PHƯƠNG PHÁP ---
+            
+            # METHOD 1: STANDARD 3-SIGMA (Raw Data)
+            mu, sigma = data.mean(), data.std()
+            m1_min, m1_max = mu - 3*sigma, mu + 3*sigma
+            
+            # METHOD 2: IQR ROBUST (Cleaned Data)
+            Q1 = data.quantile(0.25)
+            Q3 = data.quantile(0.75)
+            IQR = Q3 - Q1
+            # Lọc bỏ Outlier
+            clean_data = data[~((data < (Q1 - 1.5 * IQR)) | (data > (Q3 + 1.5 * IQR)))]
+            mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
+            m2_min, m2_max = mu_clean - 3*sigma_clean, mu_clean + 3*sigma_clean
+
+            # METHOD 3: SMART HYBRID (M2 + Spec)
+            # Lấy Spec Khách hàng
+            spec_min = sub["Std_Min"].max() if "Std_Min" in sub else 0
+            spec_max = sub["Std_Max"].min() if "Std_Max" in sub else 9999
+            if pd.isna(spec_min): spec_min = 0
+            if pd.isna(spec_max): spec_max = 9999
+            
+            # Logic Hybrid:
+            # Min: Lấy cái LỚN HƠN giữa (Process 3-Sigma) và (Spec Min) -> Để an toàn không chạm Spec
+            m3_min = max(m2_min, spec_min)
+            # Max: Lấy cái NHỎ HƠN giữa (Process 3-Sigma) và (Spec Max) -> Để an toàn và tiết kiệm
+            m3_max = min(m2_max, spec_max) if spec_max < 9000 else m2_max
+            
+            # Fallback nếu vô lý
+            if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
+
+            # --- HIỂN THỊ BẢNG SO SÁNH ---
+            st.markdown("#### 1. Comparison Table")
+            
+            comp_data = [
+                {
+                    "Method": "1. Standard 3-Sigma",
+                    "Description": "Dựa trên toàn bộ dữ liệu (bao gồm cả điểm lỗi). Phản ánh thực tế thô.",
+                    "Min Limit": m1_min, "Max Limit": m1_max, "Range Width": m1_max - m1_min,
+                    "Recommendation": "Dùng khi quy trình mới, chưa ổn định."
+                },
+                {
+                    "Method": "2. IQR Filtering (Robust)",
+                    "Description": "Đã lọc bỏ nhiễu/lỗi đo. Phản ánh năng lực thực sự của máy.",
+                    "Min Limit": m2_min, "Max Limit": m2_max, "Range Width": m2_max - m2_min,
+                    "Recommendation": "Dùng để đánh giá năng lực máy (Machine Capability)."
+                },
+                {
+                    "Method": "3. Smart Hybrid (Recommended)",
+                    "Description": "Kết hợp năng lực máy (M2) và yêu cầu khách hàng (Spec).",
+                    "Min Limit": m3_min, "Max Limit": m3_max, "Range Width": m3_max - m3_min,
+                    "Recommendation": "✅ TỐI ƯU ĐỂ CÀI ĐẶT SẢN XUẤT."
+                }
+            ]
+            
+            df_comp = pd.DataFrame(comp_data)
+            st.dataframe(
+                df_comp.style.format({
+                    "Min Limit": "{:.1f}", "Max Limit": "{:.1f}", "Range Width": "{:.1f}"
+                }), 
+                use_container_width=True, hide_index=True
+            )
+
+            # --- VẼ BIỂU ĐỒ TRỰC QUAN ---
+            st.markdown("#### 2. Visual Comparison")
+            
+            fig, ax = plt.subplots(figsize=(12, 6))
+            
+            # Vẽ Histogram dữ liệu gốc
+            ax.hist(data, bins=30, density=True, alpha=0.3, color="gray", label="Raw Data Distribution")
+            
+            # Vẽ 3 khoảng giới hạn
+            # M1: Red
+            ax.axvline(m1_min, color="red", linestyle=":", linewidth=2, alpha=0.6)
+            ax.axvline(m1_max, color="red", linestyle=":", linewidth=2, alpha=0.6)
+            ax.plot([], [], color="red", linestyle=":", label=f"M1: Standard ({m1_min:.1f}~{m1_max:.1f})")
+            
+            # M2: Blue
+            ax.axvline(m2_min, color="blue", linestyle="--", linewidth=2, alpha=0.8)
+            ax.axvline(m2_max, color="blue", linestyle="--", linewidth=2, alpha=0.8)
+            ax.plot([], [], color="blue", linestyle="--", label=f"M2: IQR Robust ({m2_min:.1f}~{m2_max:.1f})")
+            
+            # M3: Green (Shaded Area - Vùng tối ưu)
+            ax.axvspan(m3_min, m3_max, color="green", alpha=0.2, label=f"M3: Smart Hybrid ({m3_min:.1f}~{m3_max:.1f})")
+            
+            # Spec Limits (Nếu có)
+            if spec_min > 0: ax.axvline(spec_min, color="black", linewidth=3, label="Spec Min")
+            if spec_max < 9000: ax.axvline(spec_max, color="black", linewidth=3, label="Spec Max")
+
+            ax.set_title(f"Control Limits Comparison for {g['Material']} / {g['Gauge_Range']}", weight="bold")
+            ax.set_xlabel("Hardness (HRB)")
+            ax.legend()
+            st.pyplot(fig)
