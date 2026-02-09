@@ -20,7 +20,7 @@ from plotly.subplots import make_subplots
 # PAGE CONFIG
 # ================================
 st.set_page_config(page_title="SPC Hardness Dashboard", layout="wide")
-st.title("📊 SPC Hardness – Visual Analytics Dashboard")
+st.title("📊 Hardness – Visual Analytics Dashboard")
 
 # ================================
 # UTILS (QUAN TRỌNG: KHÔNG ĐƯỢC XÓA)
