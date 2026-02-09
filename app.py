@@ -148,7 +148,7 @@ def apply_company_rules(row):
         
         # Rule 3: Nhóm A108 General
         elif mat in ["A108", "A108G", "A108R", "A108MR", "A1081B"]:
-            return 58.0, 62.0, 52.0, 65.0, "Rule A108-Gen (Cold)"
+            return 58.0, 62.0, 52.0, 65.0, "Rule A108G (Cold)"
 
     # Nếu không thỏa mãn rule nào -> Trả về giá trị gốc của Excel
     return std_min, std_max, lab_min, lab_max, rule_name
