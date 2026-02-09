@@ -424,8 +424,8 @@ for _, g in valid.iterrows():
         st.dataframe(sub, use_container_width=True)
 
     # ================================
-    # ================================
-    # 2. HARDNESS ANALYSIS (UPDATED WITH CP, CPK, CA)
+   # ================================
+    # 2. HARDNESS ANALYSIS (SPC LINE ONLY)
     # ================================
     elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
         
@@ -438,8 +438,9 @@ for _, g in valid.iterrows():
             x = np.arange(1, len(sub)+1)
             fig, ax = plt.subplots(figsize=(10, 4.5))
             
-            ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.8)
-            ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.8)
+            # Vẽ cả 2 để đối chiếu xu hướng
+            ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.5)
+            ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.9) # Line đậm hơn
             
             ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
             ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
@@ -454,23 +455,23 @@ for _, g in valid.iterrows():
             buf = fig_to_png(fig)
             st.download_button("📥 Download Trend Chart", data=buf, file_name=f"trend_{g['Material']}.png", mime="image/png", key=f"dl_tr_{uuid.uuid4()}")
 
-        # --- TAB 2: DISTRIBUTION CHART & SPC METRICS ---
+        # --- TAB 2: DISTRIBUTION & SPC (LINE ONLY) ---
         with tab_dist:
-            lab = sub["Hardness_LAB"].dropna()
             line = sub["Hardness_LINE"].dropna()
+            # Vẫn lấy LAB để vẽ biểu đồ so sánh (visual), nhưng không tính SPC
+            lab = sub["Hardness_LAB"].dropna()
             
-            if len(lab) < 5 or len(line) < 5:
-                st.warning("⚠️ Not enough data points (N < 5) to calculate SPC metrics.")
+            if len(line) < 5:
+                st.warning("⚠️ Not enough LINE data (N < 5) to calculate SPC.")
             else:
                 # 1. Hàm tính toán SPC Helper
                 def calc_spc_metrics(data, lsl, usl):
                     if len(data) < 2: return None
                     mean = data.mean()
                     std = data.std(ddof=1)
+                    if std == 0: return None 
                     
-                    if std == 0: return None # Tránh chia cho 0
-                    
-                    # Cp: Độ rộng
+                    # Cp: Độ rộng (Process Potential)
                     cp = (usl - lsl) / (6 * std)
                     
                     # Ca: Độ lệch tâm (%) -> (Mean - Mid) / (Tolerance/2) * 100
@@ -478,86 +479,77 @@ for _, g in valid.iterrows():
                     tol = (usl - lsl)
                     ca = ((mean - mid) / (tol / 2)) * 100
                     
-                    # Cpk: Thực tế
+                    # Cpk: Năng lực thực tế (Process Capability)
                     cpu = (usl - mean) / (3 * std)
                     cpl = (mean - lsl) / (3 * std)
                     cpk = min(cpu, cpl)
                     
                     return mean, std, cp, ca, cpk
 
-                # 2. Tính toán cho LAB và LINE
-                spc_lab = calc_spc_metrics(lab, lo, hi)
+                # 2. CHỈ TÍNH TOÁN CHO LINE
                 spc_line = calc_spc_metrics(line, lo, hi)
 
-                # 3. Vẽ biểu đồ Histogram
-                mean_lab, std_lab = lab.mean(), lab.std(ddof=1)
+                # 3. Vẽ biểu đồ Histogram (Vẫn vẽ cả LAB để tham khảo thị giác)
                 mean_line, std_line = line.mean(), line.std(ddof=1)
                 
-                # Auto scale x-axis
-                x_min = min(mean_lab - 4*std_lab, mean_line - 4*std_line, lo - 2)
-                x_max = max(mean_lab + 4*std_lab, mean_line + 4*std_line, hi + 2)
+                # Auto scale
+                x_min = min(line.min(), lo) - 2
+                x_max = max(line.max(), hi) + 2
                 bins = np.linspace(x_min, x_max, 30)
                 
                 fig, ax = plt.subplots(figsize=(10, 5))
                 
-                # Histogram
-                ax.hist(lab, bins=bins, density=True, alpha=0.5, color="#1f77b4", edgecolor="white", label="LAB")
-                ax.hist(line, bins=bins, density=True, alpha=0.5, color="#ff7f0e", edgecolor="white", label="LINE")
+                # Histogram LINE (Nổi bật)
+                ax.hist(line, bins=bins, density=True, alpha=0.6, color="#ff7f0e", edgecolor="white", label="LINE Dist")
+                # Histogram LAB (Mờ hơn để làm nền)
+                if not lab.empty:
+                    ax.hist(lab, bins=bins, density=True, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Dist")
                 
-                # Normal Curves
+                # Normal Curve LINE
                 xs = np.linspace(x_min, x_max, 400)
-                if std_lab > 0:
-                    ys_lab = (1/(std_lab*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_lab)/std_lab)**2)
-                    ax.plot(xs, ys_lab, linewidth=2, color="#0b3d91", label="LAB Fit")
-                
                 if std_line > 0:
                     ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
-                    ax.plot(xs, ys_line, linewidth=2, linestyle="--", color="#b25e00", label="LINE Fit")
+                    ax.plot(xs, ys_line, linewidth=2.5, color="#b25e00", label="LINE Fit")
                 
                 # Limits
                 ax.axvline(lo, linestyle="--", linewidth=2, color="red", label="LSL")
                 ax.axvline(hi, linestyle="--", linewidth=2, color="red", label="USL")
                 
-                ax.set_title("Hardness Distribution", weight="bold")
-                ax.set_xlabel("Hardness (HRB)")
+                ax.set_title(f"Hardness Distribution (Line Cpk Analysis)", weight="bold")
                 ax.legend()
                 ax.grid(alpha=0.3)
                 st.pyplot(fig)
 
-                # 4. Hiển thị bảng chỉ số SPC (Dưới biểu đồ)
-                st.markdown("#### 📐 SPC Capability Indices")
+                # 4. Hiển thị bảng chỉ số SPC (CHỈ LINE)
+                st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
                 
-                spc_data = []
-                if spc_lab:
-                    spc_data.append({
-                        "Type": "LAB", "N": len(lab), 
-                        "Mean": spc_lab[0], "Std": spc_lab[1], 
-                        "Cp": spc_lab[2], "Ca (%)": spc_lab[3], "Cpk": spc_lab[4]
-                    })
                 if spc_line:
-                    spc_data.append({
-                        "Type": "LINE", "N": len(line), 
-                        "Mean": spc_line[0], "Std": spc_line[1], 
-                        "Cp": spc_line[2], "Ca (%)": spc_line[3], "Cpk": spc_line[4]
-                    })
-                
-                if spc_data:
-                    df_spc = pd.DataFrame(spc_data)
+                    mean_val, std_val, cp_val, ca_val, cpk_val = spc_line
+                    
+                    # Đánh giá Cpk
+                    eval_msg = "Excellent" if cpk_val >= 1.33 else ("Good" if cpk_val >= 1.0 else "Poor")
+                    color_code = "green" if cpk_val >= 1.33 else ("orange" if cpk_val >= 1.0 else "red")
+
+                    # Tạo Dataframe hiển thị ngang cho đẹp
+                    df_spc = pd.DataFrame([{
+                        "N (Coils)": len(line),
+                        "Mean": mean_val,
+                        "Std Dev": std_val,
+                        "Cp (Potential)": cp_val,
+                        "Ca (Accuracy %)": ca_val,
+                        "Cpk (Actual)": cpk_val,
+                        "Rating": eval_msg
+                    }])
+
+                    # Format bảng
                     st.dataframe(
                         df_spc.style.format({
-                            "Mean": "{:.2f}", "Std": "{:.3f}", 
-                            "Cp": "{:.2f}", "Ca (%)": "{:.1f}%", "Cpk": "{:.2f}"
-                        }),
+                            "Mean": "{:.2f}", "Std Dev": "{:.3f}", 
+                            "Cp": "{:.2f}", "Ca (Accuracy %)": "{:.1f}%", "Cpk": "{:.2f}"
+                        }).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']),
                         use_container_width=True,
                         hide_index=True
                     )
-                    
-                    # Đánh giá nhanh
-                    if spc_line:
-                        cpk_val = spc_line[4]
-                        eval_msg = "Excellent" if cpk_val >= 1.33 else ("Good" if cpk_val >= 1.0 else "Needs Improvement")
-                        color = "green" if cpk_val >= 1.33 else ("orange" if cpk_val >= 1.0 else "red")
-                        st.caption(f"Process Capability (LINE): :{color}[**{eval_msg}**] (Cpk = {cpk_val:.2f})")
 
     # ================================
     # ================================
