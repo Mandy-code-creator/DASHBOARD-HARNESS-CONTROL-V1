@@ -140,7 +140,7 @@ def apply_company_rules(row):
         elif mat == "A108M":
             return 60.0, 68.0, 55.0, 72.0, "Rule A108M (Cold)"
         elif mat in ["A108", "A108G", "A108R", "A108MR", "A1081B"]:
-            return 58.0, 62.0, 52.0, 65.0, "Rule A108-Gen (Cold)"
+            return 58.0, 62.0, 52.0, 65.0, "Rule A108G (Cold)"
 
     return std_min, std_max, lab_min, lab_max, rule_name
 
