@@ -788,58 +788,44 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c3.metric("Pred EL", f"{preds['EL']:.1f}")
 
     # ================================
-    # 8. CONTROL LIMIT CALCULATOR (FIXED: UNIQUE KEYS WITH ENUMERATE)
+# ================================
+    # 8. CONTROL LIMIT CALCULATOR (FIXED: REMOVE NESTED LOOP)
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
-        st.markdown("### 🎛️ 最佳控制限計算器 (Optimal Control Limit Calculator)")
-        st.info("比較三種確定控制限的方法。每個材料組都可以單獨設定參數。")
+        
+        # Tiêu đề (Sử dụng biến 'g' từ vòng lặp chính bên ngoài)
+        st.markdown(f"### 🎛️ Limits Analysis: {g['Material']} | {g['Gauge_Range']}")
 
-        # --- QUAN TRỌNG: Sử dụng enumerate(valid.iterrows()) ---
-        # 'i' sẽ là số thứ tự tăng dần (0, 1, 2,...) đảm bảo KHÔNG BAO GIỜ TRÙNG
-        for i, (_, g) in enumerate(valid.iterrows()):
-            
-            # 1. Lọc dữ liệu cho nhóm hiện tại
-            sub_grp = df[
-                (df["Rolling_Type"] == g["Rolling_Type"]) &
-                (df["Metallic_Type"] == g["Metallic_Type"]) &
-                (df["Quality_Group"] == g["Quality_Group"]) &
-                (df["Gauge_Range"] == g["Gauge_Range"]) &
-                (df["Material"] == g["Material"])
-            ]
-            
-            # Tiêu đề nhóm
-            st.markdown(f"---")
-            st.markdown(f"#### 📦 Group {i+1}: {g['Material']} | {g['Gauge_Range']}")
+        # Lấy dữ liệu (Sử dụng biến 'sub' đã được lọc ở vòng lặp chính)
+        data = sub["Hardness_LINE"].dropna()
+        
+        if len(data) < 10:
+            st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
+        else:
+            # --- 1. CẤU HÌNH THAM SỐ (Settings) ---
+            # Tạo Key duy nhất dựa trên 'i' và tên vật liệu từ vòng lặp chính
+            # Đảm bảo không bao giờ trùng lặp
+            key_sigma = f"sigma_{i}_{g['Material']}_{g['Gauge_Range']}"
+            key_iqr = f"iqr_{i}_{g['Material']}_{g['Gauge_Range']}"
 
-            data = sub_grp["Hardness_LINE"].dropna()
-            
-            if len(data) < 10:
-                st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
-                continue
-
-            # --- 2. CẤU HÌNH THAM SỐ (Settings) ---
-            # Tạo Key dựa trên số thứ tự 'i' -> Đảm bảo duy nhất
-            key_sigma = f"sigma_input_{i}"
-            key_iqr = f"iqr_input_{i}"
-
-            with st.expander(f"⚙️ 設定參數 (Settings for Group {i+1})", expanded=False):
+            with st.expander("⚙️ 設定參數 (Settings)", expanded=False):
                 col_par1, col_par2 = st.columns(2)
                 with col_par1:
                     sigma_n = st.number_input(
                         "1. Sigma 倍數", 
                         min_value=1.0, max_value=6.0, value=3.0, step=0.5,
-                        key=key_sigma  # <--- FIX: Key theo số thứ tự i
+                        key=key_sigma 
                     )
                 with col_par2:
                     iqr_k = st.number_input(
                         "2. IQR 靈敏度", 
                         min_value=0.5, max_value=3.0, value=1.0, step=0.1,
-                        key=key_iqr    # <--- FIX: Key theo số thứ tự i
+                        key=key_iqr
                     )
 
-            # --- 3. TÍNH TOÁN ---
-            spec_min = sub_grp["Std_Min"].max() if "Std_Min" in sub_grp else 0
-            spec_max = sub_grp["Std_Max"].min() if "Std_Max" in sub_grp else 0
+            # --- 2. TÍNH TOÁN ---
+            spec_min = sub["Std_Min"].max() if "Std_Min" in sub else 0
+            spec_max = sub["Std_Max"].min() if "Std_Max" in sub else 0
             if pd.isna(spec_min): spec_min = 0
             if pd.isna(spec_max): spec_max = 0
             display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
@@ -862,13 +848,14 @@ for i, (_, g) in enumerate(valid.iterrows()):
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
 
-            # --- 4. HIỂN THỊ BẢNG & BIỂU ĐỒ ---
+            # --- 3. HIỂN THỊ BẢNG & BIỂU ĐỒ ---
             col_chart, col_table = st.columns([2, 1])
             
             with col_chart:
                 fig, ax = plt.subplots(figsize=(10, 4))
                 ax.hist(data, bins=30, density=True, alpha=0.3, color="gray", label="Raw Data")
                 
+                # Limit lines
                 ax.axvline(m1_min, color="red", ls=":", alpha=0.5); ax.axvline(m1_max, color="red", ls=":", alpha=0.5)
                 ax.axvline(m2_min, color="blue", ls="--", alpha=0.8); ax.axvline(m2_max, color="blue", ls="--", alpha=0.8)
                 ax.axvspan(m3_min, m3_max, color="green", alpha=0.2, label="Smart Hybrid")
