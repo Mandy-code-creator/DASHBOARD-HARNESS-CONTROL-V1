@@ -240,15 +240,17 @@ if valid.empty:
     st.stop()
 
 # ==============================================================================
-#  🚀 GLOBAL SUMMARY DASHBOARD
+# ==============================================================================
+#  🚀 GLOBAL SUMMARY DASHBOARD (FINAL: 3 PARALLEL TABLES LAYOUT)
 # ==============================================================================
 if view_mode == "🚀 Global Summary Dashboard":
     st.markdown("## 🚀 Global Process Dashboard")
     
-    tab1, tab2 = st.tabs(["📊 1. Performance Overview", "🎯 2. Prediction Simulator"])
+    tab1, tab2 = st.tabs(["📊 1. Performance Overview", "🧠 2. Decision Support (Risk AI)"])
 
+    # --- TAB 1: THỐNG KÊ HIỆU SUẤT (Giữ nguyên) ---
     with tab1:
-        st.info("ℹ️ Color Guide: 🟢 High Pass Rate | 🔴 Low Pass Rate | 🟡 Rule Applied")
+        st.info("ℹ️ Color Guide: 🟢 High Pass Rate (>98%) | 🔴 Low Pass Rate (<90%) | 🟡 Rule Applied")
         stats_rows = []
         for _, g in valid.iterrows():
             sub_grp = df[
@@ -261,11 +263,12 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             if len(sub_grp) < 5: continue
 
-            specs_str = ", ".join(sorted(sub_grp["Product_Spec"].astype(str).unique()))
-
-            def get_limit_str(s_min_col, s_max_col):
-                v_min = sub_grp[s_min_col].max() if s_min_col in sub_grp else 0 
-                v_max = sub_grp[s_max_col].min() if s_max_col in sub_grp else 0 
+            l_min_val = sub_grp['Limit_Min'].min(); l_max_val = sub_grp['Limit_Max'].max()
+            lim_hrb = f"{l_min_val:.0f}~{l_max_val:.0f}"
+            
+            def get_limit_str(s_min, s_max):
+                v_min = sub_grp[s_min].max() if s_min in sub_grp else 0 
+                v_max = sub_grp[s_max].min() if s_max in sub_grp else 0 
                 if pd.isna(v_min): v_min = 0
                 if pd.isna(v_max): v_max = 0
                 if v_min > 0 and v_max > 0 and v_max < 9000: return f"{v_min:.0f}~{v_max:.0f}"
@@ -273,9 +276,6 @@ if view_mode == "🚀 Global Summary Dashboard":
                 elif v_max > 0 and v_max < 9000: return f"≤ {v_max:.0f}"
                 else: return "-"
 
-            l_min_val = sub_grp['Limit_Min'].min(); l_max_val = sub_grp['Limit_Max'].max()
-            lim_hrb = f"{l_min_val:.0f}~{l_max_val:.0f}"
-            
             lim_ts = get_limit_str("Standard TS min", "Standard TS max")
             lim_ys = get_limit_str("Standard YS min", "Standard YS max")
             lim_el = get_limit_str("Standard EL min", "Standard EL max")
@@ -290,8 +290,8 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             stats_rows.append({
                 "Quality": g["Quality_Group"], "Material": g["Material"], "Gauge": g["Gauge_Range"],
-                "Rule Applied": rule_name, "Lab Limit": lim_lab, "HRB Limit": lim_hrb, "N": len(sub_grp),
-                "Pass Rate (%)": pass_rate,
+                "Rule": rule_name, "Lab Limit": lim_lab, "HRB Limit": lim_hrb, "N": len(sub_grp),
+                "Pass Rate": pass_rate,
                 "HRB (Avg)": sub_grp["Hardness_LINE"].mean(), "TS (Avg)": sub_grp["TS"].mean(),
                 "YS (Avg)": sub_grp["YS"].mean(), "EL (Avg)": sub_grp["EL"].mean(),
                 "HRB (Min)": sub_grp["Hardness_LINE"].min(), "HRB (Max)": sub_grp["Hardness_LINE"].max(),
@@ -300,7 +300,7 @@ if view_mode == "🚀 Global Summary Dashboard":
 
         if stats_rows:
             df_stats = pd.DataFrame(stats_rows)
-            cols = ["Quality", "Material", "Gauge", "Rule Applied", "Pass Rate (%)", "HRB Limit", "HRB (Avg)", "HRB (Min)", "HRB (Max)", "Lab Limit", "TS (Avg)", "YS (Avg)", "EL (Avg)", "TS Limit", "YS Limit", "EL Limit", "N"]
+            cols = ["Quality", "Material", "Gauge", "Rule", "Pass Rate", "HRB Limit", "HRB (Avg)", "TS (Avg)", "YS (Avg)", "EL (Avg)", "TS Limit", "YS Limit", "EL Limit", "N"]
             cols = [c for c in cols if c in df_stats.columns]
             df_stats = df_stats[cols]
 
@@ -309,22 +309,28 @@ if view_mode == "🚀 Global Summary Dashboard":
                 text_color = '#155724' if val >= 98 else ('#856404' if val >= 90 else '#721c24')
                 return f'background-color: {color}; color: {text_color}; font-weight: bold'
 
-            def highlight_rule(s): return ['background-color: #fffbe6' if "Rule" in str(s["Rule Applied"]) else '' for _ in s]
-
             st.dataframe(
-                df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c or "Pass" in c])
-                .applymap(color_pass_rate, subset=["Pass Rate (%)"]).apply(highlight_rule, axis=1)
+                df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "Pass" in c])
+                .applymap(color_pass_rate, subset=["Pass Rate"])
                 .background_gradient(subset=["HRB (Avg)"], cmap="Blues"),
                 use_container_width=True
             )
         else: st.warning("Insufficient data.")
 
+    # --- TAB 2: PHÂN TÍCH RỦI RO (3 BẢNG SONG SONG) ---
     with tab2:
-        st.info("🎯 Enter your Target Hardness.")
-        col_in, _ = st.columns([1, 3])
-        with col_in: user_hrb = st.number_input("📥 Input Target Hardness (HRB):", value=60.0, step=0.5, format="%.1f")
+        st.markdown("#### 🧠 AI Decision Support (Risk-Based)")
+        st.caption("Phân tích rủi ro độc lập cho từng cơ tính (TS / YS / EL).")
 
-        pred_rows = []
+        col_in1, col_in2 = st.columns([1, 1])
+        with col_in1:
+            user_hrb = st.number_input("1️⃣ Nhập Độ cứng Mục tiêu (Target HRB):", value=60.0, step=0.5, format="%.1f")
+        with col_in2:
+            safety_k = st.selectbox("2️⃣ Chọn Hệ số An toàn (Safety Factor):", [1.0, 2.0, 3.0], index=1,
+                                    format_func=lambda x: f"{x} Sigma (Tin cậy {68 if x==1 else (95 if x==2 else 99.7)}%)")
+
+        rows_ts, rows_ys, rows_el = [], [], []
+        
         for _, g in valid.iterrows():
             sub_grp = df[
                 (df["Rolling_Type"] == g["Rolling_Type"]) &
@@ -336,36 +342,77 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             if len(sub_grp) < 10: continue 
 
-            std_lo = sub_grp["Limit_Min"].min(); std_hi = sub_grp["Limit_Max"].max()
-            h_min, h_max = sub_grp["Hardness_LINE"].min(), sub_grp["Hardness_LINE"].max()
-            std_txt = f"{std_lo:.1f} ~ {std_hi:.1f}" if (std_lo>0 or std_hi>0) else "No Spec"
-
-            status_msgs = []
-            if user_hrb < h_min or user_hrb > h_max: status_msgs.append("⚠️ Extrapolated")
-            if (std_lo > 0 and user_hrb < std_lo) or (std_hi > 0 and user_hrb > std_hi): status_msgs.append("⛔ Out of Spec")
-            if not status_msgs: status_msgs.append("✅ Safe Zone")
+            spec_ts_min = sub_grp["Standard TS min"].max() if "Standard TS min" in sub_grp else 0
+            spec_ys_min = sub_grp["Standard YS min"].max() if "Standard YS min" in sub_grp else 0
+            spec_el_min = sub_grp["Standard EL min"].max() if "Standard EL min" in sub_grp else 0
             
             X = sub_grp[["Hardness_LINE"]].values
-            m_ts = LinearRegression().fit(X, sub_grp["TS"].values); pred_ts = m_ts.predict([[user_hrb]])[0]
-            r2_ts = r2_score(sub_grp["TS"], m_ts.predict(X))
-            m_ys = LinearRegression().fit(X, sub_grp["YS"].values); pred_ys = m_ys.predict([[user_hrb]])[0]
-            m_el = LinearRegression().fit(X, sub_grp["EL"].values); pred_el = m_el.predict([[user_hrb]])[0]
-
-            pred_rows.append({
-                "Quality": g["Quality_Group"], "Material": g["Material"], "Gauge": g["Gauge_Range"],
-                "Std Limit": std_txt, "Hist Range": f"{h_min:.1f}~{h_max:.1f}", "Status": " | ".join(status_msgs),
-                "Model Trust (R2)": r2_ts, "Target HRB": user_hrb, "Pred TS": pred_ts, "Pred YS": pred_ys, "Pred EL": pred_el
+            
+            # --- TS Analysis ---
+            m_ts = LinearRegression().fit(X, sub_grp["TS"].values)
+            pred_ts = m_ts.predict([[user_hrb]])[0]
+            err_ts = np.sqrt(np.mean((sub_grp["TS"] - m_ts.predict(X))**2))
+            safe_ts = pred_ts - (safety_k * err_ts)
+            risk_ts = "🔴 High Risk" if (spec_ts_min > 0 and safe_ts < spec_ts_min) else "🟢 Safe"
+            
+            rows_ts.append({
+                "Material": f"{g['Material']} ({g['Gauge_Range']})",
+                "Pred TS": f"{pred_ts:.0f}",
+                "Worst Case": f"{safe_ts:.0f}",
+                "Limit": f"≥ {spec_ts_min:.0f}" if spec_ts_min > 0 else "-",
+                "Status": risk_ts
             })
 
-        if pred_rows:
-            df_pred = pd.DataFrame(pred_rows)
-            def highlight_r2(val): return f'background-color: {"#ffcccc" if val < 0.3 else ("#ccffcc" if val > 0.7 else "")}'
-            def highlight_status(val):
-                if "⛔" in val: return 'color: red; font-weight: bold'
-                if "⚠️" in val: return 'color: orange'
-                return 'color: green'
-            st.dataframe(df_pred.style.format({"Pred TS": "{:.0f}", "Pred YS": "{:.0f}", "Pred EL": "{:.1f}", "Model Trust (R2)": "{:.2f}", "Target HRB": "{:.1f}"}).applymap(highlight_r2, subset=["Model Trust (R2)"]).applymap(highlight_status, subset=["Status"]), use_container_width=True)
-        else: st.warning("Insufficient data.")
+            # --- YS Analysis ---
+            m_ys = LinearRegression().fit(X, sub_grp["YS"].values)
+            pred_ys = m_ys.predict([[user_hrb]])[0]
+            err_ys = np.sqrt(np.mean((sub_grp["YS"] - m_ys.predict(X))**2))
+            safe_ys = pred_ys - (safety_k * err_ys)
+            risk_ys = "🔴 High Risk" if (spec_ys_min > 0 and safe_ys < spec_ys_min) else "🟢 Safe"
+
+            rows_ys.append({
+                "Material": f"{g['Material']}", # Rút gọn tên cho đỡ rối
+                "Pred YS": f"{pred_ys:.0f}",
+                "Worst Case": f"{safe_ys:.0f}",
+                "Limit": f"≥ {spec_ys_min:.0f}" if spec_ys_min > 0 else "-",
+                "Status": risk_ys
+            })
+
+            # --- EL Analysis ---
+            m_el = LinearRegression().fit(X, sub_grp["EL"].values)
+            pred_el = m_el.predict([[user_hrb]])[0]
+            err_el = np.sqrt(np.mean((sub_grp["EL"] - m_el.predict(X))**2))
+            safe_el = pred_el - (safety_k * err_el)
+            risk_el = "🔴 High Risk" if (spec_el_min > 0 and safe_el < spec_el_min) else "🟢 Safe"
+
+            rows_el.append({
+                "Material": f"{g['Material']}",
+                "Pred EL": f"{pred_el:.1f}",
+                "Worst Case": f"{safe_el:.1f}",
+                "Limit": f"≥ {spec_el_min:.1f}" if spec_el_min > 0 else "-",
+                "Status": risk_el
+            })
+
+        if rows_ts:
+            c1, c2, c3 = st.columns(3)
+            
+            def style_risk(val):
+                return 'color: red; font-weight: bold' if "🔴" in val else 'color: green; font-weight: bold'
+
+            with c1:
+                st.markdown("##### 🔹 Tensile Strength (TS)")
+                st.dataframe(pd.DataFrame(rows_ts).style.applymap(style_risk, subset=["Status"]), use_container_width=True, hide_index=True)
+            
+            with c2:
+                st.markdown("##### 🔸 Yield Strength (YS)")
+                st.dataframe(pd.DataFrame(rows_ys).style.applymap(style_risk, subset=["Status"]), use_container_width=True, hide_index=True)
+            
+            with c3:
+                st.markdown("##### 🔻 Elongation (EL)")
+                st.dataframe(pd.DataFrame(rows_el).style.applymap(style_risk, subset=["Status"]), use_container_width=True, hide_index=True)
+        else:
+            st.warning("Insufficient data.")
+    
     st.stop()
 
 # ==============================================================================
