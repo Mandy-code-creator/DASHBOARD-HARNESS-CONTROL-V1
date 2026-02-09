@@ -792,7 +792,7 @@ for _, g in valid.iterrows():
             c3.metric("Pred EL", f"{preds['EL']:.1f}")
 # ================================
 # ================================
-    # 8. CONTROL LIMIT CALCULATOR (ADJUSTABLE SIGMA & IQR - NUMBER INPUT)
+    # 8. CONTROL LIMIT CALCULATOR (FIXED DUPLICATE ID ERROR)
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         st.markdown("### 🎛️ 最佳控制限計算器 (Optimal Control Limit Calculator)")
@@ -803,19 +803,21 @@ for _, g in valid.iterrows():
             col_par1, col_par2 = st.columns(2)
             
             with col_par1:
-                # Điều chỉnh Sigma (Mặc định 3.0 -> Có thể giảm xuống 2.0 để hẹp hơn)
+                # Điều chỉnh Sigma (Thêm key="sigma_mult_key" để tránh lỗi)
                 sigma_n = st.number_input(
                     "1. Sigma 倍數 (Sigma Multiplier)", 
                     min_value=1.0, max_value=6.0, value=3.0, step=0.5,
-                    help="標準為 3.0。若需更嚴格控制，可降至 2.0 或 2.5。"
+                    help="標準為 3.0。若需更嚴格控制，可降至 2.0 或 2.5。",
+                    key="sigma_mult_key"  # <--- FIX LỖI TẠI ĐÂY
                 )
             
             with col_par2:
-                # Điều chỉnh IQR (Thay slider bằng nhập số)
+                # Điều chỉnh IQR (Thêm key="iqr_factor_key" để tránh lỗi)
                 iqr_k = st.number_input(
                     "2. IQR 靈敏度 (IQR Factor K)", 
                     min_value=0.5, max_value=3.0, value=1.0, step=0.1,
-                    help="標準為 1.5。建議值 0.8~1.0 用於嚴格過濾。"
+                    help="標準為 1.5。建議值 0.8~1.0 用於嚴格過濾。",
+                    key="iqr_factor_key"  # <--- FIX LỖI TẠI ĐÂY
                 )
 
         # Lấy dữ liệu
@@ -833,21 +835,20 @@ for _, g in valid.iterrows():
 
             # --- TÍNH TOÁN 3 PHƯƠNG PHÁP ---
             
-            # METHOD 1: STANDARD N-SIGMA (Đã thay đổi theo sigma_n)
+            # METHOD 1: STANDARD N-SIGMA
             mu, sigma = data.mean(), data.std()
-            # Công thức: Mean ± N * Sigma
             m1_min, m1_max = mu - sigma_n*sigma, mu + sigma_n*sigma
             
-            # METHOD 2: IQR ROBUST (Cleaned + Recalculated N-Sigma)
+            # METHOD 2: IQR ROBUST
             Q1 = data.quantile(0.25)
             Q3 = data.quantile(0.75)
             IQR = Q3 - Q1
             
-            # Bước 1: Lọc bỏ nhiễu bằng IQR Factor (K)
+            # Lọc bỏ nhiễu bằng IQR Factor (K)
             clean_data = data[~((data < (Q1 - iqr_k * IQR)) | (data > (Q3 + iqr_k * IQR)))]
             if clean_data.empty: clean_data = data
             
-            # Bước 2: Tính giới hạn dựa trên dữ liệu sạch (vẫn dùng hệ số N-Sigma để đồng bộ)
+            # Tính giới hạn dựa trên dữ liệu sạch
             mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
 
@@ -868,7 +869,7 @@ for _, g in valid.iterrows():
                     "建議 (Recommendation)": "僅供參考 (Reference)"
                 },
                 {
-                    "計算方法 (Method)": f"1. 標準 {sigma_n}-Sigma 法", # Hiển thị số Sigma
+                    "計算方法 (Method)": f"1. 標準 {sigma_n}-Sigma 法",
                     "描述 (Description)": f"反映原始數據波動 (±{sigma_n}σ)。",
                     "下限 (Min)": m1_min, "上限 (Max)": m1_max, "寬度 (Range)": m1_max - m1_min,
                     "建議 (Recommendation)": "若數據噪聲大，範圍會很寬。"
