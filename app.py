@@ -482,20 +482,30 @@ for _, g in valid.iterrows():
             plot_prop(x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "#2ca02c", "YS", "s")
             plot_prop(x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL", "^")
 
-            # Annotations
+            # ... (Đoạn vẽ plot_prop ở trên giữ nguyên) ...
+
+            # Annotations (Gắn nhãn số liệu)
             for i, row in enumerate(summary.itertuples()):
-                ax.annotate(f"{row.TS_mean:.0f}", (x[i], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", color="#1f77b4")
+                # 1. TS Label (Màu xanh dương - Hiện ở trên)
+                ax.annotate(f"{row.TS_mean:.0f}", (x[i], row.TS_mean), 
+                            xytext=(0,10), textcoords="offset points", 
+                            ha="center", fontsize=9, fontweight='bold', color="#1f77b4")
                 
-                # EL Check
+                # 2. YS Label (Màu xanh lá - Hiện ở dưới) <--- ĐOẠN MỚI THÊM VÀO
+                ax.annotate(f"{row.YS_mean:.0f}", (x[i], row.YS_mean), 
+                            xytext=(0,-15), textcoords="offset points", 
+                            ha="center", fontsize=9, fontweight='bold', color="#2ca02c")
+                
+                # 3. EL Check & Label (Màu cam - Hiện ở dưới cùng)
                 el_spec = row.Std_EL_min
                 is_fail = (el_spec > 0) and (row.EL_mean < el_spec)
                 lbl = f"{row.EL_mean:.1f}%" + ("❌" if is_fail else "")
                 clr = "red" if is_fail else "#ff7f0e"
-                ax.annotate(lbl, (x[i], row.EL_mean), xytext=(0,-15), textcoords="offset points", ha="center", color=clr, fontweight="bold" if is_fail else "normal")
-
-            ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
-            ax.set_title("Hardness vs Mechanical Properties"); ax.grid(True, ls="--", alpha=0.5); ax.legend()
-            st.pyplot(fig)
+                
+                # Đẩy label EL xuống thấp hơn nữa (-25) để tránh đè lên YS nếu gần nhau
+                ax.annotate(lbl, (x[i], row.EL_mean), 
+                            xytext=(0,10), textcoords="offset points", 
+                            ha="center", fontsize=9, color=clr, fontweight=("bold" if is_fail else "normal"))
             
             # ... (Phần vẽ biểu đồ bên trên giữ nguyên) ...
             
