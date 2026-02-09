@@ -186,17 +186,18 @@ if valid.empty:
 
 # ==============================================================================
 # ==============================================================================
-#  🚀 GLOBAL SUMMARY DASHBOARD (SPLIT VERSION: STATS + SIMULATION)
+# ==============================================================================
+#  🚀 GLOBAL SUMMARY DASHBOARD (ENGLISH VERSION + STD LIMITS)
 # ==============================================================================
 if view_mode == "🚀 Global Summary Dashboard":
     st.markdown("## 🚀 Global Process Dashboard")
     
-    # Tạo 2 Tab riêng biệt
-    tab1, tab2 = st.tabs(["📊 1. Statistical Overview (Thống kê Thực tế)", "🎯 2. Prediction Simulator (Dự báo theo Độ cứng)"])
+    # Create Tabs
+    tab1, tab2 = st.tabs(["📊 1. Statistical Overview", "🎯 2. Prediction Simulator"])
 
-    # --- TAB 1: BẢNG THỐNG KÊ (MIN/MAX/MEAN) ---
+    # --- TAB 1: STATS TABLE ---
     with tab1:
-        st.info("ℹ️ Bảng này chỉ hiển thị dữ liệu thực tế (Min/Max/Average) để đánh giá năng lực quy trình.")
+        st.info("ℹ️ This table displays ACTUAL historical data (Min/Max/Average) to assess process capability.")
         
         stats_rows = []
         
@@ -244,7 +245,7 @@ if view_mode == "🚀 Global Summary Dashboard":
 
         if stats_rows:
             df_stats = pd.DataFrame(stats_rows)
-            # Format hiển thị đẹp
+            # Format display
             st.dataframe(
                 df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c])
                               .background_gradient(subset=["HRB (Avg)"], cmap="Blues"),
@@ -252,16 +253,16 @@ if view_mode == "🚀 Global Summary Dashboard":
                 height=600
             )
         else:
-            st.warning("Chưa đủ dữ liệu thống kê.")
+            st.warning("Insufficient data for statistics.")
 
-    # --- TAB 2: BẢNG DỰ BÁO (THEO INPUT NGƯỜI DÙNG) ---
+    # --- TAB 2: PREDICTION SIMULATOR (ENGLISH) ---
     with tab2:
-        st.info("🎯 Nhập độ cứng bạn dự định chạy, hệ thống sẽ dùng mô hình AI của từng nhóm để dự báo cơ tính.")
+        st.info("🎯 Enter your Target Hardness. The system uses AI models per group to forecast Mechanical Properties.")
         
-        # Ô nhập liệu của người dùng
+        # User Input
         col_in, _ = st.columns([1, 3])
         with col_in:
-            user_hrb = st.number_input("📥 Nhập Độ Cứng Mục Tiêu (HRB):", value=60.0, step=0.5, format="%.1f")
+            user_hrb = st.number_input("📥 Input Target Hardness (HRB):", value=60.0, step=0.5, format="%.1f")
 
         pred_rows = []
 
@@ -274,16 +275,41 @@ if view_mode == "🚀 Global Summary Dashboard":
                 (df["Material"] == g["Material"])
             ].dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
 
-            if len(sub_grp) < 10: continue # Cần ít nhất 10 cuộn để dự báo chuẩn
+            if len(sub_grp) < 10: continue 
 
             specs_str = ", ".join(sorted(sub_grp["Product_Spec"].astype(str).unique()))
             
-            # Kiểm tra xem input có nằm trong vùng an toàn không
+            # 1. Get Historical Range
             h_min, h_max = sub_grp["Hardness_LINE"].min(), sub_grp["Hardness_LINE"].max()
-            is_extrapolated = (user_hrb < h_min) or (user_hrb > h_max)
-            note = "⚠️ Ngoài vùng data" if is_extrapolated else "✅ Trong vùng data"
+            
+            # 2. Get Standard Control Limits (Standard Hardness)
+            # Logic: Take the min of Std_Min and max of Std_Max in the group to show full allowable range
+            std_lo = sub_grp["Std_Min"].min()
+            std_hi = sub_grp["Std_Max"].max()
+            
+            if pd.isna(std_lo): std_lo = 0
+            if pd.isna(std_hi): std_hi = 0
+            
+            std_txt = f"{std_lo:.1f} ~ {std_hi:.1f}"
+            if std_lo == 0 and std_hi == 0: std_txt = "No Spec"
 
-            # Train Model & Predict
+            # 3. Check Status
+            status_msgs = []
+            
+            # Check Extrapolation (History)
+            if user_hrb < h_min or user_hrb > h_max:
+                status_msgs.append("⚠️ Extrapolated (No History)")
+            
+            # Check Out of Spec (Standard)
+            if (std_lo > 0 and user_hrb < std_lo) or (std_hi > 0 and user_hrb > std_hi):
+                 status_msgs.append("⛔ Out of Spec")
+            
+            if not status_msgs:
+                status_msgs.append("✅ Safe Zone")
+            
+            status_final = " | ".join(status_msgs)
+
+            # 4. AI Prediction
             X = sub_grp[["Hardness_LINE"]].values
             
             # TS Prediction
@@ -303,10 +329,10 @@ if view_mode == "🚀 Global Summary Dashboard":
                 "Quality": g["Quality_Group"],
                 "Material": g["Material"],
                 "Gauge": g["Gauge_Range"],
-                "Specs": specs_str,
-                "Range HRB (History)": f"{h_min:.1f}~{h_max:.1f}",
-                "Status": note,
-                "Model Trust (R2)": r2_ts, # Độ tin cậy
+                "Std Limit (HRB)": std_txt,   # <--- NEW COLUMN
+                "Hist Range (HRB)": f"{h_min:.1f}~{h_max:.1f}",
+                "Status": status_final,       # <--- UPDATED STATUS
+                "Model Trust (R2)": r2_ts,
 
                 # Predicted Values
                 "Target HRB": user_hrb,
@@ -318,10 +344,15 @@ if view_mode == "🚀 Global Summary Dashboard":
         if pred_rows:
             df_pred = pd.DataFrame(pred_rows)
             
-            # Tô màu để cảnh báo độ tin cậy
+            # Coloring Logic
             def highlight_r2(val):
                 color = '#ffcccc' if val < 0.3 else ('#ccffcc' if val > 0.7 else '')
                 return f'background-color: {color}'
+            
+            def highlight_status(val):
+                if "⛔" in val: return 'color: red; font-weight: bold'
+                if "⚠️" in val: return 'color: orange'
+                return 'color: green'
 
             st.dataframe(
                 df_pred.style.format({
@@ -330,16 +361,17 @@ if view_mode == "🚀 Global Summary Dashboard":
                     "Pred EL": "{:.1f}",
                     "Model Trust (R2)": "{:.2f}",
                     "Target HRB": "{:.1f}"
-                }).applymap(highlight_r2, subset=["Model Trust (R2)"]),
+                })
+                .applymap(highlight_r2, subset=["Model Trust (R2)"])
+                .applymap(highlight_status, subset=["Status"]),
                 use_container_width=True,
                 height=600
             )
-            st.caption("* Model Trust (R2): Càng gần 1.0 thì dự báo càng chính xác. Nếu < 0.3 thì dự báo chỉ mang tính tham khảo.")
+            st.caption("* Model Trust (R2): Closer to 1.0 is better. If < 0.3, prediction is unreliable. \n* Status: Checks if Target is within History and within Standard Limits.")
         else:
-            st.warning("Không đủ dữ liệu để chạy mô hình dự báo.")
+            st.warning("Insufficient data for prediction.")
 
     st.stop()
-
 # ==============================================================================
 # MAIN LOOP (DETAILS)
 # ==============================================================================
