@@ -1,6 +1,6 @@
 # ================================
-# FULL STREAMLIT APP – FINAL VERSION WITH TIMESTAMP
-# FEATURES: GLOBAL COLORS + NG HIGHLIGHT + COLD ROLLING RULES + TIME DISPLAY
+# FULL STREAMLIT APP – FINAL VERSION
+# FEATURES: REAL DATA DATE RANGE + GLOBAL COLORS + NG HIGHLIGHT + SMART RULES
 # ================================
 
 import streamlit as st
@@ -10,7 +10,7 @@ import requests, re
 from io import StringIO, BytesIO
 import matplotlib.pyplot as plt
 import uuid
-from datetime import datetime  # <--- THÊM THƯ VIỆN NÀY
+from datetime import datetime
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score
 import plotly.graph_objects as go
@@ -21,27 +21,6 @@ from plotly.subplots import make_subplots
 # ================================
 st.set_page_config(page_title="SPC Hardness Dashboard", layout="wide")
 st.title("📊 SPC Hardness – Visual Analytics Dashboard")
-
-# --- [MỚI] HIỂN THỊ THỜI GIAN PHÂN TÍCH ---
-current_time = datetime.now().strftime("%d/%m/%Y %H:%M:%S")
-st.caption(f"🕒 Thời gian phân tích dữ liệu: **{current_time}**")
-st.markdown("---") # Đường kẻ phân cách cho đẹp
-
-# ================================
-# REFRESH
-# ================================
-if st.sidebar.button("🔄 Refresh Data"):
-    st.cache_data.clear()
-    st.rerun()
-
-# ================================
-# UTILS
-# ================================
-def fig_to_png(fig):
-    buf = BytesIO()
-    fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
-    buf.seek(0)
-    return buf
 
 # ================================
 # LOAD MAIN DATA
@@ -57,13 +36,33 @@ def load_main():
 raw = load_main()
 
 # ================================
-# PRE-PROCESSING
+# PRE-PROCESSING & DATE HANDLING
 # ================================
-# 1. Metallic Type
+# 1. Calculate Data Period (NEW)
+data_period_str = "N/A"
+if "PRODUCTION DATE" in raw.columns:
+    # Convert to datetime, handle errors
+    raw["PRODUCTION DATE"] = pd.to_datetime(raw["PRODUCTION DATE"], errors='coerce')
+    min_date = raw["PRODUCTION DATE"].min()
+    max_date = raw["PRODUCTION DATE"].max()
+    
+    if pd.notna(min_date) and pd.notna(max_date):
+        data_period_str = f"{min_date.strftime('%d/%m/%Y')} - {max_date.strftime('%d/%m/%Y')}"
+
+# --- DISPLAY HEADER WITH DATE ---
+current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
+st.markdown(f"""
+<div style='background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 20px;'>
+    <strong>🕒 Report Generated:</strong> {current_time} &nbsp;&nbsp;|&nbsp;&nbsp; 
+    <strong>📅 Data Period:</strong> {data_period_str}
+</div>
+""", unsafe_allow_html=True)
+
+# 2. Metallic Type
 metal_col = next(c for c in raw.columns if "METALLIC" in c.upper())
 raw["Metallic_Type"] = raw[metal_col]
 
-# 2. Rename Columns
+# 3. Rename Columns
 df = raw.rename(columns={
     "PRODUCT SPECIFICATION CODE": "Product_Spec",
     "HR STEEL GRADE": "Material",
@@ -86,7 +85,7 @@ df = raw.rename(columns={
     "Standard EL max": "Standard EL max"
 })
 
-# 3. Standard Hardness Split
+# 4. Standard Hardness Split
 def split_std(x):
     if isinstance(x, str) and "~" in x:
         lo, hi = x.split("~")
@@ -95,7 +94,7 @@ def split_std(x):
 
 df[["Std_Min","Std_Max"]] = df["Std_Text"].apply(lambda x: pd.Series(split_std(x)))
 
-# 4. Force Numeric
+# 5. Force Numeric
 numeric_cols = [
     "Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL", "Order_Gauge",
     "Standard TS min", "Standard TS max",
@@ -106,13 +105,13 @@ for c in numeric_cols:
     if c in df.columns:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
-# 5. Quality Group Merge
+# 6. Quality Group Merge
 df["Quality_Group"] = df["Quality_Code"].replace({
     "CQ00": "CQ00 / CQ06",
     "CQ06": "CQ00 / CQ06"
 })
 
-# 6. Filter GE* < 88
+# 7. Filter GE* < 88
 if "Quality_Code" in df.columns:
     df = df[~(
         df["Quality_Code"].astype(str).str.startswith("GE") &
@@ -120,7 +119,7 @@ if "Quality_Code" in df.columns:
     )]
 
 # =========================================================
-# 7. APPLY GLOBAL COMPANY RULES (COLD ROLLING LOGIC)
+# 8. APPLY GLOBAL COMPANY RULES (COLD ROLLING LOGIC)
 # =========================================================
 def apply_company_rules(row):
     std_min = row["Std_Min"] if pd.notna(row["Std_Min"]) else 0
@@ -140,13 +139,20 @@ def apply_company_rules(row):
         elif mat == "A108M":
             return 60.0, 68.0, 55.0, 72.0, "Rule A108M (Cold)"
         elif mat in ["A108", "A108G", "A108R", "A108MR", "A1081B"]:
-            return 58.0, 62.0, 52.0, 65.0, "Rule A108G (Cold)"
+            return 58.0, 62.0, 52.0, 65.0, "Rule A108-Gen (Cold)"
 
     return std_min, std_max, lab_min, lab_max, rule_name
 
 df[['Limit_Min', 'Limit_Max', 'Lab_Min', 'Lab_Max', 'Rule_Name']] = df.apply(
     apply_company_rules, axis=1, result_type="expand"
 )
+
+# ================================
+# REFRESH BUTTON
+# ================================
+if st.sidebar.button("🔄 Refresh Data"):
+    st.cache_data.clear()
+    st.rerun()
 
 # ================================
 # LOAD GAUGE RANGE TABLE
@@ -163,8 +169,7 @@ gauge_col = next(c for c in gauge_df.columns if "RANGE" in c.upper())
 
 def parse_range(text):
     nums = re.findall(r"\d+\.\d+|\d+", str(text))
-    if len(nums) < 2:
-        return None, None
+    if len(nums) < 2: return None, None
     return float(nums[0]), float(nums[-1])
 
 ranges = []
@@ -175,8 +180,7 @@ for _, r in gauge_df.iterrows():
 
 def map_gauge(val):
     for lo, hi, name in ranges:
-        if lo <= val < hi:
-            return name
+        if lo <= val < hi: return name
     return None
 
 df["Gauge_Range"] = df["Order_Gauge"].apply(map_gauge)
@@ -237,9 +241,7 @@ if view_mode == "🚀 Global Summary Dashboard":
 
     with tab1:
         st.info("ℹ️ Color Guide: 🟢 High Pass Rate | 🔴 Low Pass Rate | 🟡 Rule Applied")
-        
         stats_rows = []
-        
         for _, g in valid.iterrows():
             sub_grp = df[
                 (df["Rolling_Type"] == g["Rolling_Type"]) &
@@ -263,8 +265,7 @@ if view_mode == "🚀 Global Summary Dashboard":
                 elif v_max > 0 and v_max < 9000: return f"≤ {v_max:.0f}"
                 else: return "-"
 
-            l_min_val = sub_grp['Limit_Min'].min()
-            l_max_val = sub_grp['Limit_Max'].max()
+            l_min_val = sub_grp['Limit_Min'].min(); l_max_val = sub_grp['Limit_Max'].max()
             lim_hrb = f"{l_min_val:.0f}~{l_max_val:.0f}"
             
             lim_ts = get_limit_str("Standard TS min", "Standard TS max")
@@ -272,44 +273,26 @@ if view_mode == "🚀 Global Summary Dashboard":
             lim_el = get_limit_str("Standard EL min", "Standard EL max")
 
             rule_name = sub_grp['Rule_Name'].iloc[0]
-            lab_min = sub_grp['Lab_Min'].iloc[0]
-            lab_max = sub_grp['Lab_Max'].iloc[0]
+            lab_min = sub_grp['Lab_Min'].iloc[0]; lab_max = sub_grp['Lab_Max'].iloc[0]
             lim_lab = f"{lab_min:.0f}~{lab_max:.0f}" if (lab_min > 0 and lab_max > 0) else "-"
 
             n_total = len(sub_grp)
-            n_ng = sub_grp[
-                (sub_grp["Hardness_LINE"] < sub_grp["Limit_Min"]) | 
-                (sub_grp["Hardness_LINE"] > sub_grp["Limit_Max"])
-            ].shape[0]
+            n_ng = sub_grp[(sub_grp["Hardness_LINE"] < sub_grp["Limit_Min"]) | (sub_grp["Hardness_LINE"] > sub_grp["Limit_Max"])].shape[0]
             pass_rate = ((n_total - n_ng) / n_total) * 100
 
             stats_rows.append({
-                "Quality": g["Quality_Group"],
-                "Material": g["Material"],
-                "Gauge": g["Gauge_Range"],
-                "Rule Applied": rule_name,   
-                "Lab Limit": lim_lab,        
-                "HRB Limit": lim_hrb,          
-                "N": len(sub_grp),
+                "Quality": g["Quality_Group"], "Material": g["Material"], "Gauge": g["Gauge_Range"],
+                "Rule Applied": rule_name, "Lab Limit": lim_lab, "HRB Limit": lim_hrb, "N": len(sub_grp),
                 "Pass Rate (%)": pass_rate,
-                "HRB (Avg)": sub_grp["Hardness_LINE"].mean(),
-                "TS (Avg)": sub_grp["TS"].mean(),
-                "YS (Avg)": sub_grp["YS"].mean(),
-                "EL (Avg)": sub_grp["EL"].mean(),
-                "HRB (Min)": sub_grp["Hardness_LINE"].min(),
-                "HRB (Max)": sub_grp["Hardness_LINE"].max(),
-                "TS Limit": lim_ts,            
-                "YS Limit": lim_ys,            
-                "EL Limit": lim_el,            
+                "HRB (Avg)": sub_grp["Hardness_LINE"].mean(), "TS (Avg)": sub_grp["TS"].mean(),
+                "YS (Avg)": sub_grp["YS"].mean(), "EL (Avg)": sub_grp["EL"].mean(),
+                "HRB (Min)": sub_grp["Hardness_LINE"].min(), "HRB (Max)": sub_grp["Hardness_LINE"].max(),
+                "TS Limit": lim_ts, "YS Limit": lim_ys, "EL Limit": lim_el,            
             })
 
         if stats_rows:
             df_stats = pd.DataFrame(stats_rows)
-            cols = [
-                "Quality", "Material", "Gauge", "Rule Applied", "Pass Rate (%)", 
-                "HRB Limit", "HRB (Avg)", "HRB (Min)", "HRB (Max)", "Lab Limit",
-                "TS (Avg)", "YS (Avg)", "EL (Avg)", "TS Limit", "YS Limit", "EL Limit", "N"
-            ]
+            cols = ["Quality", "Material", "Gauge", "Rule Applied", "Pass Rate (%)", "HRB Limit", "HRB (Avg)", "HRB (Min)", "HRB (Max)", "Lab Limit", "TS (Avg)", "YS (Avg)", "EL (Avg)", "TS Limit", "YS Limit", "EL Limit", "N"]
             cols = [c for c in cols if c in df_stats.columns]
             df_stats = df_stats[cols]
 
@@ -318,25 +301,20 @@ if view_mode == "🚀 Global Summary Dashboard":
                 text_color = '#155724' if val >= 98 else ('#856404' if val >= 90 else '#721c24')
                 return f'background-color: {color}; color: {text_color}; font-weight: bold'
 
-            def highlight_rule(s):
-                return ['background-color: #fffbe6' if "Rule" in str(s["Rule Applied"]) else '' for _ in s]
+            def highlight_rule(s): return ['background-color: #fffbe6' if "Rule" in str(s["Rule Applied"]) else '' for _ in s]
 
             st.dataframe(
-                df_stats.style
-                    .format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c or "Pass" in c])
-                    .applymap(color_pass_rate, subset=["Pass Rate (%)"])
-                    .apply(highlight_rule, axis=1)
-                    .background_gradient(subset=["HRB (Avg)"], cmap="Blues"),
+                df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c or "Pass" in c])
+                .applymap(color_pass_rate, subset=["Pass Rate (%)"]).apply(highlight_rule, axis=1)
+                .background_gradient(subset=["HRB (Avg)"], cmap="Blues"),
                 use_container_width=True
             )
-        else:
-            st.warning("Insufficient data for statistics.")
+        else: st.warning("Insufficient data.")
 
     with tab2:
-        st.info("🎯 Enter your Target Hardness. The system uses AI models per group to forecast Mechanical Properties.")
+        st.info("🎯 Enter your Target Hardness.")
         col_in, _ = st.columns([1, 3])
-        with col_in:
-            user_hrb = st.number_input("📥 Input Target Hardness (HRB):", value=60.0, step=0.5, format="%.1f")
+        with col_in: user_hrb = st.number_input("📥 Input Target Hardness (HRB):", value=60.0, step=0.5, format="%.1f")
 
         pred_rows = []
         for _, g in valid.iterrows():
@@ -352,37 +330,23 @@ if view_mode == "🚀 Global Summary Dashboard":
 
             std_lo = sub_grp["Limit_Min"].min(); std_hi = sub_grp["Limit_Max"].max()
             h_min, h_max = sub_grp["Hardness_LINE"].min(), sub_grp["Hardness_LINE"].max()
-            
-            if pd.isna(std_lo): std_lo = 0
-            if pd.isna(std_hi): std_hi = 0
-            std_txt = f"{std_lo:.1f} ~ {std_hi:.1f}"
-            if std_lo == 0 and std_hi == 0: std_txt = "No Spec"
+            std_txt = f"{std_lo:.1f} ~ {std_hi:.1f}" if (std_lo>0 or std_hi>0) else "No Spec"
 
             status_msgs = []
             if user_hrb < h_min or user_hrb > h_max: status_msgs.append("⚠️ Extrapolated")
             if (std_lo > 0 and user_hrb < std_lo) or (std_hi > 0 and user_hrb > std_hi): status_msgs.append("⛔ Out of Spec")
             if not status_msgs: status_msgs.append("✅ Safe Zone")
-            status_final = " | ".join(status_msgs)
-
+            
             X = sub_grp[["Hardness_LINE"]].values
-            m_ts = LinearRegression().fit(X, sub_grp["TS"].values)
-            pred_ts = m_ts.predict([[user_hrb]])[0]
+            m_ts = LinearRegression().fit(X, sub_grp["TS"].values); pred_ts = m_ts.predict([[user_hrb]])[0]
             r2_ts = r2_score(sub_grp["TS"], m_ts.predict(X))
-            m_ys = LinearRegression().fit(X, sub_grp["YS"].values)
-            pred_ys = m_ys.predict([[user_hrb]])[0]
-            m_el = LinearRegression().fit(X, sub_grp["EL"].values)
-            pred_el = m_el.predict([[user_hrb]])[0]
+            m_ys = LinearRegression().fit(X, sub_grp["YS"].values); pred_ys = m_ys.predict([[user_hrb]])[0]
+            m_el = LinearRegression().fit(X, sub_grp["EL"].values); pred_el = m_el.predict([[user_hrb]])[0]
 
             pred_rows.append({
-                "Quality": g["Quality_Group"],
-                "Material": g["Material"],
-                "Gauge": g["Gauge_Range"],
-                "Std Limit": std_txt,
-                "Hist Range": f"{h_min:.1f}~{h_max:.1f}",
-                "Status": status_final,
-                "Model Trust (R2)": r2_ts,
-                "Target HRB": user_hrb,
-                "Pred TS": pred_ts, "Pred YS": pred_ys, "Pred EL": pred_el
+                "Quality": g["Quality_Group"], "Material": g["Material"], "Gauge": g["Gauge_Range"],
+                "Std Limit": std_txt, "Hist Range": f"{h_min:.1f}~{h_max:.1f}", "Status": " | ".join(status_msgs),
+                "Model Trust (R2)": r2_ts, "Target HRB": user_hrb, "Pred TS": pred_ts, "Pred YS": pred_ys, "Pred EL": pred_el
             })
 
         if pred_rows:
@@ -392,16 +356,8 @@ if view_mode == "🚀 Global Summary Dashboard":
                 if "⛔" in val: return 'color: red; font-weight: bold'
                 if "⚠️" in val: return 'color: orange'
                 return 'color: green'
-
-            st.dataframe(
-                df_pred.style.format({
-                    "Pred TS": "{:.0f}", "Pred YS": "{:.0f}", "Pred EL": "{:.1f}",
-                    "Model Trust (R2)": "{:.2f}", "Target HRB": "{:.1f}"
-                }).applymap(highlight_r2, subset=["Model Trust (R2)"]).applymap(highlight_status, subset=["Status"]),
-                use_container_width=True
-            )
-        else:
-            st.warning("Insufficient data.")
+            st.dataframe(df_pred.style.format({"Pred TS": "{:.0f}", "Pred YS": "{:.0f}", "Pred EL": "{:.1f}", "Model Trust (R2)": "{:.2f}", "Target HRB": "{:.1f}"}).applymap(highlight_r2, subset=["Model Trust (R2)"]).applymap(highlight_status, subset=["Status"]), use_container_width=True)
+        else: st.warning("Insufficient data.")
     st.stop()
 
 # ==============================================================================
@@ -420,8 +376,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
     rule_used = sub.iloc[0]["Rule_Name"]
     l_lo, l_hi = sub.iloc[0][["Lab_Min", "Lab_Max"]]
 
-    # Check NG based on NEW limits
-    sub["NG_LAB"]  = (sub["Hardness_LAB"] < lo) | (sub["Hardness_LAB"] > hi)
+    sub["NG_LAB"] = (sub["Hardness_LAB"] < lo) | (sub["Hardness_LAB"] > hi)
     sub["NG_LINE"] = (sub["Hardness_LINE"] < lo) | (sub["Hardness_LINE"] > hi)
     sub["NG"] = sub["NG_LAB"] | sub["NG_LINE"] 
 
@@ -432,24 +387,15 @@ for i, (_, g) in enumerate(valid.iterrows()):
         st.markdown(f"**Specs:** {specs} | **Coils:** {sub['COIL_NO'].nunique()} | **Limit:** {lo:.1f}~{hi:.1f}")
         
         if view_mode != "⚙️ Mech Props Analysis":
-            if "Rule" in rule_used:
-                st.success(f"✅ Applied: **{rule_used}** (Control: {lo:.0f} - {hi:.0f} | Lab: {l_lo:.0f} - {l_hi:.0f})")
-            else:
-                st.caption(f"ℹ️ Applied: **Standard Excel Spec**")
+            if "Rule" in rule_used: st.success(f"✅ Applied: **{rule_used}** (Control: {lo:.0f} - {hi:.0f} | Lab: {l_lo:.0f} - {l_hi:.0f})")
+            else: st.caption(f"ℹ️ Applied: **Standard Excel Spec**")
 
     # ================================
-    # 1. DATA INSPECTION (COLORFUL)
+    # 1. DATA INSPECTION
     # ================================
     if view_mode == "📋 Data Inspection":
-        def highlight_ng_rows(row):
-            if row['NG']:
-                return ['background-color: #ffe6e6'] * len(row)
-            return [''] * len(row)
-
-        st.dataframe(
-            sub.style.apply(highlight_ng_rows, axis=1), 
-            use_container_width=True
-        )
+        def highlight_ng_rows(row): return ['background-color: #ffe6e6'] * len(row) if row['NG'] else [''] * len(row)
+        st.dataframe(sub.style.apply(highlight_ng_rows, axis=1), use_container_width=True)
 
     # ================================
     # 2. HARDNESS ANALYSIS
@@ -470,15 +416,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ax.axhline(l_hi, linestyle="-.", linewidth=1.5, color="purple", label=f"Lab USL={l_hi}", alpha=0.7)
             ax.set_title("Hardness Trend by Coil Sequence", weight="bold")
             ax.set_xlabel("Coil Sequence"); ax.set_ylabel("Hardness (HRB)")
-            ax.grid(alpha=0.25, linestyle="--")
-            ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=4)
-            plt.tight_layout()
-            st.pyplot(fig)
+            ax.grid(alpha=0.25, linestyle="--"); ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=4)
+            plt.tight_layout(); st.pyplot(fig)
             st.download_button("📥 Download Trend Chart", data=fig_to_png(fig), file_name=f"trend_{g['Material']}.png", mime="image/png", key=f"dl_tr_{uuid.uuid4()}")
 
         with tab_dist:
-            line = sub["Hardness_LINE"].dropna()
-            lab = sub["Hardness_LAB"].dropna()
+            line = sub["Hardness_LINE"].dropna(); lab = sub["Hardness_LAB"].dropna()
             if len(line) < 5: st.warning("⚠️ Not enough LINE data (N < 5).")
             else:
                 def calc_spc_metrics(data, lsl, usl):
@@ -486,14 +429,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     mean = data.mean(); std = data.std(ddof=1)
                     if std == 0: return None 
                     cp = (usl - lsl) / (6 * std)
-                    mid = (usl + lsl) / 2; tol = (usl - lsl)
-                    ca = ((mean - mid) / (tol / 2)) * 100
+                    mid = (usl + lsl) / 2; tol = (usl - lsl); ca = ((mean - mid) / (tol / 2)) * 100
                     cpu = (usl - mean) / (3 * std); cpl = (mean - lsl) / (3 * std)
                     return mean, std, cp, ca, min(cpu, cpl)
 
                 spc_line = calc_spc_metrics(line, lo, hi)
                 mean_line, std_line = line.mean(), line.std(ddof=1)
-                mean_lab, std_lab = (lab.mean(), lab.std(ddof=1)) if not lab.empty else (0, 0)
                 
                 vals = [line.min(), line.max(), lo, hi]
                 if l_lo > 0: vals.extend([l_lo, l_hi])
@@ -501,7 +442,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 x_min = min(vals) - 2; x_max = max(vals) + 2
                 bins = np.linspace(x_min, x_max, 30)
                 
-                # Curve range ±5 sigma
                 range_curve = max(5 * std_line, (x_max - x_min)/2)
                 xs = np.linspace(mean_line - range_curve, mean_line + range_curve, 400)
                 
@@ -512,9 +452,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 if std_line > 0:
                     ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
                     ax.plot(xs, ys_line, linewidth=2.5, color="#b25e00", label="LINE Fit")
-                if not lab.empty and std_lab > 0:
-                    ys_lab = (1/(std_lab*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_lab)/std_lab)**2)
-                    ax.plot(xs, ys_lab, linewidth=2, linestyle="--", color="#1f77b4", label="LAB Fit")
                 
                 ax.axvline(lo, linestyle="--", linewidth=2, color="red", label="Control LSL")
                 ax.axvline(hi, linestyle="--", linewidth=2, color="red", label="Control USL")
@@ -522,10 +459,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     ax.axvline(l_lo, linestyle="-.", linewidth=2, color="purple", label="Lab LSL")
                     ax.axvline(l_hi, linestyle="-.", linewidth=2, color="purple", label="Lab USL")
                 
-                ax.set_xlim(x_min, x_max)
-                ax.set_title(f"Hardness Distribution (LINE vs LAB)", weight="bold")
-                ax.legend(); ax.grid(alpha=0.3)
-                st.pyplot(fig)
+                ax.set_xlim(x_min, x_max); ax.set_title(f"Hardness Distribution (LINE vs LAB)", weight="bold")
+                ax.legend(); ax.grid(alpha=0.3); st.pyplot(fig)
 
                 st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
                 if spc_line:
@@ -576,8 +511,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ax.annotate(lbl, (x[j], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color=clr, fontweight=("bold" if is_fail else "normal"))
 
             ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
-            ax.set_title("Hardness vs Mechanical Properties"); ax.grid(True, ls="--", alpha=0.5); ax.legend()
-            st.pyplot(fig)
+            ax.set_title("Hardness vs Mechanical Properties"); ax.grid(True, ls="--", alpha=0.5); ax.legend(); st.pyplot(fig)
             
             st.markdown("#### 📌 Quick Conclusion per Hardness Bin")
             conclusion_data = []
@@ -612,14 +546,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
             stats_data = []
 
             for j, cfg in enumerate(props_config):
-                col = cfg["col"]
-                data = sub_mech[col]
-                mean, std = data.mean(), data.std()
+                col = cfg["col"]; data = sub_mech[col]; mean, std = data.mean(), data.std()
                 spec_min = sub_mech[cfg["min_c"]].max() if cfg["min_c"] in sub_mech else 0
                 spec_max = sub_mech[cfg["max_c"]].min() if cfg["max_c"] in sub_mech else 0
                 if pd.isna(spec_min): spec_min = 0
                 if pd.isna(spec_max): spec_max = 0
-                
                 proc_min = mean - 3 * std; proc_max = mean + 3 * std
 
                 axes[j].hist(data, bins=20, color=cfg["color"], alpha=0.5, density=True, label="Actual Dist")
