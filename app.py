@@ -1,6 +1,6 @@
 # ================================
 # FULL STREAMLIT APP – FINAL COMPLETE VERSION
-# INTEGRATED GLOBAL DASHBOARD + SMART LOGIC + BUG FIXES
+# INTEGRATED GLOBAL DASHBOARD + SMART LOGIC + COLD ROLLING RULES
 # ================================
 
 import streamlit as st
@@ -106,6 +106,51 @@ if "Quality_Code" in df.columns:
         ((df["Hardness_LAB"] < 88) | (df["Hardness_LINE"] < 88))
     )]
 
+# =========================================================
+# 7. APPLY GLOBAL COMPANY RULES (COLD ROLLING LOGIC)
+# =========================================================
+def apply_company_rules(row):
+    # Lấy giá trị mặc định từ Excel
+    std_min = row["Std_Min"] if pd.notna(row["Std_Min"]) else 0
+    std_max = row["Std_Max"] if pd.notna(row["Std_Max"]) else 0
+    
+    # Mặc định Lab Limit = 0 (Không áp dụng)
+    lab_min, lab_max = 0, 0
+    rule_name = "Standard (Excel)"
+
+    # --- KIỂM TRA ĐIỀU KIỆN ---
+    # 1. Phải là Cold Rolling (Chứa chữ COLD)
+    is_cold = "COLD" in str(row["Rolling_Type"]).upper()
+    
+    # 2. Phải thuộc nhóm CQ
+    q_grp = str(row["Quality_Group"])
+    target_qs = ["CQ00", "CQ06", "CQ07", "CQB0"]
+    is_target_q = any(q in q_grp for q in target_qs)
+
+    # NẾU THỎA MÃN CẢ 2:
+    if is_cold and is_target_q:
+        mat = str(row["Material"]).upper().strip()
+        
+        # Rule 1: A1081
+        if mat == "A1081":
+            return 56.0, 62.0, 52.0, 70.0, "Rule A1081 (Cold)"
+        
+        # Rule 2: A108M
+        elif mat == "A108M":
+            return 60.0, 68.0, 55.0, 72.0, "Rule A108M (Cold)"
+        
+        # Rule 3: Nhóm A108 General
+        elif mat in ["A108", "A108G", "A108R", "A108MR", "A1081B"]:
+            return 58.0, 62.0, 52.0, 65.0, "Rule A108-Gen (Cold)"
+
+    # Nếu không thỏa mãn rule nào -> Trả về giá trị gốc của Excel
+    return std_min, std_max, lab_min, lab_max, rule_name
+
+# Áp dụng logic vào toàn bộ DataFrame (Tạo 5 cột mới)
+df[['Limit_Min', 'Limit_Max', 'Lab_Min', 'Lab_Max', 'Rule_Name']] = df.apply(
+    apply_company_rules, axis=1, result_type="expand"
+)
+
 # ================================
 # LOAD GAUGE RANGE TABLE
 # ================================
@@ -186,7 +231,6 @@ if valid.empty:
     st.stop()
 
 # ==============================================================================
-# ==============================================================================
 #  🚀 GLOBAL SUMMARY DASHBOARD (FINAL: STATS + LIMITS + SIMULATION)
 # ==============================================================================
 if view_mode == "🚀 Global Summary Dashboard":
@@ -232,8 +276,9 @@ if view_mode == "🚀 Global Summary Dashboard":
                 else:
                     return "-"
 
-            # Get Limits Text
-            lim_hrb = f"{sub_grp['Std_Min'].min():.0f}~{sub_grp['Std_Max'].max():.0f}"
+            # Get Limits Text (SỬ DỤNG LIMIT_MIN MỚI)
+            lim_hrb = f"{sub_grp['Limit_Min'].min():.0f}~{sub_grp['Limit_Max'].max():.0f}"
+            
             lim_ts = get_limit_str("Standard TS min", "Standard TS max")
             lim_ys = get_limit_str("Standard YS min", "Standard YS max")
             lim_el = get_limit_str("Standard EL min", "Standard EL max")
@@ -284,7 +329,7 @@ if view_mode == "🚀 Global Summary Dashboard":
             cols = [c for c in cols if c in df_stats.columns]
             df_stats = df_stats[cols]
 
-            # Format & Style (FIX: Xóa height=600)
+            # Format & Style
             st.dataframe(
                 df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "(Min)" in c or "(Max)" in c])
                               .background_gradient(subset=["HRB (Avg)"], cmap="Blues"),
@@ -320,8 +365,9 @@ if view_mode == "🚀 Global Summary Dashboard":
             h_min, h_max = sub_grp["Hardness_LINE"].min(), sub_grp["Hardness_LINE"].max()
             
             # 2. Get Standard Control Limits (Hardness)
-            std_lo = sub_grp["Std_Min"].min()
-            std_hi = sub_grp["Std_Max"].max()
+            std_lo = sub_grp["Limit_Min"].min() # Dùng Limit mới
+            std_hi = sub_grp["Limit_Max"].max() # Dùng Limit mới
+            
             if pd.isna(std_lo): std_lo = 0
             if pd.isna(std_hi): std_hi = 0
             std_txt = f"{std_lo:.1f} ~ {std_hi:.1f}"
@@ -376,7 +422,6 @@ if view_mode == "🚀 Global Summary Dashboard":
                 if "⚠️" in val: return 'color: orange'
                 return 'color: green'
 
-            # Format & Style (FIX: Xóa height=600)
             st.dataframe(
                 df_pred.style.format({
                     "Pred TS": "{:.0f}", "Pred YS": "{:.0f}", "Pred EL": "{:.1f}",
@@ -405,17 +450,28 @@ for i, (_, g) in enumerate(valid.iterrows()):
         (df["Material"] == g["Material"])
     ].sort_values("COIL_NO")
 
-    lo, hi = sub.iloc[0][["Std_Min","Std_Max"]]
+    # --- [BƯỚC 2: CẬP NHẬT MAIN LOOP] ---
+    # Lấy giới hạn từ cột Rule mới tạo
+    lo, hi = sub.iloc[0][["Limit_Min", "Limit_Max"]] 
+    rule_used = sub.iloc[0]["Rule_Name"]
+    l_lo, l_hi = sub.iloc[0][["Lab_Min", "Lab_Max"]]
+
     sub["NG_LAB"]  = (sub["Hardness_LAB"] < lo) | (sub["Hardness_LAB"] > hi)
     sub["NG_LINE"] = (sub["Hardness_LINE"] < lo) | (sub["Hardness_LINE"] > hi)
     sub["NG"] = sub["NG_LAB"] | sub["NG_LINE"]
     qa = "FAIL" if sub["NG"].any() else "PASS"
     specs = ", ".join(sorted(sub["Product_Spec"].unique()))
 
-    # Chỉ hiển thị Header nếu không phải Global view (đã có ở trên)
+    # Chỉ hiển thị Header nếu không phải Global view
     if view_mode != "🚀 Global Summary Dashboard":
         st.markdown(f"### 🧱 {g['Quality_Group']} | {g['Material']} | {g['Gauge_Range']}")
         st.markdown(f"**Specs:** {specs} | **Coils:** {sub['COIL_NO'].nunique()} | **Limit:** {lo:.1f}~{hi:.1f}")
+        
+        # Hiển thị Rule đang áp dụng
+        if "Rule" in rule_used:
+            st.success(f"✅ Applied: **{rule_used}** (Control: {lo:.0f}~{hi:.0f} | Lab: {l_lo:.0f}~{l_hi:.0f})")
+        else:
+            st.caption(f"ℹ️ Applied: **Standard Excel Spec**")
 
     # ================================
     # 1. DATA INSPECTION
@@ -441,7 +497,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.5)
             ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.9) 
             
-            # Vẽ giới hạn
+            # Vẽ giới hạn (SỬ DỤNG LO/HI ĐÃ CẬP NHẬT THEO RULE)
             ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"LSL={lo}")
             ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"USL={hi}")
             
@@ -524,7 +580,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     ys_lab = (1/(std_lab*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_lab)/std_lab)**2)
                     ax.plot(xs, ys_lab, linewidth=2, linestyle="--", color="#1f77b4", label="LAB Fit")
                 
-                # Limits
+                # Limits (SỬ DỤNG LO/HI ĐÃ CẬP NHẬT)
                 ax.axvline(lo, linestyle="--", linewidth=2, color="red", label="LSL")
                 ax.axvline(hi, linestyle="--", linewidth=2, color="red", label="USL")
                 
@@ -789,9 +845,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c3.metric("Pred EL", f"{preds['EL']:.1f}")
 
     # ================================
-# ================================
-# ================================
-    # 8. CONTROL LIMIT CALCULATOR (UPDATED: 4 METHODS INCLUDING I-MR)
+    # 8. CONTROL LIMIT CALCULATOR (FINAL: SYNCED WITH GLOBAL RULES)
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
@@ -804,7 +858,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
         else:
             # --- 1. CẤU HÌNH THAM SỐ (Settings) ---
-            # Key duy nhất theo i và tên vật liệu
             unique_key_sigma = f"ctrl_sigma_{i}_{g['Material']}"
             unique_key_iqr = f"ctrl_iqr_{i}_{g['Material']}"
 
@@ -820,27 +873,29 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 with col_par2:
                     iqr_k = st.number_input(
                         "2. IQR Sensitivity", 
-                        min_value=0.5, max_value=3.0, value=0.7, step=0.1, # Mặc định 0.7 cho sát thực tế
+                        min_value=0.5, max_value=3.0, value=0.7, step=0.1,
                         help="Dùng riêng cho phương pháp IQR.",
                         key=unique_key_iqr
                     )
 
             # --- 2. TÍNH TOÁN (4 PHƯƠNG PHÁP) ---
             
-            # Spec (Method 0)
-            spec_min = sub["Std_Min"].max() if "Std_Min" in sub else 0
-            spec_max = sub["Std_Max"].min() if "Std_Max" in sub else 0
+            # --- [BƯỚC 3: CẬP NHẬT] Spec (Method 0) - Lấy từ cột Limit_Min/Max ---
+            spec_min = sub["Limit_Min"].max() 
+            spec_max = sub["Limit_Max"].min()
+            
+            # Xử lý NaN
             if pd.isna(spec_min): spec_min = 0
             if pd.isna(spec_max): spec_max = 0
             display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
 
             mu = data.mean()
 
-            # Method 1: Standard N-Sigma (Cũ)
+            # Method 1: Standard N-Sigma
             std_dev = data.std()
             m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
             
-            # Method 2: IQR Robust (Cũ)
+            # Method 2: IQR Robust
             Q1 = data.quantile(0.25)
             Q3 = data.quantile(0.75)
             IQR = Q3 - Q1
@@ -849,13 +904,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
             mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
 
-            # Method 3: Smart Hybrid (Cũ)
+            # Method 3: Smart Hybrid
             m3_min = max(m2_min, spec_min)
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
 
-            # Method 4: I-MR (Individual Moving Range) - MỚI
-            # Công thức SPC: Sigma_est = Average(Moving Range) / 1.128
+            # Method 4: I-MR (Individual Moving Range) - SPC Standard
             mrs = np.abs(np.diff(data))
             mr_bar = np.mean(mrs)
             sigma_imr = mr_bar / 1.128
@@ -878,13 +932,14 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ax.axvline(m2_min, c="blue", ls="--", alpha=0.5, label="_nolegend_")
                 ax.axvline(m2_max, c="blue", ls="--", alpha=0.5, label="M2: IQR")
 
-                # M4 (I-MR): Purple Dash-Dot (Nổi bật - SPC)
+                # M4 (I-MR): Purple Dash-Dot
                 ax.axvline(m4_min, c="purple", ls="-.", lw=2, label="_nolegend_")
                 ax.axvline(m4_max, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
                 
-                # M3: Green Area (Vùng tối ưu cũ)
+                # M3: Green Area
                 ax.axvspan(m3_min, m3_max, color="green", alpha=0.15, label="M3: Hybrid Zone")
                 
+                # Spec (Company Rule)
                 if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
                 if display_max > 0: ax.axvline(display_max, c="black", lw=2)
 
@@ -894,7 +949,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             with col_table:
                 comp_data = [
-                    {"Method": "0. Spec", "Min": spec_min, "Max": display_max, "Range": display_max-spec_min if display_max>0 else 0, "Note": "Reference"},
+                    {"Method": "0. Spec (Rule)", "Min": spec_min, "Max": display_max, "Range": display_max-spec_min if display_max>0 else 0, "Note": "Target"},
                     {"Method": "1. Standard", "Min": m1_min, "Max": m1_max, "Range": m1_max-m1_min, "Note": "Basic Stats"},
                     {"Method": "2. IQR Robust", "Min": m2_min, "Max": m2_max, "Range": m2_max-m2_min, "Note": "Filtered"},
                     {"Method": "3. Smart Hybrid", "Min": m3_min, "Max": m3_max, "Range": m3_max-m3_min, "Note": "Configurable"},
