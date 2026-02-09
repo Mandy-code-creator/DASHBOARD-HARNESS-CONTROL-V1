@@ -899,13 +899,16 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c3.metric("Pred EL", f"{preds['EL']:.1f}")
 
     # ================================
-    # 8. CONTROL LIMIT CALCULATOR (FINAL)
+# ================================
+    # 8. CONTROL LIMIT CALCULATOR (FINAL: COLOR FIXED + LAB DATA)
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
         st.markdown(f"### 🎛️ Control Limits Analysis: {g['Material']} | {g['Gauge_Range']}")
 
+        # Lấy dữ liệu
         data = sub["Hardness_LINE"].dropna()
+        data_lab = sub["Hardness_LAB"].dropna() # Lấy thêm dữ liệu Lab để vẽ đối chiếu
         
         if len(data) < 10:
             st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
@@ -920,50 +923,63 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 with col_par2:
                     iqr_k = st.number_input("2. IQR Sensitivity", 0.5, 3.0, 0.7, 0.1, key=unique_key_iqr)
 
-            # --- [CẬP NHẬT] LẤY LIMIT MỚI ---
+            # --- TÍNH TOÁN LIMIT (Dựa trên LINE) ---
             spec_min = sub["Limit_Min"].max() 
             spec_max = sub["Limit_Max"].min()
-            
             if pd.isna(spec_min): spec_min = 0
             if pd.isna(spec_max): spec_max = 0
             display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
 
             mu = data.mean()
 
-            # Methods Calculation
+            # Method 1: Standard
             std_dev = data.std()
             m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
             
+            # Method 2: IQR
             Q1 = data.quantile(0.25); Q3 = data.quantile(0.75); IQR = Q3 - Q1
             clean_data = data[~((data < (Q1 - iqr_k * IQR)) | (data > (Q3 + iqr_k * IQR)))]
             if clean_data.empty: clean_data = data
             mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
 
+            # Method 3: Hybrid
             m3_min = max(m2_min, spec_min)
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
 
+            # Method 4: I-MR
             mrs = np.abs(np.diff(data))
             mr_bar = np.mean(mrs)
             sigma_imr = mr_bar / 1.128
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
+            # --- VẼ BIỂU ĐỒ (CẬP NHẬT MÀU SẮC) ---
             col_chart, col_table = st.columns([2, 1])
             
             with col_chart:
                 fig, ax = plt.subplots(figsize=(10, 5))
-                ax.hist(data, bins=30, density=True, alpha=0.3, color="gray", label="Raw Data")
                 
+                # 1. Vẽ LINE (Màu Xanh Dương)
+                ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
+                
+                # 2. Vẽ LAB (Màu Cam - Vẽ chồng lên để so sánh)
+                if not data_lab.empty:
+                    ax.hist(data_lab, bins=30, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Reference)")
+                
+                # Vẽ các đường giới hạn
                 ax.axvline(m1_min, c="red", ls=":", alpha=0.4); ax.axvline(m1_max, c="red", ls=":", alpha=0.4, label="M1: Standard")
                 ax.axvline(m2_min, c="blue", ls="--", alpha=0.5); ax.axvline(m2_max, c="blue", ls="--", alpha=0.5, label="M2: IQR")
                 ax.axvline(m4_min, c="purple", ls="-.", lw=2); ax.axvline(m4_max, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
+                
+                # Vùng tối ưu (Hybrid)
                 ax.axvspan(m3_min, m3_max, color="green", alpha=0.15, label="M3: Hybrid Zone")
                 
+                # Spec Khách hàng
                 if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
                 if display_max > 0: ax.axvline(display_max, c="black", lw=2)
 
-                ax.set_title(f"Limits Comparison (σ={sigma_n})", fontsize=10, fontweight="bold")
+                ax.set_title(f"Control Limits Analysis (Line vs Lab)", fontsize=10, fontweight="bold")
                 ax.legend(loc="upper right", fontsize="small")
                 st.pyplot(fig)
 
@@ -978,8 +994,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["Min", "Max", "Range"]), use_container_width=True, hide_index=True)
                 
                 st.info("""
-                **Quick Comparison:**
-                * **M2 (IQR):** Filters out noise and outliers using robust algorithms.
-                * **M4 (I-MR):** Eliminates process drift influence using International SPC Standards.
-                * **Insight:** If **M4 is narrower than M1**, it indicates the presence of **Process Drift**.
+                **Color Guide:**
+                * 🔵 **Blue Bar:** LINE Data (Dữ liệu máy chạy).
+                * 🟠 **Orange Bar:** LAB Data (Dữ liệu phòng Lab).
+                * **Mẹo:** Nếu cột Cam (Lab) lệch hẳn so với cột Xanh (Line), cần kiểm tra lại độ chính xác của máy đo Online.
                 """)
