@@ -330,7 +330,7 @@ if view_mode == "🚀 Global Summary Dashboard":
             user_hrb = st.number_input("1️⃣ Nhập Độ cứng Mục tiêu (Target HRB):", value=60.0, step=0.5, format="%.1f")
         with col_in2:
             safety_k = st.selectbox("2️⃣ Sellect Safety Factor):", [1.0, 2.0, 3.0], index=1,
-                                    format_func=lambda x: f"{x} Sigma (Tin cậy {68 if x==1 else (95 if x==2 else 99.7)}%)")
+                                    format_func=lambda x: f"{x} Sigma (reliability {68 if x==1 else (95 if x==2 else 99.7)}%)")
 
         rows_ts, rows_ys, rows_el = [], [], []
         
