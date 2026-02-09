@@ -792,18 +792,41 @@ for _, g in valid.iterrows():
             c3.metric("Pred EL", f"{preds['EL']:.1f}")
 # ================================
 # ================================
-    # 8. CONTROL LIMIT CALCULATOR (FIXED: UNIQUE KEYS PER GROUP)
+    # 8. CONTROL LIMIT CALCULATOR (GLOBAL SETTINGS - NO DUPLICATE ERROR)
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         st.markdown("### 🎛️ 最佳控制限計算器 (Optimal Control Limit Calculator)")
-        st.info("比較三種確定控制限的方法。每個材料組都可以單獨設定參數。")
+        st.info("比較三種確定控制限的方法。請在下方設定全域參數 (Global Parameters)。")
 
-        # BẮT ĐẦU VÒNG LẶP (Sử dụng enumerate để lấy số thứ tự 'i' làm Key)
+        # --- 1. GLOBAL SETTINGS (CẤU HÌNH TOÀN CỤC - CHỈ TẠO 1 LẦN) ---
+        # Đặt bên ngoài vòng lặp để tránh lỗi Duplicate Key tuyệt đối
+        with st.container():
+            st.markdown("#### ⚙️ 全域參數設定 (Global Settings)")
+            col_par1, col_par2 = st.columns(2)
+            
+            with col_par1:
+                # Key cố định, không bao giờ trùng
+                sigma_n = st.number_input(
+                    "1. Sigma 倍數 (Sigma Multiplier)", 
+                    min_value=1.0, max_value=6.0, value=3.0, step=0.5,
+                    help="標準為 3.0。若需更嚴格控制，可降至 2.0 或 2.5。",
+                    key="global_sigma_input" 
+                )
+            
+            with col_par2:
+                # Key cố định, không bao giờ trùng
+                iqr_k = st.number_input(
+                    "2. IQR 靈敏度 (IQR Factor K)", 
+                    min_value=0.5, max_value=3.0, value=1.0, step=0.1,
+                    help="標準為 1.5。建議值 0.8~1.0 用於嚴格過濾。",
+                    key="global_iqr_input"
+                )
+            st.divider()
+
+        # --- 2. VÒNG LẶP HIỂN THỊ BIỂU ĐỒ ---
+        # Chỉ lặp để tính toán và vẽ, KHÔNG tạo ô nhập liệu trong này nữa
         for i, (_, g) in enumerate(valid.iterrows()):
             
-            # Tạo ID duy nhất cho nhóm này để làm Key cho Widget
-            unique_id = f"{g['Material']}_{g['Gauge_Range']}_{i}"
-
             # Lọc dữ liệu
             sub_grp = df[
                 (df["Rolling_Type"] == g["Rolling_Type"]) &
@@ -814,35 +837,16 @@ for _, g in valid.iterrows():
             ]
             
             # Tiêu đề nhóm
-            st.markdown(f"---")
             st.markdown(f"#### 📦 Group {i+1}: {g['Material']} | {g['Gauge_Range']}")
 
             data = sub_grp["Hardness_LINE"].dropna()
             
             if len(data) < 10:
                 st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
+                st.divider() # Kẻ dòng phân cách
                 continue
 
-            # --- 1. CẤU HÌNH THAM SỐ (RIÊNG CHO TỪNG NHÓM) ---
-            # Đặt trong Expander để gọn gàng
-            with st.expander(f"⚙️ 參數設定 (Settings for {g['Material']})", expanded=False):
-                col_par1, col_par2 = st.columns(2)
-                with col_par1:
-                    # KEY QUAN TRỌNG: Thêm unique_id vào key
-                    sigma_n = st.number_input(
-                        "1. Sigma 倍數", 
-                        min_value=1.0, max_value=6.0, value=3.0, step=0.5,
-                        key=f"sigma_{unique_id}" 
-                    )
-                with col_par2:
-                    # KEY QUAN TRỌNG: Thêm unique_id vào key
-                    iqr_k = st.number_input(
-                        "2. IQR 靈敏度", 
-                        min_value=0.5, max_value=3.0, value=1.0, step=0.1,
-                        key=f"iqr_{unique_id}"
-                    )
-
-            # --- 2. TÍNH TOÁN (Dựa trên input riêng của nhóm này) ---
+            # --- TÍNH TOÁN (Dùng sigma_n và iqr_k từ Global Settings) ---
             
             # Lấy Spec
             spec_min = sub_grp["Std_Min"].max() if "Std_Min" in sub_grp else 0
@@ -869,27 +873,32 @@ for _, g in valid.iterrows():
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
 
-            # --- 3. HIỂN THỊ BẢNG ---
-            comp_data = [
-                {"Method": "0. Current Spec", "Min": spec_min, "Max": display_max, "Range": (display_max-spec_min) if display_max>0 else 0, "Note": "Reference"},
-                {"Method": f"1. Standard {sigma_n}σ", "Min": m1_min, "Max": m1_max, "Range": m1_max-m1_min, "Note": "Loose"},
-                {"Method": f"2. IQR (K={iqr_k})", "Min": m2_min, "Max": m2_max, "Range": m2_max-m2_min, "Note": "Machine Cap"},
-                {"Method": "3. Smart Hybrid", "Min": m3_min, "Max": m3_max, "Range": m3_max-m3_min, "Note": "✅ Optimal"}
-            ]
-            st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["Min", "Max", "Range"]), use_container_width=True, hide_index=True)
-
-            # --- 4. VẼ BIỂU ĐỒ ---
-            fig, ax = plt.subplots(figsize=(12, 4))
-            ax.hist(data, bins=30, density=True, alpha=0.3, color="gray", label="Raw Data")
+            # --- HIỂN THỊ BẢNG & BIỂU ĐỒ ---
+            col_chart, col_table = st.columns([2, 1])
             
-            # Vẽ Limit lines
-            ax.axvline(m1_min, color="red", ls=":", alpha=0.5); ax.axvline(m1_max, color="red", ls=":", alpha=0.5)
-            ax.axvline(m2_min, color="blue", ls="--", alpha=0.8); ax.axvline(m2_max, color="blue", ls="--", alpha=0.8)
-            ax.axvspan(m3_min, m3_max, color="green", alpha=0.2, label="Smart Hybrid")
-            
-            if spec_min > 0: ax.axvline(spec_min, color="black", lw=2)
-            if display_max > 0: ax.axvline(display_max, color="black", lw=2)
+            with col_chart:
+                fig, ax = plt.subplots(figsize=(10, 4))
+                ax.hist(data, bins=30, density=True, alpha=0.3, color="gray", label="Raw Data")
+                
+                # Limit lines
+                ax.axvline(m1_min, color="red", ls=":", alpha=0.5); ax.axvline(m1_max, color="red", ls=":", alpha=0.5)
+                ax.axvline(m2_min, color="blue", ls="--", alpha=0.8); ax.axvline(m2_max, color="blue", ls="--", alpha=0.8)
+                ax.axvspan(m3_min, m3_max, color="green", alpha=0.2, label="Smart Hybrid")
+                
+                if spec_min > 0: ax.axvline(spec_min, color="black", lw=2)
+                if display_max > 0: ax.axvline(display_max, color="black", lw=2)
 
-            ax.set_title(f"Limits Analysis: {g['Material']} (σ={sigma_n}, K={iqr_k})", fontsize=10)
-            ax.legend(loc='upper right', fontsize='small')
-            st.pyplot(fig)
+                ax.set_title(f"Control Limits: {g['Material']} (σ={sigma_n}, K={iqr_k})", fontsize=10)
+                ax.legend(loc='upper right', fontsize='small')
+                st.pyplot(fig)
+
+            with col_table:
+                comp_data = [
+                    {"Method": "0. Spec", "Min": spec_min, "Max": display_max, "Range": (display_max-spec_min) if display_max>0 else 0, "Note": "Ref"},
+                    {"Method": f"1. {sigma_n}σ", "Min": m1_min, "Max": m1_max, "Range": m1_max-m1_min, "Note": "Loose"},
+                    {"Method": f"2. IQR", "Min": m2_min, "Max": m2_max, "Range": m2_max-m2_min, "Note": "Robust"},
+                    {"Method": "3. Hybrid", "Min": m3_min, "Max": m3_max, "Range": m3_max-m3_min, "Note": "✅ Best"}
+                ]
+                st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["Min", "Max", "Range"]), use_container_width=True, hide_index=True)
+            
+            st.divider() # Kẻ dòng phân cách giữa các nhóm
