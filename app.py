@@ -731,10 +731,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
     # ================================
     # ================================
     # ================================
-    # 7. AI PREDICTION (FINAL PRO: TOOLTIP FIXED)
+   # ================================
+    # 7. AI PREDICTION (ULTIMATE FIX: STABLE INPUT + PRO TOOLTIP)
     # ================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
-        st.markdown("### 🚀 AI Forecast (Linear Regression)")
+        st.markdown(f"### 🧮 AI Prediction: {g['Material']}") # Hiển thị tên vật liệu trên tiêu đề
+        
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"])
         
         if len(train_df) < 5:
@@ -743,15 +745,22 @@ for i, (_, g) in enumerate(valid.iterrows()):
             col1, col2 = st.columns([1, 3])
             with col1:
                 mean_h = train_df["Hardness_LINE"].mean()
-                target_h = st.number_input("🎯 Target Hardness", value=round(mean_h, 1), step=0.1, key=f"ai_{uuid.uuid4()}")
+                # [FIX QUAN TRỌNG] Dùng key theo biến 'i' để cố định, không bị reset khi nhập
+                target_h = st.number_input(
+                    "🎯 Target Hardness", 
+                    value=float(round(mean_h, 1)), 
+                    step=0.1, 
+                    key=f"ai_fix_{i}" 
+                )
             
             X_train = train_df[["Hardness_LINE"]].values
             preds = {}
-            # Tính toán dự báo
+            
+            # Tính toán dự báo ngay lập tức theo target_h mới
             for col in ["TS", "YS", "EL"]:
                 model = LinearRegression().fit(X_train, train_df[col].values)
                 val = model.predict([[target_h]])[0]
-                preds[col] = val # Giữ nguyên giá trị thô để tính toán
+                preds[col] = val 
 
             # --- VẼ BIỂU ĐỒ ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -769,10 +778,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     line=dict(color=colors[col], width=2, shape='spline'), 
                     name=f"{col} (History)",
                     opacity=0.6,
-                    hoverinfo='y' # Chỉ hiện giá trị khi rê vào đường dây
+                    hoverinfo='y' 
                 ), secondary_y=sec)
                 
-                # Lấy giá trị cuộn cuối cùng (Last Value)
+                # Lấy giá trị cuộn cuối cùng 
                 last_val_raw = train_df[col].iloc[-1]
                 
                 # Làm sạch số liệu (Clean Numbers)
@@ -788,7 +797,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     hoverinfo='skip'
                 ), secondary_y=sec)
 
-                # 3. Điểm Dự Báo (Với Tooltip Đầy Đủ)
+                # 3. Điểm Dự Báo (Tooltip Đầy Đủ)
                 fig.add_trace(go.Scatter(
                     x=[nxt], y=[preds[col]], 
                     mode='markers+text', 
@@ -796,12 +805,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     textposition="middle right" if nxt < 10 else "top center",
                     marker=dict(color=colors[col], size=14, symbol='diamond', line=dict(width=2, color='white')), 
                     name=f"Pred {col}",
-                    # [QUAN TRỌNG] Custom Tooltip hiển thị cả Pred và Last
+                    # Tooltip thông minh: Hiện cả Pred và Last để so sánh
                     hovertemplate=(
                         f"<b>🎯 Pred {col}: {pred_clean}</b><br>"
                         f"🔙 Last {col}: {last_clean}<br>"
                         f"📈 Change: {pred_clean - last_clean:.1f}"
-                        "<extra></extra>" # Ẩn tên trace thừa
+                        "<extra></extra>"
                     )
                 ), secondary_y=sec)
 
@@ -811,9 +820,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             fig.update_layout(
                 height=500,
-                title=dict(text="📈 Prediction Trajectory (With History Comparison)", font=dict(size=18)),
+                title=dict(text=f"📈 Prediction at Hardness = {target_h}", font=dict(size=18)),
                 plot_bgcolor="white",
-                hovermode="closest", # Đổi sang closest để focus vào từng điểm
+                hovermode="closest",
                 legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
                 margin=dict(l=20, r=20, t=80, b=20)
             )
@@ -827,10 +836,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.markdown("#### 🏁 Forecast Summary")
             c1, c2, c3 = st.columns(3)
             
-            # Tính toán Delta để hiển thị mũi tên tăng giảm
             def get_delta(p, l): return round(p - l, 1)
             
-            # Lấy giá trị cuối để so sánh
             last_ts = train_df["TS"].iloc[-1]
             last_ys = train_df["YS"].iloc[-1]
             last_el = train_df["EL"].iloc[-1]
