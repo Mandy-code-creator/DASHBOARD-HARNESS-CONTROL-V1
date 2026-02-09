@@ -1,6 +1,6 @@
 # ================================
-# FULL STREAMLIT APP – FINAL VERSION
-# FEATURES: REAL DATA DATE RANGE + GLOBAL COLORS + NG HIGHLIGHT + SMART RULES
+# FULL STREAMLIT APP – FINAL STABLE VERSION
+# FIXED: NameError (fig_to_png), High Contrast Charts, Real Date Range
 # ================================
 
 import streamlit as st
@@ -20,7 +20,17 @@ from plotly.subplots import make_subplots
 # PAGE CONFIG
 # ================================
 st.set_page_config(page_title="SPC Hardness Dashboard", layout="wide")
-st.title("📊 Hardness – Visual Analytics Dashboard")
+st.title("📊 SPC Hardness – Visual Analytics Dashboard")
+
+# ================================
+# UTILS (QUAN TRỌNG: KHÔNG ĐƯỢC XÓA)
+# ================================
+def fig_to_png(fig):
+    """Chuyển đổi biểu đồ Matplotlib thành ảnh PNG để download"""
+    buf = BytesIO()
+    fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
+    buf.seek(0)
+    return buf
 
 # ================================
 # LOAD MAIN DATA
@@ -38,14 +48,12 @@ raw = load_main()
 # ================================
 # PRE-PROCESSING & DATE HANDLING
 # ================================
-# 1. Calculate Data Period (NEW)
+# 1. Calculate Data Period
 data_period_str = "N/A"
 if "PRODUCTION DATE" in raw.columns:
-    # Convert to datetime, handle errors
     raw["PRODUCTION DATE"] = pd.to_datetime(raw["PRODUCTION DATE"], errors='coerce')
     min_date = raw["PRODUCTION DATE"].min()
     max_date = raw["PRODUCTION DATE"].max()
-    
     if pd.notna(min_date) and pd.notna(max_date):
         data_period_str = f"{min_date.strftime('%d/%m/%Y')} - {max_date.strftime('%d/%m/%Y')}"
 
@@ -418,6 +426,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax.set_xlabel("Coil Sequence"); ax.set_ylabel("Hardness (HRB)")
             ax.grid(alpha=0.25, linestyle="--"); ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=4)
             plt.tight_layout(); st.pyplot(fig)
+            
+            # --- [FIX] GỌI HÀM fig_to_png ĐÃ KHAI BÁO ---
             st.download_button("📥 Download Trend Chart", data=fig_to_png(fig), file_name=f"trend_{g['Material']}.png", mime="image/png", key=f"dl_tr_{uuid.uuid4()}")
 
         with tab_dist:
@@ -645,7 +655,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         else: st.error("❌ No coils found matching these specs.")
 
     # ================================
-    # 7. AI PREDICTION
+    # 7. AI PREDICTION (HIGH CONTRAST)
     # ================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown("### 🚀 AI Forecast (Linear Regression)")
@@ -665,8 +675,24 @@ for i, (_, g) in enumerate(valid.iterrows()):
             idx = list(range(len(train_df))); nxt = len(train_df)
             for col in ["TS","YS","EL"]:
                 sec = (col=="EL")
-                fig.add_trace(go.Scatter(x=idx, y=train_df[col], mode='lines', line=dict(color=colors[col], width=1, dash='dot'), opacity=0.3, name=col), secondary_y=sec)
-                fig.add_trace(go.Scatter(x=[nxt], y=[preds[col]], mode='markers+text', text=[f"{preds[col]:.0f}"], marker=dict(color=colors[col], size=15, symbol='diamond'), name=f"Pred {col}"), secondary_y=sec)
+                # [FIXED] Bold lines + Markers
+                fig.add_trace(go.Scatter(
+                    x=idx, y=train_df[col], 
+                    mode='lines+markers', 
+                    line=dict(color=colors[col], width=3), # Bold Line
+                    marker=dict(size=6, opacity=0.7),      # Visible Markers
+                    name=col
+                ), secondary_y=sec)
+                
+                # Prediction Point
+                fig.add_trace(go.Scatter(
+                    x=[nxt], y=[preds[col]], 
+                    mode='markers+text', 
+                    text=[f"{preds[col]:.0f}"], 
+                    marker=dict(color=colors[col], size=18, symbol='diamond'), 
+                    name=f"Pred {col}"
+                ), secondary_y=sec)
+
             fig.update_layout(height=500, title="Prediction Visualization")
             st.plotly_chart(fig, use_container_width=True)
             c1, c2, c3 = st.columns(3)
