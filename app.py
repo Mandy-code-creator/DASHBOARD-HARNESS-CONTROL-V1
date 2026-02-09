@@ -23,69 +23,46 @@ from plotly.subplots import make_subplots
 st.set_page_config(page_title="SPC Hardness Dashboard", layout="wide")
 st.title("📊 Hardness – Visual Analytics Dashboard")
 # ================================
-# ================================
-# GIAO DIỆN DARK MODE (XANH THAN ĐẬM)
-# ================================
 def add_custom_css():
     st.markdown("""
         <style>
-        /* 1. Nền chính (Main Background) - Gradient Xanh Than */
+        /* 1. Nền tổng thể: Xám nhạt hiện đại */
         .stApp {
-            background-color: #0f172a; /* Xanh đen */
-            background-image: linear-gradient(to bottom right, #0f172a, #1e293b);
-            color: #e2e8f0; /* Màu chữ trắng xám nhẹ */
-        }
-
-        /* 2. Sidebar (Thanh bên trái) - Màu đậm hơn */
-        [data-testid="stSidebar"] {
-            background-color: #111827;
-            border-right: 1px solid #374151;
-        }
-
-        /* 3. Tiêu đề (Header) - Màu xanh sáng nổi bật trên nền tối */
-        h1, h2, h3 {
-            color: #38bdf8 !important; /* Xanh da trời sáng */
-            font-family: 'Segoe UI', sans-serif;
-            font-weight: 700;
+            background-color: #f8f9fa;
         }
         
-        /* 4. Chữ thường và nhãn (Label) */
-        p, label, .stMarkdown {
-            color: #e2e8f0 !important;
+        /* 2. Sidebar: Trắng tinh + Đổ bóng nhẹ tách biệt */
+        [data-testid="stSidebar"] {
+            background-color: #ffffff;
+            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
+            border-right: none;
         }
 
-        /* 5. Các Block thông báo (Info/Warning) */
-        .stAlert {
-            background-color: #1e293b !important; /* Nền block tối */
-            color: white !important;
-            border: 1px solid #38bdf8;
+        /* 3. Tiêu đề: Màu xanh đen doanh nghiệp (Corporate Blue) */
+        h1, h2, h3 {
+            color: #2c3e50 !important;
+            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+            font-weight: 600;
         }
 
-        /* 6. Nút bấm (Button) - Nổi bật */
-        .stButton button {
-            background-color: #0284c7; /* Xanh dương đậm */
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-weight: bold;
-            transition: 0.3s;
-        }
-        .stButton button:hover {
-            background-color: #0ea5e9; /* Sáng lên khi rê chuột */
-            box-shadow: 0 0 10px #0ea5e9; /* Hiệu ứng phát sáng */
+        /* 4. Các khối dữ liệu (Metric Cards): Trắng + Bo góc + Đổ bóng */
+        [data-testid="stMetricValue"] {
+            background-color: white;
+            padding: 10px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+            color: #007bff; /* Số màu xanh dương */
         }
 
-        /* 7. Input Box (Ô nhập liệu) */
-        input[type="number"] {
-            background-color: #334155;
-            color: white;
-            border: 1px solid #475569;
+        /* 5. Bảng dữ liệu: Header màu xám đậm */
+        thead tr th:first-child {display:none}
+        tbody th {display:none}
+        .stDataFrame {
+            border: 1px solid #e0e0e0;
+            border-radius: 5px;
         }
         </style>
     """, unsafe_allow_html=True)
-
-# Gọi hàm ngay lập tức
-add_custom_css()
 # ================================
 # UTILS (QUAN TRỌNG: KHÔNG ĐƯỢC XÓA)
 # ================================
