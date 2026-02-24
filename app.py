@@ -715,15 +715,25 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.dataframe(pd.DataFrame(stats_data).style.format({"Mean": "{:.1f}", "Std Dev": "{:.1f}"}), use_container_width=True, hide_index=True)
 
     # ================================
-    # 5. LOOKUP
+   # ================================
+    # 5. LOOKUP (UPDATED: DYNAMIC DEFAULTS)
     # ================================
     elif view_mode == "🔍 Lookup: Hardness Range → Actual Mech Props":
         c1, c2 = st.columns(2)
-        mn = st.number_input("Min HRB", 58.0, step=0.5, key=f"lk1_{uuid.uuid4()}")
-        mx = st.number_input("Max HRB", 65.0, step=0.5, key=f"lk2_{uuid.uuid4()}")
+        
+        # Lấy min/max thực tế từ dữ liệu đang hiển thị
+        actual_min = float(sub["Hardness_LINE"].min())
+        actual_max = float(sub["Hardness_LINE"].max())
+        
+        # Thiết lập giá trị mặc định linh hoạt thay vì con số 58 và 65 cố định
+        mn = c1.number_input("Min HRB", value=actual_min, step=0.5, key=f"lk1_{uuid.uuid4()}")
+        mx = c2.number_input("Max HRB", value=actual_max, step=0.5, key=f"lk2_{uuid.uuid4()}")
+        
         filt = sub[(sub["Hardness_LINE"]>=mn) & (sub["Hardness_LINE"]<=mx)].dropna(subset=["TS","YS","EL"])
         st.success(f"Found {len(filt)} coils.")
-        if not filt.empty: st.dataframe(filt[["TS","YS","EL"]].describe().T)
+        
+        if not filt.empty: 
+            st.dataframe(filt[["TS","YS","EL"]].describe().T)
 
     # ================================
     # 6. REVERSE LOOKUP
