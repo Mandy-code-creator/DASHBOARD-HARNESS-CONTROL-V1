@@ -4,6 +4,7 @@
 # ================================
 
 
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -661,13 +662,19 @@ for i, (_, g) in enumerate(valid.iterrows()):
             if conclusion_data: 
                 st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
     # ================================
-    # 4. MECH PROPS ANALYSIS
+  # 4. MECH PROPS ANALYSIS
     # ================================
     elif view_mode == "⚙️ Mech Props Analysis":
-        st.markdown("### ⚙️ Mechanical Properties Analysis (Distribution vs Specs)")
+        
+        # --- 1. KHỞI TẠO 3 DANH SÁCH TỔNG HỢP RIÊNG BIỆT ---
+        if i == 0:
+            ts_summary, ys_summary, el_summary = [], [], []
+
+        st.markdown(f"### ⚙️ Mechanical Properties Analysis: {g['Material']} | {g['Gauge_Range']}")
         sub_mech = sub.dropna(subset=["TS","YS","EL"])
         
-        if sub_mech.empty: st.warning("⚠️ No Mech Data.")
+        if sub_mech.empty: 
+            st.warning("⚠️ No Mech Data.")
         else:
             props_config = [
                 {"col": "TS", "name": "Tensile Strength (TS)", "color": "#1f77b4", "min_c": "Standard TS min", "max_c": "Standard TS max"},
@@ -675,7 +682,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 {"col": "EL", "name": "Elongation (EL)", "color": "#ff7f0e", "min_c": "Standard EL min", "max_c": "Standard EL max"}
             ]
             fig, axes = plt.subplots(1, 3, figsize=(18, 6))
-            stats_data = []
+            
+            # Xử lý trích xuất Specs từ cột Product_Spec giống View 6
+            col_spec = "Product_Spec"
+            specs_str = f"Specs: {', '.join(str(x) for x in sub[col_spec].dropna().unique())}" if col_spec in sub.columns else "Specs: N/A"
 
             for j, cfg in enumerate(props_config):
                 col = cfg["col"]; data = sub_mech[col]; mean, std = data.mean(), data.std()
@@ -683,39 +693,70 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 spec_max = sub_mech[cfg["max_c"]].min() if cfg["max_c"] in sub_mech else 0
                 if pd.isna(spec_min): spec_min = 0
                 if pd.isna(spec_max): spec_max = 0
-                proc_min = mean - 3 * std; proc_max = mean + 3 * std
-
-                axes[j].hist(data, bins=20, color=cfg["color"], alpha=0.5, density=True, label="Actual Dist")
                 
+                # Tính toán giới hạn 3-Sigma
+                lcl_3s = mean - 3 * std
+                ucl_3s = mean + 3 * std
+                
+                # Vẽ biểu đồ (Giữ nguyên thiết kế gốc của bạn)
+                axes[j].hist(data, bins=20, color=cfg["color"], alpha=0.5, density=True)
                 if std > 0:
                     x_p = np.linspace(mean - 5 * std, mean + 5 * std, 200)
                     y_p = (1/(std*np.sqrt(2*np.pi))) * np.exp(-0.5*((x_p-mean)/std)**2)
-                    axes[j].plot(x_p, y_p, color=cfg["color"], lw=2, label="Normal Fit")
-                    
-                    view_min = min(data.min(), spec_min if spec_min > 0 else data.min(), proc_min)
-                    view_max = max(data.max(), spec_max if spec_max < 9000 else data.max(), proc_max)
-                    margin = (view_max - view_min) * 0.4
-                    axes[j].set_xlim(view_min - margin, view_max + margin)
-
-                if spec_min > 0: axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2, label=f"Spec Min {spec_min:.0f}")
-                if spec_max > 0 and spec_max < 9000: axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2, label=f"Spec Max {spec_max:.0f}")
-                axes[j].axvline(proc_min, color="blue", linestyle=":", linewidth=2, label=f"-3σ")
-                axes[j].axvline(proc_max, color="blue", linestyle=":", linewidth=2, label=f"+3σ")
-
+                    axes[j].plot(x_p, y_p, color=cfg["color"], lw=2)
+                
+                if spec_min > 0: axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2)
+                if spec_max > 0 and spec_max < 9000: axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2)
+                
+                # Vẽ thêm đường 3-Sigma trên biểu đồ để trực quan hóa
+                axes[j].axvline(lcl_3s, color="blue", linestyle=":", linewidth=1.5)
+                axes[j].axvline(ucl_3s, color="blue", linestyle=":", linewidth=1.5)
+                
                 axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
-                axes[j].legend(loc="upper right", fontsize="small"); axes[j].grid(alpha=0.3, linestyle="--")
+                axes[j].grid(alpha=0.3, linestyle="--")
 
-                stats_data.append({
-                    "Property": col,
+                # --- PHÂN LOẠI DỮ LIỆU VÀO 3 BẢNG RIÊNG VỚI CỘT 3-SIGMA ---
+                row_data = {
+                    "Specification List": specs_str,
+                    "Material": g["Material"],
+                    "Gauge": g["Gauge_Range"],
+                    "N": len(sub_mech),
                     "Limit (Spec)": f"{spec_min:.0f}~{spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else f"≥ {spec_min:.0f}",
-                    "Actual (Range)": f"{data.min():.1f}~{data.max():.1f}",
-                    "Mean": mean, "Std Dev": std,
-                    "Pass Rate": f"{(data >= spec_min).mean() * 100:.1f}%" if spec_min > 0 else "100%"
-                })
+                    "Actual Range": f"{data.min():.1f}~{data.max():.1f}",
+                    "Mean": f"{mean:.1f}",
+                    "Std Dev": f"{std:.1f}",
+                    "LCL (-3σ)": f"{lcl_3s:.1f}", # Giới hạn dưới 3-Sigma
+                    "UCL (+3σ)": f"{ucl_3s:.1f}"  # Giới hạn trên 3-Sigma
+                }
+                
+                if col == "TS": ts_summary.append(row_data)
+                elif col == "YS": ys_summary.append(row_data)
+                elif col == "EL": el_summary.append(row_data)
+            
             st.pyplot(fig)
-            st.dataframe(pd.DataFrame(stats_data).style.format({"Mean": "{:.1f}", "Std Dev": "{:.1f}"}), use_container_width=True, hide_index=True)
 
-    # ================================
+        # --- 2. HIỂN THỊ 3 BẢNG TỔNG HỢP RIÊNG BIỆT Ở CUỐI VÒNG LẶP ---
+        if i == len(valid) - 1:
+            st.markdown("---")
+            st.markdown(f"## 📊 Mechanical Properties Comprehensive Report: {qgroup}")
+            
+            def display_summary_table(title, data_list, color_code):
+                if data_list:
+                    st.markdown(f"#### {title}")
+                    df = pd.DataFrame(data_list)
+                    # Định dạng in đậm cột Mean và highlight cụm cột 3-Sigma
+                    styled_df = df.style.set_properties(**{'font-weight': 'bold'}, subset=['Mean']) \
+                                        .set_properties(**{'background-color': color_code, 'color': '#004085'}, subset=['LCL (-3σ)', 'UCL (+3σ)'])
+                    st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+            display_summary_table("1️⃣ Tensile Strength (TS) Summary", ts_summary, "#e6f2ff") 
+            display_summary_table("2️⃣ Yield Strength (YS) Summary", ys_summary, "#f2fff2")   
+            display_summary_table("3️⃣ Elongation (EL) Summary", el_summary, "#fff5e6")        
+
+            import datetime
+            today_str = datetime.datetime.now().strftime("%Y%m%d")
+            full_df = pd.concat([pd.DataFrame(ts_summary), pd.DataFrame(ys_summary), pd.DataFrame(el_summary)], keys=['TS','YS','EL'])
+            st.download_button("📥 Export Full Mech Report CSV", full_df.to_csv(index=True).encode('utf-8-sig'), f"Full_Mech_Report_{today_str}.csv")
    # ================================
     # 5. LOOKUP (UPDATED: DYNAMIC DEFAULTS)
     # ================================
