@@ -638,21 +638,27 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
             ax.set_title("Hardness vs Mechanical Properties"); ax.grid(True, ls="--", alpha=0.5); ax.legend(); st.pyplot(fig)
             
-            st.markdown("#### 📌 Quick Conclusion per Hardness Bin")
+            # --- CẬP NHẬT: BỌC BẢNG VÀO ST.EXPANDER ĐỂ THU GỌN ---
+        st.markdown("#### 📌 Quick Conclusion per Hardness Bin")
+        
+        # Sử dụng expander với trạng thái mặc định là đóng (expanded=False)
+        with st.expander("Click to view detailed Hardness Bin status", expanded=False):
             conclusion_data = []
             for row in summary.itertuples():
                 def get_status(val_min, val_max, spec_min, spec_max):
                     pass_min = (val_min >= spec_min) if (pd.notna(spec_min) and spec_min > 0) else True
                     pass_max = (val_max <= spec_max) if (pd.notna(spec_max) and spec_max > 0) else True
                     return "✅" if (pass_min and pass_max) else "⚠️"
+                
                 conclusion_data.append({
                     "Hardness Range": row.HRB_bin,
                     "TS Check": f"{get_status(row.TS_min, row.TS_max, row.Std_TS_min, row.Std_TS_max)}",
                     "YS Check": f"{get_status(row.YS_min, row.YS_max, row.Std_YS_min, row.Std_YS_max)}",
                     "EL Check": f"{get_status(row.EL_min, row.EL_max, row.Std_EL_min, row.Std_EL_max)}"
                 })
-            if conclusion_data: st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
-
+            
+            if conclusion_data: 
+                st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
     # ================================
     # 4. MECH PROPS ANALYSIS
     # ================================
