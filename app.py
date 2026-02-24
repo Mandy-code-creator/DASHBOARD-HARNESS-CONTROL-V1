@@ -1058,11 +1058,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c2.metric("Yield Strength (YS)", f"{int(round(preds['YS']))} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last")
             c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
     # ================================
-  # 8. CONTROL LIMIT CALCULATOR
+  # # 8. CONTROL LIMIT CALCULATOR
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
-        # --- KHỞI TẠO DANH SÁCH TỔNG HỢP Ở VÒNG LẶP ĐẦU TIÊN ---
+        # --- 1. KHỞI TẠO DANH SÁCH TỔNG HỢP Ở VÒNG LẶP ĐẦU TIÊN ---
         if i == 0:
             all_groups_summary = []
 
@@ -1081,7 +1081,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             # --- LẤY GIỚI HẠN CONTROL VÀ LAB ---
             spec_min = sub["Limit_Min"].max(); spec_max = sub["Limit_Max"].min()
             lab_min = sub["Lab_Min"].max(); lab_max = sub["Lab_Max"].min()
-            rule_name = sub["Rule_Name"].iloc[0] # Lấy tên Rule đang áp dụng
+            rule_name = sub["Rule_Name"].iloc[0] 
             
             if pd.isna(spec_min): spec_min = 0
             if pd.isna(spec_max): spec_max = 0
@@ -1093,17 +1093,22 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             mu = data.mean(); std_dev = data.std()
             
+            # M1: Standard
             m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
+            
+            # M2: IQR Robust
             Q1 = data.quantile(0.25); Q3 = data.quantile(0.75); IQR = Q3 - Q1
             clean_data = data[~((data < (Q1 - iqr_k * IQR)) | (data > (Q3 + iqr_k * IQR)))]
             if clean_data.empty: clean_data = data
             mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
             
+            # M3: Smart Hybrid
             m3_min = max(m2_min, spec_min)
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
             
+            # M4: I-MR (SPC)
             mrs = np.abs(np.diff(data)); mr_bar = np.mean(mrs); sigma_imr = mr_bar / 1.128
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
@@ -1113,14 +1118,22 @@ for i, (_, g) in enumerate(valid.iterrows()):
             else:
                 spec_str = f"{spec_min:.0f} ~ {display_max:.0f}"
 
-            # --- LƯU DỮ LIỆU CỦA VÒNG LẶP HIỆN TẠI VÀO DANH SÁCH ---
+            # --- 2. XỬ LÝ CHUỖI TIÊU CHUẨN (SPECS) ---
+            col_spec = "Product_Spec"
+            if col_spec in sub.columns:
+                unique_specs = sub[col_spec].dropna().unique()
+                specs_val = f"Specs: {', '.join(str(x) for x in unique_specs)}" if len(unique_specs) > 0 else "Specs: N/A"
+            else:
+                specs_val = "Specs: N/A"
+
+            # --- LƯU DỮ LIỆU VÀO DANH SÁCH TỔNG HỢP ---
             all_groups_summary.append({
-                "Quality": g["Quality_Group"],
+                "Specification List": specs_val, # <--- ĐÃ ĐỔI TỪ QUALITY SANG SPEC LIST
                 "Material": g["Material"],
                 "Gauge": g["Gauge_Range"],
                 "N": len(data),
-                "Rule Applied": rule_name, # <--- HIỂN THỊ TÊN RULE
-                "Current Spec": spec_str,  # <--- HIỂN THỊ ĐẦY ĐỦ CONTROL & LAB
+                "Rule Applied": rule_name,
+                "Current Spec": spec_str,
                 "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
                 "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
                 "M3: Smart Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
@@ -1128,6 +1141,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
 
+            # --- PHẦN VẼ BIỂU ĐỒ (GIỮ NGUYÊN THIẾT KẾ CỦA BẠN) ---
             col_chart, col_table = st.columns([2, 1])
             with col_chart:
                 fig, ax = plt.subplots(figsize=(10, 5))
@@ -1151,7 +1165,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     {"Method": "4. I-MR (SPC)", "Min": m4_min, "Max": m4_max, "Range": m4_max-m4_min, "Note": "✅ Professional"}
                 ]
                 st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["Min", "Max", "Range"]), use_container_width=True, hide_index=True)
-                st.info("**Color Guide:**\n* 🔵 LINE (Blue) vs 🟠 LAB (Orange)\n* **M4 (I-MR)** is best for detecting process drift.")
 
         # --- HIỂN THỊ BẢNG TỔNG HỢP Ở VÒNG LẶP CUỐI CÙNG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
@@ -1160,22 +1173,17 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             df_total = pd.DataFrame(all_groups_summary)
             
-            # Hàm tô màu Status
             def style_status(val):
                 color = 'red' if 'Narrow' in val else 'green'
                 return f'color: {color}; font-weight: bold'
 
-            # Áp dụng màu cho Status và Highlight cột M4
             styled_df = (
                 df_total.style
                 .applymap(style_status, subset=['Status'])
                 .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold', 'border': '2px solid #0056b3'}, subset=['M4: I-MR (Optimal)'])
             )
 
-            st.dataframe(
-                styled_df,
-                use_container_width=True,
-                hide_index=True
-            )
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
-            st.download_button("📥 Export Summary CSV", df_total.to_csv(index=False).encode('utf-8'), "SPC_Full_Summary.csv")
+            # Export CSV (Hỗ trợ tiếng Việt cho Specs)
+            st.download_button("📥 Export Summary CSV", df_total.to_csv(index=False).encode('utf-8-sig'), f"SPC_Summary_{str(qgroup).replace(' ','')}.csv")
