@@ -736,54 +736,41 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.dataframe(filt[["TS","YS","EL"]].describe().T)
 
     # ================================
-    # 6. REVERSE LOOKUP
+   # ================================
+    # 6. REVERSE LOOKUP (FIXED DUPLICATE ID)
     # ================================
     elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
         st.subheader("🎯 Target Hardness Calculator (Smart Limits)")
-        def calculate_smart_limits(name, col_val, col_spec_min, col_spec_max, step=5.0):
-            try:
-                series_val = pd.to_numeric(sub[col_val], errors='coerce')
-                valid_data = series_val[series_val > 0.1].dropna()
-                if valid_data.empty: return 0.0, 0.0
-                mean = float(valid_data.mean()); std = float(valid_data.std()) if len(valid_data) > 1 else 0.0
-                stat_min = mean - (3 * std); stat_max = mean + (3 * std)
-                
-                spec_min = 0.0
-                if col_spec_min in sub.columns:
-                    s_min = pd.to_numeric(sub[col_spec_min], errors='coerce').max()
-                    if not pd.isna(s_min): spec_min = float(s_min)
-                
-                spec_max = 9999.0
-                if col_spec_max in sub.columns:
-                    s_max_series = pd.to_numeric(sub[col_spec_max], errors='coerce')
-                    s_max_valid = s_max_series[s_max_series > 0]
-                    if not s_max_valid.empty: spec_max = float(s_max_valid.min())
-
-                is_no_spec = (spec_min < 1.0) and (spec_max > 9000.0)
-                final_min = max(stat_min, spec_min)
-                final_max = min(stat_max, spec_max) if spec_max < 9000 else (stat_max + (1 * std) if is_no_spec else stat_max)
-                if final_min >= final_max: final_min, final_max = stat_min, stat_max + std
-                return float(round(max(0.0, final_min) / step) * step), float(round(final_max / step) * step)
-            except: return 0.0, 0.0
+        
+        # ... (giữ nguyên hàm calculate_smart_limits bên trên) ...
 
         d_ys_min, d_ys_max = calculate_smart_limits('YS', 'YS', 'Standard YS min', 'Standard YS max', 5.0)
         d_ts_min, d_ts_max = calculate_smart_limits('TS', 'TS', 'Standard TS min', 'Standard TS max', 5.0)
         d_el_min, d_el_max = calculate_smart_limits('EL', 'EL', 'Standard EL min', 'Standard EL max', 1.0)
 
         c1, c2, c3 = st.columns(3)
-        r_ys_min = c1.number_input("Min YS", value=d_ys_min, step=5.0); r_ys_max = c1.number_input("Max YS", value=d_ys_max, step=5.0)
-        r_ts_min = c2.number_input("Min TS", value=d_ts_min, step=5.0); r_ts_max = c2.number_input("Max TS", value=d_ts_max, step=5.0)
-        r_el_min = c3.number_input("Min EL", value=d_el_min, step=1.0); r_el_max = c3.number_input("Max EL", value=d_el_max, step=1.0)
+        
+        # SỬA LỖI: Thêm tham số 'key' duy nhất cho mỗi ô nhập liệu bằng cách kết hợp biến 'i' từ vòng lặp
+        r_ys_min = c1.number_input("Min YS", value=d_ys_min, step=5.0, key=f"ys_min_{i}")
+        r_ys_max = c1.number_input("Max YS", value=d_ys_max, step=5.0, key=f"ys_max_{i}")
+        
+        r_ts_min = c2.number_input("Min TS", value=d_ts_min, step=5.0, key=f"ts_min_{i}")
+        r_ts_max = c2.number_input("Max TS", value=d_ts_max, step=5.0, key=f"ts_max_{i}")
+        
+        r_el_min = c3.number_input("Min EL", value=d_el_min, step=1.0, key=f"el_min_{i}")
+        r_el_max = c3.number_input("Max EL", value=d_el_max, step=1.0, key=f"el_max_{i}")
 
         filtered = sub[
             (sub['YS'] >= r_ys_min) & (sub['YS'] <= r_ys_max) &
             (sub['TS'] >= r_ts_min) & (sub['TS'] <= r_ts_max) &
             ((sub['EL'] >= r_el_min) | (r_el_min==0)) & (sub['EL'] <= r_el_max)
         ]
+        
         if not filtered.empty:
             st.success(f"✅ Target Hardness: **{filtered['Hardness_LINE'].min():.1f} ~ {filtered['Hardness_LINE'].max():.1f} HRB** (N={len(filtered)})")
             st.dataframe(filtered[['COIL_NO','Hardness_LINE','YS','TS','EL']], height=300)
-        else: st.error("❌ No coils found matching these specs.")
+        else: 
+            st.error("❌ No coils found matching these specs.")
 
     # ================================
     # ================================
