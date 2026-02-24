@@ -538,40 +538,50 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
     # ================================
   # ================================
-    # 8. CONTROL LIMIT CALCULATOR (Cập nhật bảng tổng hợp cuối trang)
+# 8. CONTROL LIMIT CALCULATOR
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
+        
+        # [SỬA LỖI NAMERROR Ở ĐÂY] 
+        # Khởi tạo biến tổng hợp ở vòng lặp đầu tiên (chỉ chứa các Material/Gauge của Group hiện tại)
+        if i == 0:
+            all_groups_summary = []
+
         st.markdown(f"### 🎛️ Control Limits Analysis: {g['Material']} | {g['Gauge_Range']}")
         data = sub["Hardness_LINE"].dropna()
         data_lab = sub["Hardness_LAB"].dropna()
         
         if len(data) < 10: 
-            st.warning(f"⚠️ {g['Material']}: Insufficient data (N={len(data)})")
+            st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
         else:
-            with st.expander("⚙️ Settings", expanded=False):
+            with st.expander("⚙️ 設定參數 (Settings)", expanded=False):
                 c1, c2 = st.columns(2)
                 sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 3.0, 0.5, key=f"sig_{i}")
                 iqr_k = c2.number_input("2. IQR Sensitivity", 0.5, 3.0, 0.7, 0.1, key=f"iqr_{i}")
 
-            spec_min = sub["Limit_Min"].max()
-            spec_max = sub["Limit_Max"].min()
+            spec_min = sub["Limit_Min"].max(); spec_max = sub["Limit_Max"].min()
+            if pd.isna(spec_min): spec_min = 0
+            if pd.isna(spec_max): spec_max = 0
             display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
-            mu = data.mean()
-            std_dev = data.std()
+            mu = data.mean(); std_dev = data.std()
             
-            # --- Tính toán các phương pháp ---
             m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
-            
-            # I-MR (SPC chuyên nghiệp)
-            mrs = np.abs(np.diff(data))
-            mr_bar = np.mean(mrs) if len(mrs) > 0 else 0
-            sigma_imr = mr_bar / 1.128
+            Q1 = data.quantile(0.25); Q3 = data.quantile(0.75); IQR = Q3 - Q1
+            clean_data = data[~((data < (Q1 - iqr_k * IQR)) | (data > (Q3 + iqr_k * IQR)))]
+            if clean_data.empty: clean_data = data
+            mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
+            m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
+            m3_min = max(m2_min, spec_min)
+            m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
+            if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
+            mrs = np.abs(np.diff(data)); mr_bar = np.mean(mrs); sigma_imr = mr_bar / 1.128
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
-            # --- LƯU DỮ LIỆU VÀO DANH SÁCH TỔNG HỢP ---
+            # --- LƯU KẾT QUẢ VÀO DANH SÁCH TỔNG HỢP CỦA GROUP HIỆN TẠI ---
             all_groups_summary.append({
+                "Quality": g["Quality_Group"],
                 "Material": g["Material"],
-                "Gauge Range": g["Gauge_Range"],
+                "Gauge": g["Gauge_Range"],
                 "Current Spec": f"{spec_min:.1f} ~ {display_max:.1f}",
                 "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
                 "M4: I-MR (SPC)": f"{m4_min:.1f} ~ {m4_max:.1f}",
@@ -579,44 +589,46 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
 
-            # --- VẼ BIỂU ĐỒ CHI TIẾT (Giữ nguyên giao diện cũ của bạn) ---
             col_chart, col_table = st.columns([2, 1])
             with col_chart:
                 fig, ax = plt.subplots(figsize=(10, 5))
-                ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE")
-                ax.axvline(m1_min, c="red", ls=":", label="M1: Standard")
-                ax.axvline(m1_max, c="red", ls=":")
-                ax.axvline(m4_min, c="purple", ls="-.", label="M4: I-MR")
-                ax.axvline(m4_max, c="purple", ls="-.")
-                ax.set_title(f"Limits Comparison: {g['Material']}")
-                ax.legend()
-                st.pyplot(fig)
-                plt.close(fig)
+                ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
+                if not data_lab.empty: ax.hist(data_lab, bins=30, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
+                ax.axvline(m1_min, c="red", ls=":", alpha=0.4); ax.axvline(m1_max, c="red", ls=":", alpha=0.4, label="M1: Standard")
+                ax.axvline(m2_min, c="blue", ls="--", alpha=0.5); ax.axvline(m2_max, c="blue", ls="--", alpha=0.5, label="M2: IQR")
+                ax.axvline(m4_min, c="purple", ls="-.", lw=2); ax.axvline(m4_max, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
+                ax.axvspan(m3_min, m3_max, color="green", alpha=0.15, label="M3: Hybrid Zone")
+                if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
+                if display_max > 0: ax.axvline(display_max, c="black", lw=2)
+                ax.set_title(f"Limits Comparison (σ={sigma_n})", fontsize=10, fontweight="bold")
+                ax.legend(loc="upper right", fontsize="small"); st.pyplot(fig)
 
             with col_table:
-                st.dataframe(pd.DataFrame([
-                    {"Method": "Spec", "Min": spec_min, "Max": display_max},
-                    {"Method": "M1: Standard", "Min": m1_min, "Max": m1_max},
-                    {"Method": "M4: I-MR", "Min": m4_min, "Max": m4_max}
-                ]).style.format("{:.1f}", subset=["Min", "Max"]), hide_index=True)
+                comp_data = [
+                    {"Method": "0. Spec (Rule)", "Min": spec_min, "Max": display_max, "Range": display_max-spec_min if display_max>0 else 0, "Note": "Target"},
+                    {"Method": "1. Standard", "Min": m1_min, "Max": m1_max, "Range": m1_max-m1_min, "Note": "Basic Stats"},
+                    {"Method": "2. IQR Robust", "Min": m2_min, "Max": m2_max, "Range": m2_max-m2_min, "Note": "Filtered"},
+                    {"Method": "3. Smart Hybrid", "Min": m3_min, "Max": m3_max, "Range": m3_max-m3_min, "Note": "Configurable"},
+                    {"Method": "4. I-MR (SPC)", "Min": m4_min, "Max": m4_max, "Range": m4_max-m4_min, "Note": "✅ Professional"}
+                ]
+                st.dataframe(pd.DataFrame(comp_data).style.format("{:.1f}", subset=["Min", "Max", "Range"]), use_container_width=True, hide_index=True)
+                st.info("**Color Guide:**\n* 🔵 LINE (Blue) vs 🟠 LAB (Orange)\n* **M4 (I-MR)** is best for detecting process drift.")
 
-            # --- HIỂN THỊ BẢNG TỔNG HỢP Ở CUỐI TRANG ---
-            if i == len(valid) - 1:
-                st.markdown("---")
-                st.markdown("## 📊 Comprehensive Control Limits Summary (All Groups)")
-                
-                df_total = pd.DataFrame(all_groups_summary)
-                
-                def style_status(val):
-                    color = 'red' if 'Narrow' in val else 'green'
-                    return f'color: {color}; font-weight: bold'
+        # =========================================================
+        # HIỂN THỊ BẢNG TỔNG HỢP Ở CUỐI TRANG CHO GROUP ĐANG CHỌN
+        # =========================================================
+        if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
+            st.markdown("---")
+            st.markdown(f"## 📊 Summary of Control Limits for {qgroup}")
+            
+            df_total = pd.DataFrame(all_groups_summary)
+            
+            def style_status(val):
+                color = 'red' if 'Narrow' in val else 'green'
+                return f'color: {color}; font-weight: bold'
 
-                st.dataframe(
-                    df_total.style.applymap(style_status, subset=['Status']),
-                    use_container_width=True,
-                    hide_index=True
-                )
-                
-                # Nút tải báo cáo
-                csv = df_total.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Export Summary CSV", csv, "SPC_Full_Report.csv", "text/csv")
+            st.dataframe(
+                df_total.style.applymap(style_status, subset=['Status']),
+                use_container_width=True,
+                hide_index=True
+            )
