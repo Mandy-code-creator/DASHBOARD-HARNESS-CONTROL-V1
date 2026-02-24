@@ -1058,6 +1058,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c2.metric("Yield Strength (YS)", f"{int(round(preds['YS']))} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last")
             c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
     # ================================
+    
   # # 8. CONTROL LIMIT CALCULATOR
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
