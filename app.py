@@ -278,17 +278,69 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax.axvline(lo, color="red", ls="--"); ax.axvline(hi, color="red", ls="--")
             st.pyplot(fig)
 
-    # 3. CORRELATION
+     # 3. CORRELATION
+    # ================================
     elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
+        st.markdown("### 🔗 Correlation: Hardness vs Mechanical Properties")
         sub_corr = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"])
-        summary = sub_corr.groupby(pd.cut(sub_corr["Hardness_LAB"], bins=[0,56,58,60,62,65,70,75,80,85,88,92,97,100], right=False), observed=True).agg(TS_mean=("TS","mean"), YS_mean=("YS","mean"), EL_mean=("EL","mean")).reset_index()
-        fig, ax = plt.subplots(figsize=(10, 5))
-        ax.plot(summary.index, summary["TS_mean"], marker="o", label="TS")
-        ax.plot(summary.index, summary["YS_mean"], marker="s", label="YS")
-        st.pyplot(fig)
+        bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
+        labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
+        sub_corr["HRB_bin"] = pd.cut(sub_corr["Hardness_LAB"], bins=bins, labels=labels, right=False)
+        
+        summary = (sub_corr.groupby("HRB_bin", observed=True).agg(
+            N_coils=("COIL_NO","count"),
+            TS_mean=("TS","mean"), TS_min=("TS","min"), TS_max=("TS","max"),
+            YS_mean=("YS","mean"), YS_min=("YS","min"), YS_max=("YS","max"),
+            EL_mean=("EL","mean"), EL_min=("EL","min"), EL_max=("EL","max"),
+            Std_TS_min=("Standard TS min", "max"), Std_TS_max=("Standard TS max", "max"),
+            Std_YS_min=("Standard YS min", "max"), Std_YS_max=("Standard YS max", "max"),
+            Std_EL_min=("Standard EL min", "max"), Std_EL_max=("Standard EL max", "max"),
+        ).reset_index())
+        summary = summary[summary["N_coils"]>0]
+
+        if not summary.empty:
+            x = np.arange(len(summary))
+            fig, ax = plt.subplots(figsize=(15,6))
+            def plot_prop(x, y, ymin, ymax, c, lbl, m):
+                ax.plot(x, y, marker=m, color=c, label=lbl, lw=2)
+                ax.fill_between(x, ymin, ymax, color=c, alpha=0.1)
+            plot_prop(x, summary["TS_mean"], summary["TS_min"], summary["TS_max"], "#1f77b4", "TS", "o")
+            plot_prop(x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "#2ca02c", "YS", "s")
+            plot_prop(x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL", "^")
+
+            for j, row in enumerate(summary.itertuples()):
+                ax.annotate(f"{row.TS_mean:.0f}", (x[j], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#1f77b4")
+                ax.annotate(f"{row.YS_mean:.0f}", (x[j], row.YS_mean), xytext=(0,-15), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#2ca02c")
+                el_spec = row.Std_EL_min
+                is_fail = (el_spec > 0) and (row.EL_mean < el_spec)
+                lbl = f"{row.EL_mean:.1f}%" + ("❌" if is_fail else "")
+                clr = "red" if is_fail else "#ff7f0e"
+                ax.annotate(lbl, (x[j], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color=clr, fontweight=("bold" if is_fail else "normal"))
+
+            ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
+            ax.set_title("Hardness vs Mechanical Properties"); ax.grid(True, ls="--", alpha=0.5); ax.legend(); st.pyplot(fig)
+            
+            # --- CẬP NHẬT: BỌC BẢNG VÀO ST.EXPANDER ĐỂ THU GỌN ---
         st.markdown("#### 📌 Quick Conclusion per Hardness Bin")
-        with st.expander("Click to view details", expanded=False):
-            st.dataframe(summary, use_container_width=True)
+        
+        # Sử dụng expander với trạng thái mặc định là đóng (expanded=False)
+        with st.expander("Click to view detailed Hardness Bin status", expanded=False):
+            conclusion_data = []
+            for row in summary.itertuples():
+                def get_status(val_min, val_max, spec_min, spec_max):
+                    pass_min = (val_min >= spec_min) if (pd.notna(spec_min) and spec_min > 0) else True
+                    pass_max = (val_max <= spec_max) if (pd.notna(spec_max) and spec_max > 0) else True
+                    return "✅" if (pass_min and pass_max) else "⚠️"
+                
+                conclusion_data.append({
+                    "Hardness Range": row.HRB_bin,
+                    "TS Check": f"{get_status(row.TS_min, row.TS_max, row.Std_TS_min, row.Std_TS_max)}",
+                    "YS Check": f"{get_status(row.YS_min, row.YS_max, row.Std_YS_min, row.Std_YS_max)}",
+                    "EL Check": f"{get_status(row.EL_min, row.EL_max, row.Std_EL_min, row.Std_EL_max)}"
+                })
+            
+            if conclusion_data: 
+                st.dataframe(pd.DataFrame(conclusion_data), use_container_width=True, hide_index=True)
 
     # 4. MECH PROPS ANALYSIS
     elif view_mode == "⚙️ Mech Props Analysis":
