@@ -714,6 +714,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ts_summary, ys_summary, el_summary = [], [], []
 
         st.markdown(f"### ⚙️ Mechanical Properties Analysis: {g['Material']} | {g['Gauge_Range']}")
+        # Lấy dữ liệu cơ tính và giữ lại Hardness_LINE để tính dải độ cứng
         sub_mech = sub.dropna(subset=["TS","YS","EL"])
         
         if sub_mech.empty: 
@@ -730,6 +731,16 @@ for i, (_, g) in enumerate(valid.iterrows()):
             col_spec = "Product_Spec"
             specs_str = f"Specs: {', '.join(str(x) for x in sub[col_spec].dropna().unique())}" if col_spec in sub.columns else "Specs: N/A"
 
+            # --- TÍNH TOÁN DẢI ĐỘ CỨNG THỰC TẾ ---
+            if "Hardness_LINE" in sub_mech.columns:
+                h_data = sub_mech["Hardness_LINE"].dropna()
+                if not h_data.empty:
+                    hardness_range_str = f"{h_data.min():.1f} ~ {h_data.max():.1f}"
+                else:
+                    hardness_range_str = "N/A"
+            else:
+                hardness_range_str = "N/A"
+
             for j, cfg in enumerate(props_config):
                 col = cfg["col"]; data = sub_mech[col]; mean, std = data.mean(), data.std()
                 spec_min = sub_mech[cfg["min_c"]].max() if cfg["min_c"] in sub_mech else 0
@@ -741,7 +752,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 lcl_3s = mean - 3 * std
                 ucl_3s = mean + 3 * std
                 
-                # Vẽ biểu đồ (Giữ nguyên thiết kế gốc của bạn)
+                # Vẽ biểu đồ
                 axes[j].hist(data, bins=20, color=cfg["color"], alpha=0.5, density=True)
                 if std > 0:
                     x_p = np.linspace(mean - 5 * std, mean + 5 * std, 200)
@@ -758,18 +769,19 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
                 axes[j].grid(alpha=0.3, linestyle="--")
 
-                # --- PHÂN LOẠI DỮ LIỆU VÀO 3 BẢNG RIÊNG VỚI CỘT 3-SIGMA ---
+                # --- PHÂN LOẠI DỮ LIỆU VÀO 3 BẢNG RIÊNG VỚI CỘT 3-SIGMA VÀ HARDNESS RANGE ---
                 row_data = {
                     "Specification List": specs_str,
                     "Material": g["Material"],
                     "Gauge": g["Gauge_Range"],
                     "N": len(sub_mech),
+                    "Hardness Range (HRB)": hardness_range_str, # <--- CỘT MỚI: DẢI ĐỘ CỨNG THỰC TẾ
                     "Limit (Spec)": f"{spec_min:.0f}~{spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else f"≥ {spec_min:.0f}",
                     "Actual Range": f"{data.min():.1f}~{data.max():.1f}",
                     "Mean": f"{mean:.1f}",
                     "Std Dev": f"{std:.1f}",
-                    "LCL (-3σ)": f"{lcl_3s:.1f}", # Giới hạn dưới 3-Sigma
-                    "UCL (+3σ)": f"{ucl_3s:.1f}"  # Giới hạn trên 3-Sigma
+                    "LCL (-3σ)": f"{lcl_3s:.1f}", 
+                    "UCL (+3σ)": f"{ucl_3s:.1f}"  
                 }
                 
                 if col == "TS": ts_summary.append(row_data)
@@ -787,8 +799,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 if data_list:
                     st.markdown(f"#### {title}")
                     df = pd.DataFrame(data_list)
-                    # Định dạng in đậm cột Mean và highlight cụm cột 3-Sigma
+                    # Định dạng in đậm cột Mean, Hardness Range và highlight cụm cột 3-Sigma
                     styled_df = df.style.set_properties(**{'font-weight': 'bold'}, subset=['Mean']) \
+                                        .set_properties(**{'background-color': '#f0f8ff', 'font-weight': 'bold', 'color': '#0056b3'}, subset=['Hardness Range (HRB)']) \
                                         .set_properties(**{'background-color': color_code, 'color': '#004085'}, subset=['LCL (-3σ)', 'UCL (+3σ)'])
                     st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
@@ -1058,7 +1071,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c2.metric("Yield Strength (YS)", f"{int(round(preds['YS']))} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last")
             c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
     # ================================
-    
   # # 8. CONTROL LIMIT CALCULATOR
     # ================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
