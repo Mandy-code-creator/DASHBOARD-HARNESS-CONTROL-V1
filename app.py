@@ -4,6 +4,7 @@
 # ================================
 
 
+
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -183,12 +184,12 @@ def apply_company_rules(row):
 
     if is_cold and is_target_q:
         mat = str(row["Material"]).upper().strip()
-        if mat == "A1081":
+        if mat in ["A1081","A1081B"]:
             return 56.0, 62.0, 52.0, 70.0, "Rule A1081 (Cold)"
-        elif mat == "A108M":
+        elif mat in ["A108M","A108MR"]:
             return 60.0, 68.0, 55.0, 72.0, "Rule A108M (Cold)"
-        elif mat in ["A108", "A108G", "A108R", "A108MR", "A1081B"]:
-            return 58.0, 62.0, 52.0, 65.0, "Rule A108-Gen (Cold)"
+        elif mat in ["A108", "A108G", "A108R"]:
+            return 58.0, 62.0, 52.0, 65.0, "Rule A108 (Cold)"
 
     return std_min, std_max, lab_min, lab_max, rule_name
 
