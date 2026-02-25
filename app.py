@@ -4,7 +4,6 @@
 # ================================
 
 
-
 import streamlit as st
 import pandas as pd
 import numpy as np
@@ -664,15 +663,17 @@ if view_mode == "📊 Executive KPI Dashboard":
                 st.dataframe(styled_risk, use_container_width=True, hide_index=True)
                 
                 # ==========================================
-                # 4. VISUAL DEEP DIVE (HISTOGRAMS)
+                # 4. VISUAL DEEP DIVE (HISTOGRAMS) - ĐÃ CẬP NHẬT TOP 5
                 # ==========================================
-                st.markdown("#### 🔔 Visual Deep Dive: Top Risk Distributions")
-                st.caption("Visualizing the 'bell curve' of the top 2 most critical specifications to expose control limit breaches.")
+                st.markdown("#### 🔔 Visual Deep Dive: Top 5 Risk Distributions")
+                st.caption("Visualizing the 'bell curve' of the top 5 most critical specifications to expose control limit breaches.")
                 
-                top_2_risks = risk_top.head(2).to_dict('records')
-                chart_cols = st.columns(len(top_2_risks))
+                top_5_risks = risk_top.head(5).to_dict('records') # <-- Đổi thành head(5)
                 
-                for idx, risk_item in enumerate(top_2_risks):
+                # Tạo 3 cột để hiển thị 5 biểu đồ gọn gàng
+                chart_cols = st.columns(3) 
+                
+                for idx, risk_item in enumerate(top_5_risks):
                     spec_name = risk_item["Specification"]
                     mat_name = risk_item["Material"]
                     gauge_val = risk_item["Gauge"]
@@ -698,20 +699,31 @@ if view_mode == "📊 Executive KPI Dashboard":
                             y_axis = (1/(std_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_axis - mean_val) / std_val)**2)
                             ax.plot(x_axis, y_axis, color="#cc0000", lw=2, label="Distribution Fit")
                         
-                        # Control Limits
+                        # Control Limits (Sản xuất)
                         l_min = target_data["Limit_Min"].iloc[0]
                         l_max = target_data["Limit_Max"].iloc[0]
+                        # Lab Limits (Từ dữ liệu Rule công ty)
+                        lb_min = target_data["Lab_Min"].iloc[0] if "Lab_Min" in target_data.columns else 0
+                        lb_max = target_data["Lab_Max"].iloc[0] if "Lab_Max" in target_data.columns else 0
                         
-                        ax.axvline(l_min, color="black", linestyle="--", lw=1.5, label=f"LSL ({l_min:.0f})")
+                        # Vẽ Giới hạn Control
+                        ax.axvline(l_min, color="black", linestyle="--", lw=1.5, label=f"Ctrl LSL ({l_min:.0f})")
                         if l_max > 0 and l_max < 9000:
-                            ax.axvline(l_max, color="black", linestyle="--", lw=1.5, label=f"USL ({l_max:.0f})")
+                            ax.axvline(l_max, color="black", linestyle="--", lw=1.5, label=f"Ctrl USL ({l_max:.0f})")
                         
-                        ax.set_title(f"Spec: {spec_name}\nMaterial: {mat_name} | N={len(hard_data)}", fontsize=10, fontweight="bold")
+                        # Vẽ Giới hạn Lab
+                        if pd.notna(lb_min) and lb_min > 0:
+                            ax.axvline(lb_min, color="purple", linestyle=":", lw=1.5, label=f"Lab LSL ({lb_min:.0f})")
+                        if pd.notna(lb_max) and 0 < lb_max < 9000:
+                            ax.axvline(lb_max, color="purple", linestyle=":", lw=1.5, label=f"Lab USL ({lb_max:.0f})")
+                        
+                        ax.set_title(f"TOP {idx+1}: {spec_name}\nMaterial: {mat_name} | N={len(hard_data)}", fontsize=10, fontweight="bold")
                         ax.set_xlabel("Hardness (HRB)", fontsize=9)
                         ax.legend(fontsize=8, loc="upper right")
                         ax.grid(alpha=0.3, linestyle=":")
                         
-                        chart_cols[idx].pyplot(fig)
+                        # Vẽ tuần tự vào các cột
+                        chart_cols[idx % 3].pyplot(fig)
                 
                 # ==========================================
                 # 5. REPORT EXPORT (PDF & CSV)
