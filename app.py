@@ -511,7 +511,6 @@ if view_mode == "📊 Executive KPI Dashboard":
             def clean_num(val, is_pct=False):
                 if pd.isna(val): return "0%" if is_pct else "0"
                 v = round(float(val), 2)
-                # Keep decimal only if it's not .00
                 res = str(int(v)) if v.is_integer() else str(v)
                 return f"{res}%" if is_pct else res
 
@@ -576,7 +575,7 @@ if view_mode == "📊 Executive KPI Dashboard":
             risk_summary['Mech Yield (%)'] = (risk_summary['Mech_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
             risk_summary['HRB Yield (%)'] = (risk_summary['HRB_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
             
-            # --- AI DIAGNOSTIC LOGIC ---
+            # (Logic tính toán Root Cause & Action Plan vẫn được giữ nguyên trong data nhưng không hiển thị)
             def diagnose_cause(row):
                 if row['HRB Yield (%)'] >= 100: return "-"
                 cause = []
@@ -586,7 +585,6 @@ if view_mode == "📊 Executive KPI Dashboard":
                     cause.append("Mean Too Low")
                 if row['USL'] < 9000 and row['Hardness_Mean'] >= row['USL'] - 1.5: 
                     cause.append("Mean Too High")
-                
                 if not cause: cause.append("Narrow Spec Limit")
                 return " + ".join(cause)
 
@@ -615,63 +613,50 @@ if view_mode == "📊 Executive KPI Dashboard":
                 }
                 risk_top = risk_top.rename(columns=rename_dict)
                 
-                cols_order = ["Specification", "Quality", "Material", "Gauge", "Tested Coils", "Mech Yield (%)", "HRB Yield (%)", "Avg Hardness", "Hardness Std Dev", "Root Cause", "Action Plan"]
+                # --- CHỈNH SỬA: LOẠI BỎ Root Cause VÀ Action Plan KHỎI HIỂN THỊ ---
+                cols_order = ["Specification", "Quality", "Material", "Gauge", "Tested Coils", "Mech Yield (%)", "HRB Yield (%)", "Avg Hardness", "Hardness Std Dev"]
                 cols_order = [c for c in cols_order if c in risk_top.columns]
-                risk_top = risk_top[cols_order]
+                risk_top_display = risk_top[cols_order].copy()
                 
-                risk_top['Mech Yield (%)'] = risk_top['Mech Yield (%)'].apply(lambda x: clean_num(x, True))
-                risk_top['HRB Yield (%)'] = risk_top['HRB Yield (%)'].apply(lambda x: clean_num(x, True))
-                risk_top['Avg Hardness'] = risk_top['Avg Hardness'].apply(lambda x: clean_num(x))
-                risk_top['Hardness Std Dev'] = risk_top['Hardness Std Dev'].apply(lambda x: clean_num(x))
+                risk_top_display['Mech Yield (%)'] = risk_top_display['Mech Yield (%)'].apply(lambda x: clean_num(x, True))
+                risk_top_display['HRB Yield (%)'] = risk_top_display['HRB_Yield (%)'].apply(lambda x: clean_num(x, True)) if 'HRB_Yield (%)' in risk_top_display else risk_top_display['HRB Yield (%)'].apply(lambda x: clean_num(x, True))
+                risk_top_display['Avg Hardness'] = risk_top_display['Avg Hardness'].apply(lambda x: clean_num(x))
+                risk_top_display['Hardness Std Dev'] = risk_top_display['Hardness Std Dev'].apply(lambda x: clean_num(x))
                 
                 def style_risk(val):
                     try:
                         num = float(str(val).replace('%', '').strip())
                         if num < 100: return 'color: #d32f2f; font-weight: bold; background-color: #ffebee'
                         if num >= 100: return 'color: #388e3c; font-weight: bold'
-                    except:
-                        pass
+                    except: pass
                     return ''
                 
                 def style_std(val):
                     try:
                         num = float(str(val).strip())
                         if num > 3.0: return 'color: #f57c00; font-weight: bold'
-                    except:
-                        pass
-                    return ''
-                
-                def style_action(val):
-                    if "Check" in str(val): return 'color: #d32f2f; font-weight: bold'
-                    if "⚙️" in str(val): return 'color: #1976d2; font-weight: bold'
-                    if "✅" in str(val): return 'color: #388e3c'
+                    except: pass
                     return ''
 
-                # Update style map for Pandas compatability
-                styled_risk = risk_top.style
+                styled_risk = risk_top_display.style
                 if hasattr(styled_risk, "map"):
                     styled_risk = (styled_risk
                                    .map(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
-                                   .map(style_std, subset=['Hardness Std Dev'])
-                                   .map(style_action, subset=['Action Plan']))
+                                   .map(style_std, subset=['Hardness Std Dev']))
                 else:
                     styled_risk = (styled_risk
                                    .applymap(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
-                                   .applymap(style_std, subset=['Hardness Std Dev'])
-                                   .applymap(style_action, subset=['Action Plan']))
+                                   .applymap(style_std, subset=['Hardness Std Dev']))
                 
-                # Render Table
                 st.dataframe(styled_risk, use_container_width=True, hide_index=True)
                 
                 # ==========================================
-                # 4. VISUAL DEEP DIVE (HISTOGRAMS) - ĐÃ CẬP NHẬT TOP 5
+                # 4. VISUAL DEEP DIVE (HISTOGRAMS) - TOP 5
                 # ==========================================
                 st.markdown("#### 🔔 Visual Deep Dive: Top 5 Risk Distributions")
                 st.caption("Visualizing the 'bell curve' of the top 5 most critical specifications to expose control limit breaches.")
                 
-                top_5_risks = risk_top.head(5).to_dict('records') # <-- Đổi thành head(5)
-                
-                # Tạo 3 cột để hiển thị 5 biểu đồ gọn gàng
+                top_5_risks = risk_top.head(5).to_dict('records')
                 chart_cols = st.columns(3) 
                 
                 for idx, risk_item in enumerate(top_5_risks):
@@ -688,11 +673,8 @@ if view_mode == "📊 Executive KPI Dashboard":
                     if not target_data.empty:
                         fig, ax = plt.subplots(figsize=(6, 4))
                         hard_data = target_data["Hardness_LINE"].dropna()
-                        
-                        # Histogram
                         ax.hist(hard_data, bins=15, color="#ff9999", edgecolor="white", density=True, alpha=0.8)
                         
-                        # Bell Curve Fit
                         mean_val = hard_data.mean()
                         std_val = hard_data.std()
                         if std_val > 0:
@@ -700,19 +682,15 @@ if view_mode == "📊 Executive KPI Dashboard":
                             y_axis = (1/(std_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_axis - mean_val) / std_val)**2)
                             ax.plot(x_axis, y_axis, color="#cc0000", lw=2, label="Distribution Fit")
                         
-                        # Control Limits (Sản xuất)
                         l_min = target_data["Limit_Min"].iloc[0]
                         l_max = target_data["Limit_Max"].iloc[0]
-                        # Lab Limits (Từ dữ liệu Rule công ty)
                         lb_min = target_data["Lab_Min"].iloc[0] if "Lab_Min" in target_data.columns else 0
                         lb_max = target_data["Lab_Max"].iloc[0] if "Lab_Max" in target_data.columns else 0
                         
-                        # Vẽ Giới hạn Control
                         ax.axvline(l_min, color="black", linestyle="--", lw=1.5, label=f"Ctrl LSL ({l_min:.0f})")
                         if l_max > 0 and l_max < 9000:
                             ax.axvline(l_max, color="black", linestyle="--", lw=1.5, label=f"Ctrl USL ({l_max:.0f})")
                         
-                        # Vẽ Giới hạn Lab
                         if pd.notna(lb_min) and lb_min > 0:
                             ax.axvline(lb_min, color="purple", linestyle=":", lw=1.5, label=f"Lab LSL ({lb_min:.0f})")
                         if pd.notna(lb_max) and 0 < lb_max < 9000:
@@ -722,51 +700,25 @@ if view_mode == "📊 Executive KPI Dashboard":
                         ax.set_xlabel("Hardness (HRB)", fontsize=9)
                         ax.legend(fontsize=8, loc="upper right")
                         ax.grid(alpha=0.3, linestyle=":")
-                        
-                        # Vẽ tuần tự vào các cột
                         chart_cols[idx % 3].pyplot(fig)
                 
-                # ==========================================
-                # 5. REPORT EXPORT (PDF & CSV)
-                # ==========================================
+                # --- 5. REPORT EXPORT (Sử dụng risk_top gốc để chứa đủ data cho sếp) ---
                 st.markdown("---")
                 st.markdown("#### 📑 Export Actionable Report")
-                
                 import streamlit.components.v1 as components
-                
                 col_csv, col_pdf, _ = st.columns([2, 2, 6])
                 
                 with col_csv:
                     csv_data = risk_top.to_csv(index=False).encode('utf-8-sig')
-                    st.download_button(
-                        label="📥 Download Watchlist (CSV)",
-                        data=csv_data,
-                        file_name=f"High_Risk_Watchlist.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
+                    st.download_button(label="📥 Download Watchlist (CSV)", data=csv_data, file_name="High_Risk_Watchlist.csv", mime="text/csv", use_container_width=True)
                     
                 with col_pdf:
                     if st.button("🖨️ Save as PDF Report", use_container_width=True):
                         components.html("<script>window.parent.print();</script>", height=0)
                 
-                # --- CSS FORMATTING FOR CLEAN PDF PRINT ---
-                st.markdown("""
-                <style>
-                @media print {
-                    [data-testid="stSidebar"] { display: none !important; }
-                    header { display: none !important; }
-                    .stButton, .stDownloadButton { display: none !important; }
-                    @page { size: A4 landscape; margin: 10mm; }
-                    .stApp { background-color: white !important; }
-                }
-                </style>
-                """, unsafe_allow_html=True)
-
+                st.markdown("""<style>@media print {[data-testid="stSidebar"] { display: none !important; } header { display: none !important; } .stButton, .stDownloadButton { display: none !important; } @page { size: A4 landscape; margin: 10mm; } .stApp { background-color: white !important; }}</style>""", unsafe_allow_html=True)
             else:
                 st.success("🎉 Excellent! All products are stable with no significant risks.")
-    
-    # CRITICAL: Stop app execution here so it doesn't run the detailed loop below
     st.stop()
 # ==============================================================================
 # ==============================================================================
