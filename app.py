@@ -728,6 +728,7 @@ if view_mode == "📊 Executive KPI Dashboard":
     st.stop()
 # ==============================================================================
 # ==============================================================================
+# ==============================================================================
 # 👑 GLOBAL MASTER DICTIONARY EXPORT (FULL VIEW - ULTIMATE UI VERSION)
 # ==============================================================================
 # LƯU Ý: Chữ 'if' dưới đây phải nằm sát lề trái hoàn toàn
@@ -975,6 +976,35 @@ if view_mode == "👑 Global Master Dictionary Export":
                     fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name='Current Spec Limit', line=dict(color='black', width=2.5, dash='solid')), row=1, col=1)
                 fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name=f'Control Limit (±{control_k}σ)', line=dict(color='red', width=2, dash='dash')), row=1, col=1)
                 fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name=f'Target Limit (±{target_k}σ)', line=dict(color='purple', width=2, dash='dashdot')), row=1, col=1)
+
+        # KHỞI TẠO FRAME BIỂU ĐỒ 2x2
+        fig = make_subplots(
+            rows=2, cols=2, 
+            subplot_titles=("1. CAUSE: Hardness (HRB)", "2. EFFECT: Tensile Strength (TS)", "3. EFFECT: Yield Strength (YS)", "4. EFFECT: Elongation (EL)"),
+            vertical_spacing=0.15, horizontal_spacing=0.08
+        )
+        
+        # GỌI HÀM VẼ 4 BIỂU ĐỒ
+        plot_capability_dist(1, 1, g_data['Hardness_LINE'], target_data['Hardness_LINE'], '#E37222', 'HRB', hrb_c_min, hrb_c_max, hrb_t_min, hrb_t_max, orig_min=curr_min, orig_max=curr_max) 
+        plot_capability_dist(1, 2, g_data['TS'], target_data['TS'], '#2F5597', 'TS', ts_c_min, ts_c_max, ts_t_min, ts_t_max)
+        plot_capability_dist(2, 1, g_data['YS'], target_data['YS'], '#375623', 'YS', ys_c_min, ys_c_max, ys_t_min, ys_t_max)
+        plot_capability_dist(2, 2, g_data['EL'], target_data['EL'], '#C00000', 'EL', el_c_min, el_c_max, el_t_min, el_t_max)
+        
+        # CẬP NHẬT LAYOUT VÀ KHUNG VIỀN BẢO VỆ
+        fig.update_layout(
+            barmode='overlay', height=750, margin=dict(l=20, r=20, t=40, b=20),
+            plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="right", x=1)
+        )
+        fig.update_xaxes(
+            showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)',
+            showline=True, linewidth=1.5, linecolor='#595959', mirror=True
+        )
+        fig.update_yaxes(
+            showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)',
+            showline=True, linewidth=1.5, linecolor='#595959', mirror=True
+        )
+        
+        st.plotly_chart(fig, use_container_width=True)
 
         # 4. Metrics chứng minh
         st.markdown(f"**📉 Statistical Proof of Improvement (Variance Reduction)**")
