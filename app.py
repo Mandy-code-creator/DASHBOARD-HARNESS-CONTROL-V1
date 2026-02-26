@@ -945,7 +945,7 @@ if view_mode == "👑 Global Master Dictionary Export":
         ys_c_min, ys_c_max, ys_t_min, ys_t_max = calc_limits(g_data, target_data, 'YS')
         el_c_min, el_c_max, el_t_min, el_t_max = calc_limits(g_data, target_data, 'EL')
 
-        # 3. Hàm vẽ biểu đồ được trang bị chống cắt chữ (Anti-Clipping)
+        # 3. Hàm vẽ biểu đồ với TỌA ĐỘ Y TUYỆT ĐỐI (Phân tầng chống đè chữ)
         def plot_capability_dist(row_idx, col_idx, data_all, data_target, color_target, name, c_min, c_max, t_min, t_max, orig_min=0, orig_max=0):
             mu_tgt = data_target.mean(); sig_tgt = data_target.std() if len(data_target) > 1 else 1
             if sig_tgt == 0: sig_tgt = 0.001 
@@ -957,53 +957,24 @@ if view_mode == "👑 Global Master Dictionary Export":
             y_curve = (1.0 / (sig_tgt * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_curve - mu_tgt) / sig_tgt)**2)
             fig.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', name=f'Target Fit ({name})', line=dict(color=color_target, width=2.5, shape='spline'), showlegend=(row_idx==1 and col_idx==1)), row=row_idx, col=col_idx)
             
-            # 🌟 ÁP DỤNG THỦ THUẬT: Ép quay vào TRONG (right/left) và dùng Y-Shift phân tầng
-            # Tầng 1 (Thấp nhất): Control Limit - Đẩy xuống -35px
-            fig.add_vline(x=c_min, line_dash="dash", line_color="red", line_width=2, annotation_text="Control Min", annotation_position="top right", annotation_yshift=-35, annotation_font=dict(color="red", size=10), row=row_idx, col=col_idx)
-            fig.add_vline(x=c_max, line_dash="dash", line_color="red", line_width=2, annotation_text="Control Max", annotation_position="top left", annotation_yshift=-35, annotation_font=dict(color="red", size=10), row=row_idx, col=col_idx)
-            
-            # Tầng 2 (Ngược lên): Target Limit - Đẩy lên 15px khỏi trục X
-            fig.add_vline(x=t_min, line_dash="dashdot", line_color="purple", line_width=2, annotation_text="Target Min", annotation_position="bottom right", annotation_yshift=15, annotation_font=dict(color="purple", size=10), row=row_idx, col=col_idx)
-            fig.add_vline(x=t_max, line_dash="dashdot", line_color="purple", line_width=2, annotation_text="Target Max", annotation_position="bottom left", annotation_yshift=15, annotation_font=dict(color="purple", size=10), row=row_idx, col=col_idx)
-
-            # Tầng 3 (Giữa): Spec Limit - Đẩy xuống -10px (Nằm trên Control Limit)
+            # 🌟 TẦNG 1: Spec Limit - Đặt sát trần (Y = 0.98)
             if orig_min > 0 and orig_max > 0:
-                fig.add_vline(x=orig_min, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Min</b>", annotation_position="top right", annotation_yshift=-10, annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
-                fig.add_vline(x=orig_max, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Max</b>", annotation_position="top left", annotation_yshift=-10, annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
+                fig.add_vline(x=orig_min, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Min</b>", annotation_position="top right", annotation_y=0.98, annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
+                fig.add_vline(x=orig_max, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Max</b>", annotation_position="top left", annotation_y=0.98, annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
+
+            # 🌟 TẦNG 2: Control Limit - Hạ thấp xuống một bậc (Y = 0.85)
+            fig.add_vline(x=c_min, line_dash="dash", line_color="red", line_width=2, annotation_text="Control Min", annotation_position="top right", annotation_y=0.85, annotation_font=dict(color="red", size=10), row=row_idx, col=col_idx)
+            fig.add_vline(x=c_max, line_dash="dash", line_color="red", line_width=2, annotation_text="Control Max", annotation_position="top left", annotation_y=0.85, annotation_font=dict(color="red", size=10), row=row_idx, col=col_idx)
+            
+            # 🌟 TẦNG 3: Target Limit - Đặt sát đáy (Y = 0.05)
+            fig.add_vline(x=t_min, line_dash="dashdot", line_color="purple", line_width=2, annotation_text="Target Min", annotation_position="top right", annotation_y=0.05, annotation_font=dict(color="purple", size=10), row=row_idx, col=col_idx)
+            fig.add_vline(x=t_max, line_dash="dashdot", line_color="purple", line_width=2, annotation_text="Target Max", annotation_position="top left", annotation_y=0.05, annotation_font=dict(color="purple", size=10), row=row_idx, col=col_idx)
 
             if row_idx == 1 and col_idx == 1:
                 if orig_min > 0:
                     fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name='Current Spec Limit', line=dict(color='black', width=2.5, dash='solid')), row=1, col=1)
                 fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name=f'Control Limit (±{control_k}σ)', line=dict(color='red', width=2, dash='dash')), row=1, col=1)
                 fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name=f'Target Limit (±{target_k}σ)', line=dict(color='purple', width=2, dash='dashdot')), row=1, col=1)
-
-        fig = make_subplots(
-            rows=2, cols=2, 
-            subplot_titles=("1. CAUSE: Hardness (HRB)", "2. EFFECT: Tensile Strength (TS)", "3. EFFECT: Yield Strength (YS)", "4. EFFECT: Elongation (EL)"),
-            vertical_spacing=0.15, horizontal_spacing=0.08
-        )
-        
-        plot_capability_dist(1, 1, g_data['Hardness_LINE'], target_data['Hardness_LINE'], '#E37222', 'HRB', hrb_c_min, hrb_c_max, hrb_t_min, hrb_t_max, orig_min=curr_min, orig_max=curr_max) 
-        plot_capability_dist(1, 2, g_data['TS'], target_data['TS'], '#2F5597', 'TS', ts_c_min, ts_c_max, ts_t_min, ts_t_max)
-        plot_capability_dist(2, 1, g_data['YS'], target_data['YS'], '#375623', 'YS', ys_c_min, ys_c_max, ys_t_min, ys_t_max)
-        plot_capability_dist(2, 2, g_data['EL'], target_data['EL'], '#C00000', 'EL', el_c_min, el_c_max, el_t_min, el_t_max)
-        
-        fig.update_layout(
-            barmode='overlay', height=750, margin=dict(l=20, r=20, t=40, b=20),
-            plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="right", x=1)
-        )
-        
-        # Đóng khung viền bao quanh (Bounding Box) chuyên nghiệp
-        fig.update_xaxes(
-            showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)',
-            showline=True, linewidth=1.5, linecolor='#595959', mirror=True
-        )
-        fig.update_yaxes(
-            showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)',
-            showline=True, linewidth=1.5, linecolor='#595959', mirror=True
-        )
-        
-        st.plotly_chart(fig, use_container_width=True)
 
         # 4. Metrics chứng minh
         st.markdown(f"**📉 Statistical Proof of Improvement (Variance Reduction)**")
