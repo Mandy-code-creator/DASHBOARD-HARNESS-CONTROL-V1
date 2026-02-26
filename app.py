@@ -1558,31 +1558,25 @@ if view_mode == "👑 Global Master Dictionary Export":
         This tool performs a **factory-wide scan** to establish standardized production targets:
         - **Target Limits (1σ)**: Optimal operating window for consistency.
         - **Control Limits (3σ)**: Statistical safety boundaries.
-        - **Expected Values**: Predicted mechanical results based on historical trends.
+        - **Expected Values**: Predicted mechanical results based on actual performance.
     """)
 
     if st.button("🚀 Generate & Download Master Dictionary", type="primary", key="master_gen_btn_diag"):
         master_data = []
         rejected_data = [] 
         
-        # Access global raw data
         source_df = df_master_full if 'df_master_full' in locals() else df
         total_raw_rows = len(source_df)
         
-        # Clean data (require all 4 parameters)
         clean_master_df = source_df.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
         total_clean_rows = len(clean_master_df)
         
-        # 🌟 NÂNG CẤP: Gom nhóm theo TOÀN BỘ 5 cấp độ điều kiện lọc
         group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
         
         for keys, group in clean_master_df.groupby(group_cols):
-            # Bung 5 biến tương ứng từ keys
             rolling_val, metal_val, qg_val, mat, gauge = keys
-            
             valid_coils_count = len(group)
             
-            # Bộ lọc độ tin cậy thống kê N >= 30
             if valid_coils_count < 30: 
                 rejected_data.append({
                     "Rolling": rolling_val, "Metallic": metal_val, 
@@ -1600,24 +1594,38 @@ if view_mode == "👑 Global Master Dictionary Export":
             target_group = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
             
             if len(target_group) > 0:
-                # 🌟 NÂNG CẤP: Đưa toàn bộ điều kiện lọc vào từng dòng báo cáo
+                # 🌟 1. LẤY DANH SÁCH SPECS (Ngăn cách bằng dấu phẩy)
+                specs_list = ", ".join(sorted(group['Product_Spec'].dropna().astype(str).unique())) if 'Product_Spec' in group.columns else "N/A"
+                
+                # 🌟 2. LẤY GIỚI HẠN KIỂM SOÁT HIỆN TẠI (Từ dữ liệu/Excel)
+                curr_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
+                curr_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
+                curr_limit_str = f"{curr_min:.0f} ~ {curr_max:.0f}" if (0 < curr_max < 9000) else (f"≥ {curr_min:.0f}" if curr_min > 0 else "N/A")
+                
+                # 🌟 3. TÍNH TOÁN GIÁ TRỊ MIN ~ MAX CHO CƠ TÍNH (Thay vì Mean ± Std)
+                ts_min = target_group['TS'].min(); ts_max = target_group['TS'].max()
+                ys_min = target_group['YS'].min(); ys_max = target_group['YS'].max()
+                el_min = target_group['EL'].min(); el_max = target_group['EL'].max()
+
                 master_data.append({
                     "Rolling Type": rolling_val,
                     "Metallic Type": metal_val,
                     "Quality Group": qg_val,
                     "Material": mat,
                     "Gauge Range": gauge,
+                    "Specs": specs_list,                 # <--- Cột mới
+                    "Current HRB Limit": curr_limit_str, # <--- Cột mới
                     "Valid Coils (N)": valid_coils_count,
                     "Target Zone (N)": len(target_group),
                     "Control Limit (HRB)": f"{c_min:.1f} ~ {c_max:.1f}",
                     "🎯 TARGET LIMIT (HRB)": f"{t_min:.1f} ~ {t_max:.1f}",
-                    "Expected TS (MPa)": f"{target_group['TS'].mean():.0f} ±{target_group['TS'].std():.0f}",
-                    "Expected YS (MPa)": f"{target_group['YS'].mean():.0f} ±{target_group['YS'].std():.0f}",
-                    "Expected EL (%)": f"{target_group['EL'].mean():.1f} ±{target_group['EL'].std():.1f}"
+                    "Expected TS (MPa)": f"{ts_min:.0f} ~ {ts_max:.0f}", # <--- Đổi thành Min~Max
+                    "Expected YS (MPa)": f"{ys_min:.0f} ~ {ys_max:.0f}", # <--- Đổi thành Min~Max
+                    "Expected EL (%)": f"{el_min:.1f} ~ {el_max:.1f}"    # <--- Đổi thành Min~Max
                 })
         
         # =======================================================
-        # 1. HIỂN THỊ VÀ XUẤT EXCEL KHI THÀNH CÔNG
+        # HIỂN THỊ VÀ XUẤT EXCEL KHI THÀNH CÔNG
         # =======================================================
         if len(master_data) > 0:
             df_final_master = pd.DataFrame(master_data)
@@ -1639,14 +1647,15 @@ if view_mode == "👑 Global Master Dictionary Export":
                 for col_num, value in enumerate(df_final_master.columns.values): 
                     worksheet.write(0, col_num, value, header_fmt)
                 
-                # Căn chỉnh lại độ rộng cột do đã chèn thêm 3 cột điều kiện lọc mới
-                worksheet.set_column('A:C', 16, cell_fmt)  # Rolling, Metallic, Quality
-                worksheet.set_column('D:D', 15, cell_fmt)  # Material
-                worksheet.set_column('E:E', 22, cell_fmt)  # Gauge Range
-                worksheet.set_column('F:G', 15, cell_fmt)  # N Coils
-                worksheet.set_column('H:H', 22, cell_fmt)  # Control Limit
-                worksheet.set_column('I:I', 28, target_fmt) # 🎯 TARGET LIMIT
-                worksheet.set_column('J:L', 20, cell_fmt)  # Expected TS/YS/EL
+                # Căn chỉnh lại độ rộng toàn bộ cột mới
+                worksheet.set_column('A:C', 14, cell_fmt)  # Rolling, Metallic, Quality
+                worksheet.set_column('D:E', 15, cell_fmt)  # Material, Gauge
+                worksheet.set_column('F:F', 30, cell_fmt)  # Specs (Rộng hơn để chứa chuỗi dài)
+                worksheet.set_column('G:G', 20, cell_fmt)  # Current HRB Limit
+                worksheet.set_column('H:I', 15, cell_fmt)  # N Coils
+                worksheet.set_column('J:J', 22, cell_fmt)  # Control Limit
+                worksheet.set_column('K:K', 28, target_fmt) # 🎯 TARGET LIMIT
+                worksheet.set_column('L:N', 20, cell_fmt)  # Expected TS/YS/EL (Min~Max)
                 
             st.success(f"✅ Dictionary successfully generated for **{len(df_final_master)} product groups**.")
             st.download_button(
@@ -1658,7 +1667,7 @@ if view_mode == "👑 Global Master Dictionary Export":
             )
             
         # =======================================================
-        # 2. HIỂN THỊ LOG TRUY VẾT DỮ LIỆU BỊ LOẠI
+        # HIỂN THỊ LOG TRUY VẾT DỮ LIỆU BỊ LOẠI
         # =======================================================
         st.markdown("---")
         st.markdown("### 🕵️‍♂️ Diagnostic Log: Excluded Groups")
