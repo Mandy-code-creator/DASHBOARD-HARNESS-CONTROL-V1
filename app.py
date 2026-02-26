@@ -728,7 +728,7 @@ if view_mode == "📊 Executive KPI Dashboard":
     st.stop()
 # ==============================================================================
 # ==============================================================================
-# 👑 GLOBAL MASTER DICTIONARY EXPORT (FULL VIEW WITH SIX SIGMA CHARTS)
+# 👑 GLOBAL MASTER DICTIONARY EXPORT (FULL VIEW - FINAL VERSION)
 # ==============================================================================
 # LƯU Ý: Chữ 'if' dưới đây phải nằm sát lề trái hoàn toàn
 if view_mode == "👑 Global Master Dictionary Export":
@@ -749,6 +749,7 @@ if view_mode == "👑 Global Master Dictionary Export":
         - **Expected Values**: Predicted mechanical results based on the stable target zone.
     """)
 
+    # --- KHU VỰC ĐIỀU CHỈNH THỐNG KÊ ---
     st.markdown("#### ⚙️ Custom Statistical Parameters")
     col_sig1, col_sig2 = st.columns(2)
     with col_sig1:
@@ -758,26 +759,25 @@ if view_mode == "👑 Global Master Dictionary Export":
     
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Khai báo nhóm 5 điều kiện lọc cốt lõi
     group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
 
+    # ==========================================================================
+    # PHẦN 1: XUẤT EXCEL TỪ ĐIỂN
+    # ==========================================================================
     if st.button("🚀 Generate & Download Master Dictionary", type="primary", key="master_gen_btn_final"):
         master_data = []
         rejected_data = [] 
         
-        # 1. LẤY DỮ LIỆU & LÀM SẠCH
         source_df = df_master_full if 'df_master_full' in locals() else df
         total_raw_rows = len(source_df)
         
         clean_master_df = source_df.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
         total_clean_rows = len(clean_master_df)
         
-        # 2. GOM NHÓM THEO 5 ĐIỀU KIỆN LỌC
         for keys, group in clean_master_df.groupby(group_cols):
             rolling_val, metal_val, qg_val, mat, gauge = keys
             valid_coils_count = len(group)
             
-            # Bộ lọc độ tin cậy N >= 30
             if valid_coils_count < 30: 
                 rejected_data.append({
                     "Rolling": rolling_val, "Metallic": metal_val, 
@@ -786,7 +786,7 @@ if view_mode == "👑 Global Master Dictionary Export":
                 })
                 continue 
             
-            # 3. THỐNG KÊ ĐỘ CỨNG (HRB)
+            # Tính toán HRB
             mean_hrb = group['Hardness_LINE'].mean()
             std_hrb = group['Hardness_LINE'].std() if len(group) > 1 else 0
             
@@ -799,7 +799,7 @@ if view_mode == "👑 Global Master Dictionary Export":
             c_min, c_max = mean_hrb - (control_k * std_hrb), mean_hrb + (control_k * std_hrb)
             imr_min, imr_max = mean_hrb - (control_k * sigma_imr), mean_hrb + (control_k * sigma_imr)
             
-            # 4. THỐNG KÊ GIỚI HẠN CƠ TÍNH CONTROL (Toàn bộ nhóm)
+            # Tính toán Cơ tính Toàn bộ
             ts_mu = group['TS'].mean(); ts_sig = group['TS'].std() if valid_coils_count > 1 else 0
             ys_mu = group['YS'].mean(); ys_sig = group['YS'].std() if valid_coils_count > 1 else 0
             el_mu = group['EL'].mean(); el_sig = group['EL'].std() if valid_coils_count > 1 else 0
@@ -808,7 +808,6 @@ if view_mode == "👑 Global Master Dictionary Export":
             ys_cmin, ys_cmax = ys_mu - (control_k * ys_sig), ys_mu + (control_k * ys_sig)
             el_cmin, el_cmax = max(0, el_mu - (control_k * el_sig)), el_mu + (control_k * el_sig)
             
-            # 5. TRÍCH XUẤT VÙNG KỲ VỌNG TARGET (Chỉ lấy cuộn đạt Target HRB)
             target_group = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
             
             if len(target_group) > 0:
@@ -817,7 +816,7 @@ if view_mode == "👑 Global Master Dictionary Export":
                 curr_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
                 curr_limit_str = f"{curr_min:.0f} ~ {curr_max:.0f}" if (0 < curr_max < 9000) else (f"≥ {curr_min:.0f}" if curr_min > 0 else "N/A")
                 
-                # Tính Min~Max kỳ vọng bằng thống kê trên nhóm Target
+                # Tính toán Cơ tính Target Zone
                 t_ts_mu = target_group['TS'].mean(); t_ts_sig = target_group['TS'].std() if len(target_group) > 1 else 0
                 t_ys_mu = target_group['YS'].mean(); t_ys_sig = target_group['YS'].std() if len(target_group) > 1 else 0
                 t_el_mu = target_group['EL'].mean(); t_el_sig = target_group['EL'].std() if len(target_group) > 1 else 0
@@ -827,14 +826,9 @@ if view_mode == "👑 Global Master Dictionary Export":
                 exp_el_min, exp_el_max = max(0, t_el_mu - (control_k * t_el_sig)), t_el_mu + (control_k * t_el_sig)
 
                 master_data.append({
-                    "Rolling Type": rolling_val,
-                    "Metallic Type": metal_val,
-                    "Quality Group": qg_val,
-                    "Material": mat,
-                    "Gauge Range": gauge,
-                    "Specs": specs_list,
-                    "Current HRB Limit": curr_limit_str,
-                    "Valid Coils (N)": valid_coils_count,
+                    "Rolling Type": rolling_val, "Metallic Type": metal_val, "Quality Group": qg_val,
+                    "Material": mat, "Gauge Range": gauge, "Specs": specs_list,
+                    "Current HRB Limit": curr_limit_str, "Valid Coils (N)": valid_coils_count,
                     "Target Zone (N)": len(target_group),
                     "Std Control Limit (HRB)": f"{c_min:.1f} ~ {c_max:.1f}",
                     "I-MR Limit (HRB)": f"{imr_min:.1f} ~ {imr_max:.1f}",
@@ -847,7 +841,7 @@ if view_mode == "👑 Global Master Dictionary Export":
                     "Expected EL (Target)": f"{exp_el_min:.1f} ~ {exp_el_max:.1f}"
                 })
         
-        # 6. XUẤT EXCEL VÀ ĐỊNH DẠNG
+        # Định dạng và xuất file
         if len(master_data) > 0:
             df_final_master = pd.DataFrame(master_data)
             
@@ -866,18 +860,12 @@ if view_mode == "👑 Global Master Dictionary Export":
                 for col_num, value in enumerate(df_final_master.columns.values): 
                     worksheet.write(0, col_num, value, header_fmt)
                 
-                worksheet.set_column('A:C', 14, cell_fmt)
-                worksheet.set_column('D:E', 15, cell_fmt)
-                worksheet.set_column('F:F', 30, cell_fmt)
-                worksheet.set_column('G:I', 16, cell_fmt)
-                worksheet.set_column('J:J', 22, cell_fmt)    
-                worksheet.set_column('K:K', 20, imr_fmt)     
-                worksheet.set_column('L:L', 26, target_fmt)  
-                worksheet.set_column('M:M', 20, ctrl_prop_fmt) 
-                worksheet.set_column('N:N', 22, cell_fmt)      
-                worksheet.set_column('O:O', 20, ctrl_prop_fmt) 
-                worksheet.set_column('P:P', 22, cell_fmt)      
-                worksheet.set_column('Q:Q', 20, ctrl_prop_fmt) 
+                worksheet.set_column('A:C', 14, cell_fmt); worksheet.set_column('D:E', 15, cell_fmt)
+                worksheet.set_column('F:F', 30, cell_fmt); worksheet.set_column('G:I', 16, cell_fmt)
+                worksheet.set_column('J:J', 22, cell_fmt); worksheet.set_column('K:K', 20, imr_fmt)     
+                worksheet.set_column('L:L', 26, target_fmt); worksheet.set_column('M:M', 20, ctrl_prop_fmt) 
+                worksheet.set_column('N:N', 22, cell_fmt); worksheet.set_column('O:O', 20, ctrl_prop_fmt) 
+                worksheet.set_column('P:P', 22, cell_fmt); worksheet.set_column('Q:Q', 20, ctrl_prop_fmt) 
                 worksheet.set_column('R:R', 22, cell_fmt)      
                 
             st.success(f"✅ Dictionary successfully generated for **{len(df_final_master)} product groups**.")
@@ -889,7 +877,7 @@ if view_mode == "👑 Global Master Dictionary Export":
                 key="master_dl_btn_final"
             )
             
-        # 7. DIAGNOSTIC LOG BÁO CÁO DỮ LIỆU
+        # Báo cáo Log
         st.markdown("---")
         st.markdown("### 🕵️‍♂️ Diagnostic Log: Excluded Groups")
         col1, col2 = st.columns(2)
@@ -900,10 +888,9 @@ if view_mode == "👑 Global Master Dictionary Export":
             st.caption("Excluded groups (N < 30 coils with complete mechanical data):")
             df_rejected = pd.DataFrame(rejected_data).sort_values(by="Valid Coils", ascending=False)
             st.dataframe(df_rejected, use_container_width=True, hide_index=True)
-            
+
     # ==========================================================================
-   # ==========================================================================
-    # 8. BIỂU ĐỒ PHÂN BỐ (SIX SIGMA CAPABILITY) - CAUSE & EFFECT (HRB vs MECH PROPS)
+    # PHẦN 2: BIỂU ĐỒ SIX SIGMA (CAUSE & EFFECT)
     # ==========================================================================
     st.markdown("---")
     st.markdown("### 📊 Process Capability Analysis: Cause & Effect")
@@ -931,20 +918,15 @@ if view_mode == "👑 Global Master Dictionary Export":
             (clean_master_df['Gauge_Range'] == sel_gauge)
         ]
         
-        # --- TÍNH TOÁN GIỚI HẠN DỰA TRÊN KẾT QUẢ TƯƠNG TÁC (K) ---
-        # 1. HARDNESS (Nguyên nhân)
+        # 1. Tính toán Limit cho HRB
         hrb_mu_all = g_data['Hardness_LINE'].mean()
         hrb_sig_all = g_data['Hardness_LINE'].std() if len(g_data) > 1 else 1
         
-        # Control Limit của HRB
         hrb_c_min, hrb_c_max = hrb_mu_all - (control_k * hrb_sig_all), hrb_mu_all + (control_k * hrb_sig_all)
-        # Target Limit của HRB (Đây chính là phễu lọc)
         hrb_t_min, hrb_t_max = hrb_mu_all - (target_k * hrb_sig_all), hrb_mu_all + (target_k * hrb_sig_all)
-        
-        # Lọc dữ liệu "Hoa hậu"
         target_data = g_data[(g_data['Hardness_LINE'] >= hrb_t_min) & (g_data['Hardness_LINE'] <= hrb_t_max)]
         
-        # 2. HÀM TÍNH TOÁN CƠ TÍNH (Kết quả)
+        # 2. Tính toán Limit cho Cơ tính
         def calc_limits(data_all, data_tgt, col_name):
             mu_a = data_all[col_name].mean(); sig_a = data_all[col_name].std() if len(data_all) > 1 else 1
             mu_t = data_tgt[col_name].mean(); sig_t = data_tgt[col_name].std() if len(data_tgt) > 1 else 1
@@ -960,38 +942,34 @@ if view_mode == "👑 Global Master Dictionary Export":
         ys_c_min, ys_c_max, ys_t_min, ys_t_max = calc_limits(g_data, target_data, 'YS')
         el_c_min, el_c_max, el_t_min, el_t_max = calc_limits(g_data, target_data, 'EL')
 
-        # --- VẼ BIỂU ĐỒ 2x2 ---
-        import numpy as np
+        # 3. Hàm vẽ biểu đồ với Annotation đầy đủ
         def plot_capability_dist(row_idx, col_idx, data_all, data_target, color_target, name, c_min, c_max, t_min, t_max):
             mu_tgt = data_target.mean(); sig_tgt = data_target.std() if len(data_target) > 1 else 1
             if sig_tgt == 0: sig_tgt = 0.001 
             
-            # Histogram
             fig.add_trace(go.Histogram(x=data_all, histnorm='probability density', name=f'Before ({name})', marker_color='lightgray', opacity=0.5, nbinsx=25, showlegend=(row_idx==1 and col_idx==1)), row=row_idx, col=col_idx)
             fig.add_trace(go.Histogram(x=data_target, histnorm='probability density', name=f'After ({name})', marker_color=color_target, opacity=0.7, nbinsx=25, showlegend=(row_idx==1 and col_idx==1)), row=row_idx, col=col_idx)
             
-            # Normal Fit Curve (Chỉ vẽ cho nhóm Target để thấy "Chuông" mới)
             x_curve = np.linspace(data_all.min(), data_all.max(), 200)
             y_curve = (1.0 / (sig_tgt * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_curve - mu_tgt) / sig_tgt)**2)
             fig.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', name=f'Target Fit ({name})', line=dict(color=color_target, width=2.5, shape='spline'), showlegend=(row_idx==1 and col_idx==1)), row=row_idx, col=col_idx)
             
-            # Control Limit Lines (Đỏ)
-            fig.add_vline(x=c_min, line_dash="dash", line_color="red", line_width=2, row=row_idx, col=col_idx)
-            fig.add_vline(x=c_max, line_dash="dash", line_color="red", line_width=2, row=row_idx, col=col_idx)
-            
-            # Target Limit Lines (Tím)
-            fig.add_vline(x=t_min, line_dash="dashdot", line_color="purple", line_width=2, row=row_idx, col=col_idx)
-            fig.add_vline(x=t_max, line_dash="dashdot", line_color="purple", line_width=2, row=row_idx, col=col_idx)
+            fig.add_vline(x=c_min, line_dash="dash", line_color="red", line_width=2, annotation_text="Control Min", annotation_position="top left", annotation_font=dict(color="red", size=10), row=row_idx, col=col_idx)
+            fig.add_vline(x=c_max, line_dash="dash", line_color="red", line_width=2, annotation_text="Control Max", annotation_position="top right", annotation_font=dict(color="red", size=10), row=row_idx, col=col_idx)
+            fig.add_vline(x=t_min, line_dash="dashdot", line_color="purple", line_width=2, annotation_text="Target Min", annotation_position="bottom left", annotation_font=dict(color="purple", size=10), row=row_idx, col=col_idx)
+            fig.add_vline(x=t_max, line_dash="dashdot", line_color="purple", line_width=2, annotation_text="Target Max", annotation_position="bottom right", annotation_font=dict(color="purple", size=10), row=row_idx, col=col_idx)
 
-        # Tạo lưới 2x2
+            if row_idx == 1 and col_idx == 1:
+                fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name=f'Control Limit (±{control_k}σ)', line=dict(color='red', width=2, dash='dash')), row=1, col=1)
+                fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name=f'Target Limit (±{target_k}σ)', line=dict(color='purple', width=2, dash='dashdot')), row=1, col=1)
+
         fig = make_subplots(
             rows=2, cols=2, 
             subplot_titles=("1. CAUSE: Hardness (HRB)", "2. EFFECT: Tensile Strength (TS)", "3. EFFECT: Yield Strength (YS)", "4. EFFECT: Elongation (EL)"),
             vertical_spacing=0.15, horizontal_spacing=0.08
         )
         
-        # Đổ dữ liệu vào 4 ô
-        plot_capability_dist(1, 1, g_data['Hardness_LINE'], target_data['Hardness_LINE'], '#E37222', 'HRB', hrb_c_min, hrb_c_max, hrb_t_min, hrb_t_max) # Màu cam cho HRB
+        plot_capability_dist(1, 1, g_data['Hardness_LINE'], target_data['Hardness_LINE'], '#E37222', 'HRB', hrb_c_min, hrb_c_max, hrb_t_min, hrb_t_max) 
         plot_capability_dist(1, 2, g_data['TS'], target_data['TS'], '#2F5597', 'TS', ts_c_min, ts_c_max, ts_t_min, ts_t_max)
         plot_capability_dist(2, 1, g_data['YS'], target_data['YS'], '#375623', 'YS', ys_c_min, ys_c_max, ys_t_min, ys_t_max)
         plot_capability_dist(2, 2, g_data['EL'], target_data['EL'], '#C00000', 'EL', el_c_min, el_c_max, el_t_min, el_t_max)
@@ -1005,7 +983,7 @@ if view_mode == "👑 Global Master Dictionary Export":
         
         st.plotly_chart(fig, use_container_width=True)
 
-        # --- BẢNG CHỨNG MINH THỐNG KÊ (Đã thêm HRB) ---
+        # 4. Metrics chứng minh
         st.markdown(f"**📉 Statistical Proof of Improvement (Variance Reduction)**")
         col_hrb, col_ts, col_ys, col_el = st.columns(4)
         
@@ -1019,13 +997,8 @@ if view_mode == "👑 Global Master Dictionary Export":
         col_ys.metric("YS Spread (Std Dev)", f"{ys_std_aft:.2f}", f"{ys_std_aft - g_data['YS'].std():.2f} (Narrower)", delta_color="inverse")
         col_el.metric("EL Spread (Std Dev)", f"{el_std_aft:.2f}", f"{el_std_aft - g_data['EL'].std():.2f} (Narrower)", delta_color="inverse")
 
-    # 🛑 CHỐT CHẶN
+    # 🛑 CHỐT CHẶN: Dừng render phần còn lại của app
     st.stop()
-
-# ==============================================================================
-# MAIN LOOP (DETAILS)
-# ==============================================================================
-# Đoạn code hiển thị các view khác của bạn bắt đầu từ đây (for i, (_, g) in enumerate(valid.iterrows()):...)
 # ==============================================================================
 # MAIN LOOP (DETAILS)
 # ==============================================================================
