@@ -728,6 +728,129 @@ if view_mode == "📊 Executive KPI Dashboard":
     st.stop()
 # ==============================================================================
 # ==============================================================================
+# 👑 GLOBAL MASTER DICTIONARY EXPORT (DEDICATED VIEW)
+# ==============================================================================
+if view_mode == "👑 Global Master Dictionary Export":
+    
+    st.markdown("---")
+    st.header("👑 Master Mechanical Properties Dictionary")
+    st.info("""
+        This tool performs a **factory-wide scan** to establish standardized production targets:
+        - **Target Limits (1σ)**: Optimal operating window for consistency.
+        - **Control Limits (3σ)**: Statistical safety boundaries.
+        - **Expected Values**: Predicted mechanical results based on actual performance.
+    """)
+
+    if st.button("🚀 Generate & Download Master Dictionary", type="primary", key="master_gen_btn_diag"):
+        master_data = []
+        rejected_data = [] 
+        
+        source_df = df_master_full if 'df_master_full' in locals() else df
+        total_raw_rows = len(source_df)
+        
+        clean_master_df = source_df.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
+        total_clean_rows = len(clean_master_df)
+        
+        group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
+        
+        for keys, group in clean_master_df.groupby(group_cols):
+            rolling_val, metal_val, qg_val, mat, gauge = keys
+            valid_coils_count = len(group)
+            
+            if valid_coils_count < 30: 
+                rejected_data.append({
+                    "Rolling": rolling_val, "Metallic": metal_val, 
+                    "Quality": qg_val, "Material": mat, 
+                    "Gauge": gauge, "Valid Coils": valid_coils_count
+                })
+                continue 
+                
+            mean_hrb = group['Hardness_LINE'].mean()
+            std_hrb = group['Hardness_LINE'].std() if len(group) > 1 else 0
+            
+            t_min, t_max = mean_hrb - std_hrb, mean_hrb + std_hrb
+            c_min, c_max = mean_hrb - (3 * std_hrb), mean_hrb + (3 * std_hrb)
+            
+            target_group = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
+            
+            if len(target_group) > 0:
+                specs_list = ", ".join(sorted(group['Product_Spec'].dropna().astype(str).unique())) if 'Product_Spec' in group.columns else "N/A"
+                
+                curr_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
+                curr_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
+                curr_limit_str = f"{curr_min:.0f} ~ {curr_max:.0f}" if (0 < curr_max < 9000) else (f"≥ {curr_min:.0f}" if curr_min > 0 else "N/A")
+                
+                ts_min = target_group['TS'].min(); ts_max = target_group['TS'].max()
+                ys_min = target_group['YS'].min(); ys_max = target_group['YS'].max()
+                el_min = target_group['EL'].min(); el_max = target_group['EL'].max()
+
+                master_data.append({
+                    "Rolling Type": rolling_val,
+                    "Metallic Type": metal_val,
+                    "Quality Group": qg_val,
+                    "Material": mat,
+                    "Gauge Range": gauge,
+                    "Specs": specs_list,
+                    "Current HRB Limit": curr_limit_str,
+                    "Valid Coils (N)": valid_coils_count,
+                    "Target Zone (N)": len(target_group),
+                    "Control Limit (HRB)": f"{c_min:.1f} ~ {c_max:.1f}",
+                    "🎯 TARGET LIMIT (HRB)": f"{t_min:.1f} ~ {t_max:.1f}",
+                    "Expected TS (MPa)": f"{ts_min:.0f} ~ {ts_max:.0f}",
+                    "Expected YS (MPa)": f"{ys_min:.0f} ~ {ys_max:.0f}",
+                    "Expected EL (%)": f"{el_min:.1f} ~ {el_max:.1f}"
+                })
+        
+        if len(master_data) > 0:
+            df_final_master = pd.DataFrame(master_data)
+            import datetime
+            from io import BytesIO
+            
+            output_buffer = BytesIO()
+            with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
+                df_final_master.to_excel(writer, sheet_name='Master_Lookup', index=False)
+                workbook = writer.book
+                worksheet = writer.sheets['Master_Lookup']
+                
+                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#2F5597', 'font_color': 'white', 'border': 1, 'align': 'center'})
+                target_fmt = workbook.add_format({'bg_color': '#E2EFDA', 'bold': True, 'border': 1, 'font_color': '#375623', 'align': 'center'})
+                cell_fmt = workbook.add_format({'align': 'center', 'border': 1})
+                
+                for col_num, value in enumerate(df_final_master.columns.values): worksheet.write(0, col_num, value, header_fmt)
+                
+                worksheet.set_column('A:C', 14, cell_fmt)
+                worksheet.set_column('D:E', 15, cell_fmt)
+                worksheet.set_column('F:F', 30, cell_fmt)
+                worksheet.set_column('G:G', 20, cell_fmt)
+                worksheet.set_column('H:I', 15, cell_fmt)
+                worksheet.set_column('J:J', 22, cell_fmt)
+                worksheet.set_column('K:K', 28, target_fmt)
+                worksheet.set_column('L:N', 20, cell_fmt)
+                
+            st.success(f"✅ Dictionary successfully generated for **{len(df_final_master)} product groups**.")
+            st.download_button(
+                label="📥 Download Master Report (Excel)",
+                data=output_buffer.getvalue(),
+                file_name=f"Master_Hardness_Dictionary_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="master_dl_btn_diag"
+            )
+            
+        st.markdown("---")
+        st.markdown("### 🕵️‍♂️ Diagnostic Log: Excluded Groups")
+        col1, col2 = st.columns(2)
+        col1.warning(f"Total rows before cleaning: **{total_raw_rows}**")
+        col2.error(f"Rows dropped due to missing Mech Props (TS/YS/EL): **{total_raw_rows - total_clean_rows}**")
+        
+        if len(rejected_data) > 0:
+            st.caption("The following groups were excluded from the dictionary because they have fewer than 30 **coils with complete mechanical data**:")
+            df_rejected = pd.DataFrame(rejected_data).sort_values(by="Valid Coils", ascending=False)
+            st.dataframe(df_rejected, use_container_width=True, hide_index=True)
+            
+    # 🛑 ĐÂY LÀ CHỐT CHẶN QUAN TRỌNG NHẤT: Bắt hệ thống dừng lại, không vẽ thêm gì bên dưới!
+    st.stop() 
+
+# ==============================================================================
 # MAIN LOOP (DETAILS)
 # ==============================================================================
 for i, (_, g) in enumerate(valid.iterrows()):
@@ -1549,125 +1672,3 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.download_button("📥 Export Summary CSV", df_total.to_csv(index=False).encode('utf-8-sig'), f"SPC_Summary_{str(qgroup).replace(' ','')}.csv")
 # ==============================================================================
 # ==============================================================================
-# ==============================================================================
-# 👑 GLOBAL MASTER DICTIONARY EXPORT (DEDICATED VIEW)
-# ==============================================================================
-if view_mode == "👑 Global Master Dictionary Export":
-    
-    st.markdown("---")
-    st.header("👑 Master Mechanical Properties Dictionary")
-    st.info("""
-        This tool performs a **factory-wide scan** to establish standardized production targets:
-        - **Target Limits (1σ)**: Optimal operating window for consistency.
-        - **Control Limits (3σ)**: Statistical safety boundaries.
-        - **Expected Values**: Predicted mechanical results based on actual performance.
-    """)
-
-    if st.button("🚀 Generate & Download Master Dictionary", type="primary", key="master_gen_btn_diag"):
-        master_data = []
-        rejected_data = [] 
-        
-        source_df = df_master_full if 'df_master_full' in locals() else df
-        total_raw_rows = len(source_df)
-        
-        clean_master_df = source_df.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
-        total_clean_rows = len(clean_master_df)
-        
-        group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
-        
-        for keys, group in clean_master_df.groupby(group_cols):
-            rolling_val, metal_val, qg_val, mat, gauge = keys
-            valid_coils_count = len(group)
-            
-            if valid_coils_count < 30: 
-                rejected_data.append({
-                    "Rolling": rolling_val, "Metallic": metal_val, 
-                    "Quality": qg_val, "Material": mat, 
-                    "Gauge": gauge, "Valid Coils": valid_coils_count
-                })
-                continue 
-                
-            mean_hrb = group['Hardness_LINE'].mean()
-            std_hrb = group['Hardness_LINE'].std() if len(group) > 1 else 0
-            
-            t_min, t_max = mean_hrb - std_hrb, mean_hrb + std_hrb
-            c_min, c_max = mean_hrb - (3 * std_hrb), mean_hrb + (3 * std_hrb)
-            
-            target_group = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
-            
-            if len(target_group) > 0:
-                specs_list = ", ".join(sorted(group['Product_Spec'].dropna().astype(str).unique())) if 'Product_Spec' in group.columns else "N/A"
-                
-                curr_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
-                curr_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
-                curr_limit_str = f"{curr_min:.0f} ~ {curr_max:.0f}" if (0 < curr_max < 9000) else (f"≥ {curr_min:.0f}" if curr_min > 0 else "N/A")
-                
-                ts_min = target_group['TS'].min(); ts_max = target_group['TS'].max()
-                ys_min = target_group['YS'].min(); ys_max = target_group['YS'].max()
-                el_min = target_group['EL'].min(); el_max = target_group['EL'].max()
-
-                master_data.append({
-                    "Rolling Type": rolling_val,
-                    "Metallic Type": metal_val,
-                    "Quality Group": qg_val,
-                    "Material": mat,
-                    "Gauge Range": gauge,
-                    "Specs": specs_list,
-                    "Current HRB Limit": curr_limit_str,
-                    "Valid Coils (N)": valid_coils_count,
-                    "Target Zone (N)": len(target_group),
-                    "Control Limit (HRB)": f"{c_min:.1f} ~ {c_max:.1f}",
-                    "🎯 TARGET LIMIT (HRB)": f"{t_min:.1f} ~ {t_max:.1f}",
-                    "Expected TS (MPa)": f"{ts_min:.0f} ~ {ts_max:.0f}",
-                    "Expected YS (MPa)": f"{ys_min:.0f} ~ {ys_max:.0f}",
-                    "Expected EL (%)": f"{el_min:.1f} ~ {el_max:.1f}"
-                })
-        
-        if len(master_data) > 0:
-            df_final_master = pd.DataFrame(master_data)
-            import datetime
-            from io import BytesIO
-            
-            output_buffer = BytesIO()
-            with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
-                df_final_master.to_excel(writer, sheet_name='Master_Lookup', index=False)
-                workbook = writer.book
-                worksheet = writer.sheets['Master_Lookup']
-                
-                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#2F5597', 'font_color': 'white', 'border': 1, 'align': 'center'})
-                target_fmt = workbook.add_format({'bg_color': '#E2EFDA', 'bold': True, 'border': 1, 'font_color': '#375623', 'align': 'center'})
-                cell_fmt = workbook.add_format({'align': 'center', 'border': 1})
-                
-                for col_num, value in enumerate(df_final_master.columns.values): worksheet.write(0, col_num, value, header_fmt)
-                
-                worksheet.set_column('A:C', 14, cell_fmt)
-                worksheet.set_column('D:E', 15, cell_fmt)
-                worksheet.set_column('F:F', 30, cell_fmt)
-                worksheet.set_column('G:G', 20, cell_fmt)
-                worksheet.set_column('H:I', 15, cell_fmt)
-                worksheet.set_column('J:J', 22, cell_fmt)
-                worksheet.set_column('K:K', 28, target_fmt)
-                worksheet.set_column('L:N', 20, cell_fmt)
-                
-            st.success(f"✅ Dictionary successfully generated for **{len(df_final_master)} product groups**.")
-            st.download_button(
-                label="📥 Download Master Report (Excel)",
-                data=output_buffer.getvalue(),
-                file_name=f"Master_Hardness_Dictionary_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="master_dl_btn_diag"
-            )
-            
-        st.markdown("---")
-        st.markdown("### 🕵️‍♂️ Diagnostic Log: Excluded Groups")
-        col1, col2 = st.columns(2)
-        col1.warning(f"Total rows before cleaning: **{total_raw_rows}**")
-        col2.error(f"Rows dropped due to missing Mech Props (TS/YS/EL): **{total_raw_rows - total_clean_rows}**")
-        
-        if len(rejected_data) > 0:
-            st.caption("The following groups were excluded from the dictionary because they have fewer than 30 **coils with complete mechanical data**:")
-            df_rejected = pd.DataFrame(rejected_data).sort_values(by="Valid Coils", ascending=False)
-            st.dataframe(df_rejected, use_container_width=True, hide_index=True)
-            
-    # 🛑 ĐÂY LÀ CHỐT CHẶN QUAN TRỌNG NHẤT: Bắt hệ thống dừng lại, không vẽ thêm gì bên dưới!
-    st.stop() 
