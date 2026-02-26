@@ -1547,12 +1547,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.download_button("📥 Export Summary CSV", df_total.to_csv(index=False).encode('utf-8-sig'), f"SPC_Summary_{str(qgroup).replace(' ','')}.csv")
 # ==============================================================================
 # ==============================================================================
+# 🌟 MANAGER SPECIAL FEATURE: GLOBAL MASTER LOOKUP EXPORT (FINAL STABLE)
 # ==============================================================================
-# 🛑 DỪNG LẠI: ĐẢM BẢO DÒNG NÀY KHÔNG CÓ KHOẢNG TRẮNG Ở ĐẦU DÒNG (NO INDENTATION)
-# ==============================================================================
-
-# Nếu bạn thấy dòng 'for i, (_, g) in enumerate(valid.iterrows()):' ở phía trên, 
-# hãy chắc chắn rằng đoạn code dưới đây đã lùi hết cỡ về phía bên trái.
+# ĐẢM BẢO ĐOẠN NÀY KHÔNG THỤT ĐẦU DÒNG (OUTSIDE ANY FOR LOOP)
 
 st.markdown("---")
 st.header("👑 Master Mechanical Properties Dictionary")
@@ -1562,15 +1559,16 @@ st.info("""
     - Define **Control Limits (3σ)** for absolute safety boundaries.
 """)
 
-# Unique key 'global_master_dict_btn' ensures no DuplicateElementId error
-if st.button("🚀 Generate & Download Master Dictionary (Excel)", type="primary", key="global_master_dict_btn"):
+# Unique key 'global_master_export' prevents DuplicateElementId error
+if st.button("🚀 Generate & Download Master Dictionary (Excel)", type="primary", key="global_master_export"):
     master_data = []
     
     # Use the "Safe Box" (df_master_full) to access 100% of raw data
+    # If df_master_full doesn't exist, fallback to df (but results will be filtered)
     target_df = df_master_full if 'df_master_full' in locals() else df
     clean_df = target_df.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
     
-    # Global scan across all Materials and Gauges
+    # Global scan across ALL Materials and Gauges
     for (mat, gauge), group in clean_df.groupby(['Material', 'Gauge_Range']):
         
         # Apply Central Limit Theorem (N >= 30) for statistical reliability
@@ -1588,6 +1586,11 @@ if st.button("🚀 Generate & Download Master Dictionary (Excel)", type="primary
         target_coils = group[(group['Hardness_LINE'] >= target_min) & (group['Hardness_LINE'] <= target_max)]
         
         if len(target_coils) > 0:
+            # Stats for Expected Properties
+            ts_mean = target_coils['TS'].mean(); ts_std = target_coils['TS'].std() if len(target_coils) > 1 else 0
+            ys_mean = target_coils['YS'].mean(); ys_std = target_coils['YS'].std() if len(target_coils) > 1 else 0
+            el_mean = target_coils['EL'].mean(); el_std = target_coils['EL'].std() if len(target_coils) > 1 else 0
+            
             master_data.append({
                 "Material": mat,
                 "Gauge Range": gauge,
@@ -1595,9 +1598,9 @@ if st.button("🚀 Generate & Download Master Dictionary (Excel)", type="primary
                 "Target Zone (N)": len(target_coils),
                 "Control Limit (HRB)": f"{control_min:.1f} ~ {control_max:.1f}",
                 "🎯 TARGET LIMIT (HRB)": f"{target_min:.1f} ~ {target_max:.1f}",
-                "Expected TS (MPa)": f"{target_coils['TS'].mean():.0f} ±{target_coils['TS'].std():.0f}",
-                "Expected YS (MPa)": f"{target_coils['YS'].mean():.0f} ±{target_coils['YS'].std():.0f}",
-                "Expected EL (%)": f"{target_coils['EL'].mean():.1f} ±{target_coils['EL'].std():.1f}"
+                "Expected TS (MPa)": f"{ts_mean:.0f} ±{ts_std:.0f}",
+                "Expected YS (MPa)": f"{ys_mean:.0f} ±{ys_std:.0f}",
+                "Expected EL (%)": f"{el_mean:.1f} ±{el_std:.1f}"
             })
     
     if len(master_data) > 0:
@@ -1617,12 +1620,19 @@ if st.button("🚀 Generate & Download Master Dictionary (Excel)", type="primary
             # Professional Formatting for Executive Reports
             header_fmt = workbook.add_format({'bold': True, 'bg_color': '#2F5597', 'font_color': 'white', 'border': 1, 'align': 'center'})
             target_fmt = workbook.add_format({'bg_color': '#E2EFDA', 'bold': True, 'border': 1, 'font_color': '#375623', 'align': 'center'})
+            num_fmt = workbook.add_format({'align': 'center', 'border': 1})
             
+            # Apply Header Format
             for col_num, value in enumerate(df_master.columns.values):
                 worksheet.write(0, col_num, value, header_fmt)
             
-            worksheet.set_column('A:A', 15); worksheet.set_column('B:B', 22)
-            worksheet.set_column('F:F', 30, target_fmt) # Highlight Target Zone
+            # Formatting Columns
+            worksheet.set_column('A:A', 15, num_fmt)  # Material
+            worksheet.set_column('B:B', 22, num_fmt)  # Gauge Range
+            worksheet.set_column('C:D', 15, num_fmt)  # N counts
+            worksheet.set_column('E:E', 22, num_fmt)  # Control Limit
+            worksheet.set_column('F:F', 30, target_fmt) # 🎯 TARGET LIMIT
+            worksheet.set_column('G:I', 20, num_fmt)  # Expected Props
             
         st.success(f"✅ Master Dictionary created with {len(df_master)} products.")
         st.download_button(
@@ -1630,7 +1640,7 @@ if st.button("🚀 Generate & Download Master Dictionary (Excel)", type="primary
             data=output.getvalue(),
             file_name=excel_name,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="master_download_action_final"
+            key="master_download_btn_final"
         )
     else:
-        st.error("⚠️ No data groups met the N>=30 requirement.")
+        st.error("⚠️ No data groups met the N>=30 requirement. Dictionary could not be generated.")
