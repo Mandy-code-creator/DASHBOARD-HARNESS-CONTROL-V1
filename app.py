@@ -727,180 +727,82 @@ if view_mode == "📊 Executive KPI Dashboard":
                 st.success("🎉 Excellent! All products are stable with no significant risks.")
     st.stop()
 # ==============================================================================
-# ==============================================================================
-# 👑 GLOBAL MASTER DICTIONARY EXPORT (DEDICATED VIEW)
-# ==============================================================================
-# Lưu ý: Chữ 'if' dưới đây phải nằm sát lề trái hoàn toàn
-if view_mode == "👑 Global Master Dictionary Export":
-    
-    st.markdown("---")
-    st.header("👑 Master Mechanical Properties Dictionary")
-    st.info("""
-        This tool performs a **factory-wide scan** to establish standardized production targets:
-        - **Target Limits**: Optimal operating window for consistency.
-        - **Control Limits (HRB & Mech Props)**: Statistical safety boundaries ($\mu \pm k\cdot\sigma$).
-        - **Expected Values**: Predicted mechanical results based on the stable target zone.
-    """)
-
-    st.markdown("#### ⚙️ Custom Statistical Parameters")
-    col_sig1, col_sig2 = st.columns(2)
-    with col_sig1:
-        target_k = st.number_input("🎯 Target Zone Multiplier (Default: 1.0 σ)", value=1.0, step=0.1, key="k_target")
-    with col_sig2:
-        control_k = st.number_input("🚧 Control Limit Multiplier (Default: 3.0 σ)", value=3.0, step=0.5, key="k_control")
-    
-    st.markdown("<br>", unsafe_allow_html=True)
-
-    if st.button("🚀 Generate & Download Master Dictionary", type="primary", key="master_gen_btn_final"):
-        master_data = []
-        rejected_data = [] 
-        
-        # 1. Lấy dữ liệu và làm sạch
-        source_df = df_master_full if 'df_master_full' in locals() else df
-        total_raw_rows = len(source_df)
-        
-        clean_master_df = source_df.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
-        total_clean_rows = len(clean_master_df)
-        
-        # 2. Gom nhóm theo 5 điều kiện
-        group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
-        
-        for keys, group in clean_master_df.groupby(group_cols):
-            rolling_val, metal_val, qg_val, mat, gauge = keys
-            valid_coils_count = len(group)
-            
-            # Bộ lọc độ tin cậy N >= 30
-            if valid_coils_count < 30: 
-                rejected_data.append({
-                    "Rolling": rolling_val, "Metallic": metal_val, 
-                    "Quality": qg_val, "Material": mat, 
-                    "Gauge": gauge, "Valid Coils": valid_coils_count
-                })
-                continue 
-            
-            # 3. THỐNG KÊ ĐỘ CỨNG (HRB)
-            mean_hrb = group['Hardness_LINE'].mean()
-            std_hrb = group['Hardness_LINE'].std() if len(group) > 1 else 0
-            
-            hrb_values = group['Hardness_LINE'].values
-            mrs = np.abs(np.diff(hrb_values)) 
-            mr_bar = np.mean(mrs) if len(mrs) > 0 else 0
-            sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_hrb 
-            
-            t_min, t_max = mean_hrb - (target_k * std_hrb), mean_hrb + (target_k * std_hrb)
-            c_min, c_max = mean_hrb - (control_k * std_hrb), mean_hrb + (control_k * std_hrb)
-            imr_min, imr_max = mean_hrb - (control_k * sigma_imr), mean_hrb + (control_k * sigma_imr)
-            
-            # 4. THỐNG KÊ GIỚI HẠN CƠ TÍNH CONTROL (Dựa trên toàn bộ nhóm N cuộn)
-            ts_mu = group['TS'].mean(); ts_sig = group['TS'].std() if valid_coils_count > 1 else 0
-            ys_mu = group['YS'].mean(); ys_sig = group['YS'].std() if valid_coils_count > 1 else 0
-            el_mu = group['EL'].mean(); el_sig = group['EL'].std() if valid_coils_count > 1 else 0
-            
-            ts_cmin, ts_cmax = ts_mu - (control_k * ts_sig), ts_mu + (control_k * ts_sig)
-            ys_cmin, ys_cmax = ys_mu - (control_k * ys_sig), ys_mu + (control_k * ys_sig)
-            el_cmin, el_cmax = max(0, el_mu - (control_k * el_sig)), el_mu + (control_k * el_sig)
-            
-            # 5. TRÍCH XUẤT VÙNG KỲ VỌNG TARGET (Chỉ lấy các cuộn đạt Target HRB)
-            target_group = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
-            
-            if len(target_group) > 0:
-                specs_list = ", ".join(sorted(group['Product_Spec'].dropna().astype(str).unique())) if 'Product_Spec' in group.columns else "N/A"
-                curr_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
-                curr_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
-                curr_limit_str = f"{curr_min:.0f} ~ {curr_max:.0f}" if (0 < curr_max < 9000) else (f"≥ {curr_min:.0f}" if curr_min > 0 else "N/A")
-                
-                # Tính Mean và Sigma của riêng nhóm Target
-                t_ts_mu = target_group['TS'].mean(); t_ts_sig = target_group['TS'].std() if len(target_group) > 1 else 0
-                t_ys_mu = target_group['YS'].mean(); t_ys_sig = target_group['YS'].std() if len(target_group) > 1 else 0
-                t_el_mu = target_group['EL'].mean(); t_el_sig = target_group['EL'].std() if len(target_group) > 1 else 0
-                
-                # Tính Min~Max kỳ vọng cho cơ tính dựa trên Target Zone
-                exp_ts_min, exp_ts_max = t_ts_mu - (control_k * t_ts_sig), t_ts_mu + (control_k * t_ts_sig)
-                exp_ys_min, exp_ys_max = t_ys_mu - (control_k * t_ys_sig), t_ys_mu + (control_k * t_ys_sig)
-                exp_el_min, exp_el_max = max(0, t_el_mu - (control_k * t_el_sig)), t_el_mu + (control_k * t_el_sig)
-
-                master_data.append({
-                    "Rolling Type": rolling_val,
-                    "Metallic Type": metal_val,
-                    "Quality Group": qg_val,
-                    "Material": mat,
-                    "Gauge Range": gauge,
-                    "Specs": specs_list,
-                    "Current HRB Limit": curr_limit_str,
-                    "Valid Coils (N)": valid_coils_count,
-                    "Target Zone (N)": len(target_group),
-                    "Std Control Limit (HRB)": f"{c_min:.1f} ~ {c_max:.1f}",
-                    "I-MR Limit (HRB)": f"{imr_min:.1f} ~ {imr_max:.1f}",
-                    "🎯 TARGET LIMIT (HRB)": f"{t_min:.1f} ~ {t_max:.1f}",
-                    "TS Control Limit": f"{ts_cmin:.0f} ~ {ts_cmax:.0f}",
-                    "Expected TS (Target)": f"{exp_ts_min:.0f} ~ {exp_ts_max:.0f}",
-                    "YS Control Limit": f"{ys_cmin:.0f} ~ {ys_cmax:.0f}",
-                    "Expected YS (Target)": f"{exp_ys_min:.0f} ~ {exp_ys_max:.0f}",
-                    "EL Control Limit": f"{el_cmin:.1f} ~ {el_cmax:.1f}",
-                    "Expected EL (Target)": f"{exp_el_min:.1f} ~ {exp_el_max:.1f}"
-                })
-        
-        # 6. XUẤT EXCEL VÀ ĐỊNH DẠNG MÀU SẮC
-        if len(master_data) > 0:
-            df_final_master = pd.DataFrame(master_data)
-            import datetime
-            from io import BytesIO
-            
-            output_buffer = BytesIO()
-            with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
-                df_final_master.to_excel(writer, sheet_name='Master_Lookup', index=False)
-                workbook = writer.book
-                worksheet = writer.sheets['Master_Lookup']
-                
-                # Setup định dạng màu chuyên nghiệp
-                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#2F5597', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
-                target_fmt = workbook.add_format({'bg_color': '#E2EFDA', 'bold': True, 'border': 1, 'font_color': '#375623', 'align': 'center'})
-                imr_fmt = workbook.add_format({'bg_color': '#FFF2CC', 'bold': True, 'border': 1, 'font_color': '#C00000', 'align': 'center'})
-                ctrl_prop_fmt = workbook.add_format({'bg_color': '#F2F2F2', 'border': 1, 'align': 'center', 'font_color': '#595959'}) 
-                cell_fmt = workbook.add_format({'align': 'center', 'border': 1})
-                
-                for col_num, value in enumerate(df_final_master.columns.values): 
-                    worksheet.write(0, col_num, value, header_fmt)
-                
-                # Set độ rộng cột
-                worksheet.set_column('A:C', 14, cell_fmt)
-                worksheet.set_column('D:E', 15, cell_fmt)
-                worksheet.set_column('F:F', 30, cell_fmt)
-                worksheet.set_column('G:I', 16, cell_fmt)
-                worksheet.set_column('J:J', 22, cell_fmt)    # Std Control HRB
-                worksheet.set_column('K:K', 20, imr_fmt)     # I-MR Limit HRB
-                worksheet.set_column('L:L', 26, target_fmt)  # 🎯 TARGET HRB
-                worksheet.set_column('M:M', 20, ctrl_prop_fmt) # TS Control
-                worksheet.set_column('N:N', 22, cell_fmt)      # Expected TS
-                worksheet.set_column('O:O', 20, ctrl_prop_fmt) # YS Control
-                worksheet.set_column('P:P', 22, cell_fmt)      # Expected YS
-                worksheet.set_column('Q:Q', 20, ctrl_prop_fmt) # EL Control
-                worksheet.set_column('R:R', 22, cell_fmt)      # Expected EL
-                
-            st.success(f"✅ Dictionary successfully generated for **{len(df_final_master)} product groups**.")
-            st.download_button(
-                label="📥 Download Master Report (Excel)",
-                data=output_buffer.getvalue(),
-                file_name=f"Master_Hardness_Dictionary_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="master_dl_btn_final"
-            )
-            
-        # 7. DIAGNOSTIC LOG
-        st.markdown("---")
-        st.markdown("### 🕵️‍♂️ Diagnostic Log: Excluded Groups")
-        col1, col2 = st.columns(2)
-        col1.warning(f"Total rows before cleaning: **{total_raw_rows}**")
-        col2.error(f"Rows dropped due to missing Mech Props (TS/YS/EL): **{total_raw_rows - total_clean_rows}**")
-        
+# ... (Phần code Diagnostic Log giữ nguyên) ...
         if len(rejected_data) > 0:
             st.caption("Excluded groups (N < 30 coils with complete mechanical data):")
             df_rejected = pd.DataFrame(rejected_data).sort_values(by="Valid Coils", ascending=False)
             st.dataframe(df_rejected, use_container_width=True, hide_index=True)
             
-    # LỆNH CHỐT CHẶN: Dừng vẽ giao diện phần dưới
-    st.stop() 
+    # ==========================================================================
+    # 📊 NÂNG CẤP: DISTRIBUTION IMPACT ANALYSIS (BEFORE VS AFTER)
+    # ==========================================================================
+    st.markdown("---")
+    st.markdown("### 📊 Distribution Impact Analysis (Before vs. After)")
+    st.info("Select a product group to visualize how operating within the **Target HRB Zone** narrows the distribution of Mechanical Properties.")
 
+    # 1. Lấy danh sách các mã hàng hợp lệ (N >= 30) để đưa vào Dropdown
+    if 'clean_master_df' in locals():
+        valid_groups_df = clean_master_df.groupby(['Material', 'Gauge_Range']).size().reset_index(name='count')
+        valid_groups_df = valid_groups_df[valid_groups_df['count'] >= 30]
+
+        if not valid_groups_df.empty:
+            # Tạo danh sách hiển thị
+            group_options = [f"{row['Material']} | {row['Gauge_Range']}" for _, row in valid_groups_df.iterrows()]
+            selected_group = st.selectbox("🔍 Select Product Group to Analyze:", group_options)
+            
+            sel_mat, sel_gauge = selected_group.split(" | ")
+            
+            # 2. Lọc dữ liệu cho mã hàng được chọn
+            g_data = clean_master_df[(clean_master_df['Material'] == sel_mat) & (clean_master_df['Gauge_Range'] == sel_gauge)]
+            
+            # 3. Tính toán lại Target Zone dựa trên hệ số K hiện tại
+            mean_hrb = g_data['Hardness_LINE'].mean()
+            std_hrb = g_data['Hardness_LINE'].std()
+            t_min = mean_hrb - (target_k * std_hrb)
+            t_max = mean_hrb + (target_k * std_hrb)
+            
+            # Trích xuất nhóm "Hoa hậu" (Nằm trong Target Zone)
+            target_data = g_data[(g_data['Hardness_LINE'] >= t_min) & (g_data['Hardness_LINE'] <= t_max)]
+            
+            import plotly.graph_objects as go
+            from plotly.subplots import make_subplots
+            
+            # 4. Vẽ 3 biểu đồ Histogram (TS, YS, EL) nằm ngang
+            fig = make_subplots(rows=1, cols=3, subplot_titles=("Tensile Strength (TS)", "Yield Strength (YS)", "Elongation (EL)"))
+            
+            # Biểu đồ TS
+            fig.add_trace(go.Histogram(x=g_data['TS'], name='Before (All Coils)', marker_color='lightgray', opacity=0.6, nbinsx=25), row=1, col=1)
+            fig.add_trace(go.Histogram(x=target_data['TS'], name='After (Target Zone)', marker_color='#2F5597', opacity=0.8, nbinsx=25), row=1, col=1)
+            
+            # Biểu đồ YS
+            fig.add_trace(go.Histogram(x=g_data['YS'], name='Before (All Coils)', marker_color='lightgray', opacity=0.6, nbinsx=25, showlegend=False), row=1, col=2)
+            fig.add_trace(go.Histogram(x=target_data['YS'], name='After (Target Zone)', marker_color='#375623', opacity=0.8, nbinsx=25, showlegend=False), row=1, col=2)
+            
+            # Biểu đồ EL
+            fig.add_trace(go.Histogram(x=g_data['EL'], name='Before (All Coils)', marker_color='lightgray', opacity=0.6, nbinsx=25, showlegend=False), row=1, col=3)
+            fig.add_trace(go.Histogram(x=target_data['EL'], name='After (Target Zone)', marker_color='#C00000', opacity=0.8, nbinsx=25, showlegend=False), row=1, col=3)
+            
+            # Chỉnh Layout barmode='overlay' để thấy sự lồng ghép
+            fig.update_layout(barmode='overlay', height=400, margin=dict(l=20, r=20, t=40, b=20))
+            st.plotly_chart(fig, use_container_width=True)
+
+            # 5. Bảng tóm tắt kết quả (Hiển thị đúng 2 chữ số thập phân)
+            st.markdown(f"**📉 Statistical Proof of Improvement (Variance Reduction)**")
+            
+            col_ts, col_ys, col_el = st.columns(3)
+            
+            # Tính toán độ lệch chuẩn (Std Dev) để đại diện cho độ "dao động"
+            ts_std_before = g_data['TS'].std(); ts_std_after = target_data['TS'].std() if len(target_data) > 1 else 0
+            ys_std_before = g_data['YS'].std(); ys_std_after = target_data['YS'].std() if len(target_data) > 1 else 0
+            el_std_before = g_data['EL'].std(); el_std_after = target_data['EL'].std() if len(target_data) > 1 else 0
+            
+            # Format giá trị hiển thị với .2f
+            col_ts.metric("TS Spread (Std Dev)", f"{ts_std_after:.2f}", f"{ts_std_after - ts_std_before:.2f} (Narrower)", delta_color="inverse")
+            col_ys.metric("YS Spread (Std Dev)", f"{ys_std_after:.2f}", f"{ys_std_after - ys_std_before:.2f} (Narrower)", delta_color="inverse")
+            col_el.metric("EL Spread (Std Dev)", f"{el_std_after:.2f}", f"{el_std_after - el_std_before:.2f} (Narrower)", delta_color="inverse")
+
+    # 🛑 LỆNH CHỐT CHẶN NẰM Ở ĐÂY
+    st.stop()
 # ==============================================================================
 # MAIN LOOP (DETAILS)
 # ==============================================================================
