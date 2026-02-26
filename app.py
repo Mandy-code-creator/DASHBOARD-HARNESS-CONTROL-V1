@@ -236,6 +236,7 @@ df["Gauge_Range"] = df["Order_Gauge"].apply(map_gauge)
 df = df.dropna(subset=["Gauge_Range"])
 
 # ================================
+# ================================
 # SIDEBAR FILTER
 # ================================
 st.sidebar.header("🎛 FILTER")
@@ -248,6 +249,10 @@ rolling = st.sidebar.radio("Rolling Type", all_rolling)
 metal   = st.sidebar.radio("Metallic Type", all_metal)
 qgroup  = st.sidebar.radio("Quality Group", all_qgroup)
 
+# ---> [CHỈNH SỬA BƯỚC 1]: TẠO KÉT SẮT LƯU TOÀN BỘ DỮ LIỆU ĐÃ LÀM SẠCH <---
+df_master_full = df.copy() 
+
+# Bộ lọc này bây giờ chỉ ảnh hưởng đến biến 'df' dùng cho các View hiển thị, không chạm vào 'df_master_full'
 df = df[
     (df["Rolling_Type"] == rolling) &
     (df["Metallic_Type"] == metal) &
@@ -1541,39 +1546,45 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             st.download_button("📥 Export Summary CSV", df_total.to_csv(index=False).encode('utf-8-sig'), f"SPC_Summary_{str(qgroup).replace(' ','')}.csv")
 # ==============================================================================
-    # 🌟 TÍNH NĂNG ĐẶC BIỆT CHỈ DÀNH CHO QUẢN LÝ: GLOBAL MASTER EXPORT
+ # ==============================================================================
+    # 🌟 MANAGER SPECIAL FEATURE: GLOBAL MASTER LOOKUP EXPORT
     # ==============================================================================
     st.markdown("---")
-    st.header("👑 Master Lookup Dictionary (Bảng Từ Điển Cơ Tính Tổng Hợp)")
-    st.info("Tính năng này sẽ quét toàn bộ dữ liệu lịch sử của nhà máy, phân tích theo từng Mã vật liệu và Độ dày để thiết lập **Giới hạn Mục tiêu (Target)** và dự báo **Cơ tính chuẩn (TS/YS/EL)** tương ứng.")
+    st.header("👑 Master Mechanical Properties Dictionary")
+    st.info("This feature scans the **entire factory history** to establish **Target Limits** and predict **Standard Mechanical Properties** (TS/YS/EL) based on Material and Gauge Range.")
 
     if st.button("🚀 Generate & Download Master Dictionary (Excel)", type="primary"):
         master_data = []
         
-        # LƯU Ý: Đảm bảo biến 'df' (hoặc tên dataframe chứa toàn bộ dữ liệu thô của bạn) được sử dụng ở đây
-        # Lọc bỏ các dòng thiếu dữ liệu cốt lõi
-        clean_df = df.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
-        
-        # Vòng lặp quét qua TOÀN BỘ tổ hợp Material và Gauge_Range
+        # Using the "Safe Box" (df_master_full) to scan all data regardless of sidebar filters
+        if 'df_master_full' in locals():
+            clean_df = df_master_full.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
+        else:
+            clean_df = df.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
+            st.warning("Side effect: Currently scanning filtered data only. Check df_master_full logic.")
+
+        # Loop through ALL combinations of Material and Gauge_Range
         for (mat, gauge), group in clean_df.groupby(['Material', 'Gauge_Range']):
-            if len(group) < 5: 
-                continue # Bỏ qua các mã hàng chạy quá ít (không đủ độ tin cậy thống kê)
+            
+            # Statistical Significance Filter (N >= 30)
+            if len(group) < 30: 
+                continue 
                 
-            # Tính toán thống kê cho độ cứng (HRB)
+            # Hardness (HRB) Statistics
             mean_hrb = group['Hardness_LINE'].mean()
             std_hrb = group['Hardness_LINE'].std() if len(group) > 1 else 0
             
-            # THIẾT LẬP KÉP: Giới hạn Mục tiêu (1 Sigma) và Giới hạn Kiểm soát (3 Sigma)
+            # DUAL LIMIT LOGIC: Target (1 Sigma) and Control (3 Sigma)
             target_min = mean_hrb - std_hrb
             target_max = mean_hrb + std_hrb
             control_min = mean_hrb - (3 * std_hrb)
             control_max = mean_hrb + (3 * std_hrb)
             
-            # Phân tích cơ tính của những cuộn ĐẠT CHUẨN MỤC TIÊU (Nằm trong dải Target)
+            # Analyze coils within the "Sweet Spot" (Target Zone)
             target_coils = group[(group['Hardness_LINE'] >= target_min) & (group['Hardness_LINE'] <= target_max)]
             
             if len(target_coils) > 0:
-                # Tính giá trị trung bình và sai số (RMSE/Std) cho cơ tính
+                # Calculate mean and standard error for Mech Props
                 ts_mean = target_coils['TS'].mean(); ts_std = target_coils['TS'].std() if len(target_coils) > 1 else 0
                 ys_mean = target_coils['YS'].mean(); ys_std = target_coils['YS'].std() if len(target_coils) > 1 else 0
                 el_mean = target_coils['EL'].mean(); el_std = target_coils['EL'].std() if len(target_coils) > 1 else 0
@@ -1581,8 +1592,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 master_data.append({
                     "Material": mat,
                     "Gauge Range": gauge,
-                    "Total Coils (History)": len(group),
-                    "Target Zone Coils": len(target_coils),
+                    "Total History (N)": len(group),
+                    "Target Zone (N)": len(target_coils),
                     "Control Limit (HRB)": f"{control_min:.1f} ~ {control_max:.1f}",
                     "🎯 TARGET LIMIT (HRB)": f"{target_min:.1f} ~ {target_max:.1f}",
                     "Expected TS (MPa)": f"{ts_mean:.0f} ±{ts_std:.0f}",
@@ -1590,11 +1601,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     "Expected EL (%)": f"{el_mean:.1f} ±{el_std:.1f}"
                 })
         
-        # Nếu có dữ liệu thì tiến hành xuất Excel
         if len(master_data) > 0:
             df_master = pd.DataFrame(master_data)
             
-            # Xuất Excel
             import datetime
             from io import BytesIO
             
@@ -1604,30 +1613,29 @@ for i, (_, g) in enumerate(valid.iterrows()):
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_master.to_excel(writer, sheet_name='Master_Dictionary', index=False)
                 
-                # Định dạng độ rộng cột cho Excel đẹp mắt ngay khi mở
                 workbook = writer.book
                 worksheet = writer.sheets['Master_Dictionary']
                 
-                # Định dạng Header có màu nền
-                header_format = workbook.add_format({'bold': True, 'bg_color': '#4F81BD', 'font_color': 'white', 'border': 1})
+                # Professional Corporate Header Formatting
+                header_format = workbook.add_format({'bold': True, 'bg_color': '#2F5597', 'font_color': 'white', 'border': 1})
+                target_format = workbook.add_format({'bg_color': '#E2EFDA', 'bold': True, 'border': 1, 'font_color': '#375623'})
+                
                 for col_num, value in enumerate(df_master.columns.values):
                     worksheet.write(0, col_num, value, header_format)
                 
                 worksheet.set_column('A:A', 15) # Material
-                worksheet.set_column('B:B', 20) # Gauge Range
-                worksheet.set_column('C:D', 18) # Coils count
+                worksheet.set_column('B:B', 22) # Gauge Range
+                worksheet.set_column('C:D', 15) # N counts
                 worksheet.set_column('E:E', 22) # Control Limit
-                worksheet.set_column('F:F', 25, workbook.add_format({'bg_color': '#EBF1DE', 'bold': True})) # 🎯 TARGET LIMIT (Bôi nền xanh nổi bật)
+                worksheet.set_column('F:F', 28, target_format) # 🎯 TARGET LIMIT
                 worksheet.set_column('G:I', 20) # Expected TS/YS/EL
                 
-            processed_data = output.getvalue()
-            
-            st.success("✅ Master Dictionary đã được tạo thành công!")
+            st.success("✅ Master Dictionary generated successfully!")
             st.download_button(
-                label="📥 Tải xuống File Excel Báo Cáo Sếp",
-                data=processed_data,
+                label="📥 Download Master Report (Excel)",
+                data=output.getvalue(),
                 file_name=excel_name,
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )
         else:
-            st.warning("⚠️ Không đủ dữ liệu để tạo bảng Master.")
+            st.warning("⚠️ Insufficient data to generate Master Report.")
