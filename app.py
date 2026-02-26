@@ -1113,7 +1113,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.dataframe(filt[["TS","YS","EL"]].describe().T)
 
     # ================================
- # 6. REVERSE LOOKUP
+ # ================================
+    # 6. REVERSE LOOKUP
     # ================================
     elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
         
@@ -1183,7 +1184,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.error("❌ No coils found matching these specs.")
 
         # --- 2. XỬ LÝ CHUỖI TIÊU CHUẨN (SPECS) TỪ CỘT Product_Spec ---
-        col_name = "Product_Spec"  # Tên cột chính xác tuyệt đối từ danh sách của bạn
+        col_name = "Product_Spec"  
         
         if col_name in sub.columns:
             unique_specs = sub[col_name].dropna().unique()
@@ -1205,6 +1206,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             "Target Hardness (HRB)": target_text,
             "Matching Coils": n_coils
         })
+        
         # --- 3. DISPLAY THE SUMMARY TABLE AT THE LAST ITERATION ---
         if i == len(valid) - 1 and 'reverse_lookup_summary' in locals() and len(reverse_lookup_summary) > 0:
             st.markdown("---")
@@ -1221,19 +1223,40 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 return ''
 
             st.dataframe(
-                df_target.style.applymap(style_target, subset=['Target Hardness (HRB)']),
+                df_target.style.map(style_target, subset=['Target Hardness (HRB)']) if hasattr(df_target.style, "map") else df_target.style.applymap(style_target, subset=['Target Hardness (HRB)']),
                 use_container_width=True,
                 hide_index=True
             )
             
-            # Export to CSV with UTF-8-SIG to support Vietnamese characters in Excel
+            # --- XUẤT FILE EXCEL THAY VÌ CSV ---
             import datetime
+            from io import BytesIO
+            
             today_str = datetime.datetime.now().strftime("%Y%m%d")
             safe_qgroup = str(qgroup).replace(" / ", "_").replace("/", "_").replace(" ", "")
-            csv_filename = f"Target_Hardness_{safe_qgroup}_{today_str}.csv"
+            excel_filename = f"Target_Hardness_{safe_qgroup}_{today_str}.xlsx"
             
-            csv_data = df_target.to_csv(index=False).encode('utf-8-sig')
-            st.download_button(f"📥 Export Target Hardness CSV ({today_str})", csv_data, csv_filename, "text/csv")
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_target.to_excel(writer, sheet_name='Target_Hardness', index=False)
+                
+                # Định dạng độ rộng cột cho Excel
+                workbook = writer.book
+                worksheet = writer.sheets['Target_Hardness']
+                worksheet.set_column('A:A', 30) # Specification List
+                worksheet.set_column('B:C', 15) # Material, Gauge
+                worksheet.set_column('D:F', 18) # YS, TS, EL Setup
+                worksheet.set_column('G:G', 25) # Target Hardness (HRB)
+                worksheet.set_column('H:H', 15) # Matching Coils
+                
+            processed_data = output.getvalue()
+            
+            st.download_button(
+                label="📥 Export Target Hardness (Excel)",
+                data=processed_data,
+                file_name=excel_filename,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
     # ================================
    # ================================
     # 7. AI PREDICTION (ULTIMATE FIX: STABLE INPUT + PRO TOOLTIP)
