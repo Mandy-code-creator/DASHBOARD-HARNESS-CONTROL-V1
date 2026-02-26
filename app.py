@@ -727,9 +727,8 @@ if view_mode == "📊 Executive KPI Dashboard":
                 st.success("🎉 Excellent! All products are stable with no significant risks.")
     st.stop()
 # ==============================================================================
-
 # ==============================================================================
-# 👑 GLOBAL MASTER DICTIONARY EXPORT (FULL VIEW WITH DISTRIBUTION CHARTS)
+# 👑 GLOBAL MASTER DICTIONARY EXPORT (FULL VIEW WITH SIX SIGMA CHARTS)
 # ==============================================================================
 # LƯU Ý: Chữ 'if' dưới đây phải nằm sát lề trái hoàn toàn
 if view_mode == "👑 Global Master Dictionary Export":
@@ -759,6 +758,9 @@ if view_mode == "👑 Global Master Dictionary Export":
     
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # Khai báo nhóm 5 điều kiện lọc cốt lõi
+    group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
+
     if st.button("🚀 Generate & Download Master Dictionary", type="primary", key="master_gen_btn_final"):
         master_data = []
         rejected_data = [] 
@@ -771,8 +773,6 @@ if view_mode == "👑 Global Master Dictionary Export":
         total_clean_rows = len(clean_master_df)
         
         # 2. GOM NHÓM THEO 5 ĐIỀU KIỆN LỌC
-        group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
-        
         for keys, group in clean_master_df.groupby(group_cols):
             rolling_val, metal_val, qg_val, mat, gauge = keys
             valid_coils_count = len(group)
@@ -901,24 +901,41 @@ if view_mode == "👑 Global Master Dictionary Export":
             df_rejected = pd.DataFrame(rejected_data).sort_values(by="Valid Coils", ascending=False)
             st.dataframe(df_rejected, use_container_width=True, hide_index=True)
             
-    # 8. BIỂU ĐỒ PHÂN BỐ (DISTRIBUTION IMPACT ANALYSIS)
+    # ==========================================================================
+    # 8. BIỂU ĐỒ PHÂN BỐ (SIX SIGMA CAPABILITY ANALYSIS) - ĐỒNG BỘ 5 LOGIC LỌC
+    # ==========================================================================
     st.markdown("---")
-    st.markdown("### 📊 Distribution Impact Analysis (Before vs. After)")
-    st.info("Select a product group to visualize how operating within the **Target HRB Zone** narrows the distribution of Mechanical Properties.")
+    st.markdown("### 📊 Process Capability Analysis (Before vs. After)")
+    st.info("Select a highly specific product group to visualize how operating within the **Target HRB Zone** narrows the distribution of Mechanical Properties.")
 
     source_df = df_master_full if 'df_master_full' in locals() else df
     clean_master_df = source_df.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
     
-    valid_groups_df = clean_master_df.groupby(['Material', 'Gauge_Range']).size().reset_index(name='count')
+    # Gom nhóm theo 5 cấp độ logic
+    valid_groups_df = clean_master_df.groupby(group_cols).size().reset_index(name='count')
     valid_groups_df = valid_groups_df[valid_groups_df['count'] >= 30]
 
     if not valid_groups_df.empty:
-        group_options = [f"{row['Material']} | {row['Gauge_Range']}" for _, row in valid_groups_df.iterrows()]
+        # Tạo danh sách thả xuống gồm cả 5 thông số
+        group_options = [
+            f"{row['Rolling_Type']} | {row['Metallic_Type']} | {row['Quality_Group']} | {row['Material']} | {row['Gauge_Range']}" 
+            for _, row in valid_groups_df.iterrows()
+        ]
         selected_group = st.selectbox("🔍 Select Product Group to Analyze:", group_options)
         
-        sel_mat, sel_gauge = selected_group.split(" | ")
-        g_data = clean_master_df[(clean_master_df['Material'] == sel_mat) & (clean_master_df['Gauge_Range'] == sel_gauge)]
+        # Tách ngược lại thành 5 biến để truy vấn dữ liệu
+        sel_roll, sel_metal, sel_qg, sel_mat, sel_gauge = selected_group.split(" | ")
         
+        # Lọc dữ liệu nguyên chất 100%
+        g_data = clean_master_df[
+            (clean_master_df['Rolling_Type'] == sel_roll) &
+            (clean_master_df['Metallic_Type'] == sel_metal) &
+            (clean_master_df['Quality_Group'] == sel_qg) &
+            (clean_master_df['Material'] == sel_mat) &
+            (clean_master_df['Gauge_Range'] == sel_gauge)
+        ]
+        
+        # Tính toán lại Target Zone
         mean_hrb = g_data['Hardness_LINE'].mean()
         std_hrb = g_data['Hardness_LINE'].std()
         t_min = mean_hrb - (target_k * std_hrb)
@@ -926,19 +943,45 @@ if view_mode == "👑 Global Master Dictionary Export":
         
         target_data = g_data[(g_data['Hardness_LINE'] >= t_min) & (g_data['Hardness_LINE'] <= t_max)]
         
+        # HÀM VẼ BIỂU ĐỒ SIX SIGMA CHUYÊN DỤNG
+        def plot_capability_dist(col_idx, data_all, data_target, color_target, name):
+            mu_all = data_all.mean(); sig_all = data_all.std() if len(data_all) > 1 else 1
+            mu_tgt = data_target.mean(); sig_tgt = data_target.std() if len(data_target) > 1 else 1
+            if sig_tgt == 0: sig_tgt = 0.001 # Chống lỗi chia cho 0 khi đường cong quá hoàn hảo
+            
+            c_min, c_max = mu_all - (control_k * sig_all), mu_all + (control_k * sig_all)
+            t_min, t_max = mu_tgt - (control_k * sig_tgt), mu_tgt + (control_k * sig_tgt)
+            if name == 'EL': 
+                c_min = max(0, c_min); t_min = max(0, t_min)
+            
+            fig.add_trace(go.Histogram(x=data_all, histnorm='probability density', name=f'Before ({name})', marker_color='lightgray', opacity=0.5, nbinsx=25, showlegend=(col_idx==1)), row=1, col=col_idx)
+            fig.add_trace(go.Histogram(x=data_target, histnorm='probability density', name=f'After ({name})', marker_color=color_target, opacity=0.7, nbinsx=25, showlegend=(col_idx==1)), row=1, col=col_idx)
+            
+            x_curve = np.linspace(data_all.min(), data_all.max(), 200)
+            y_curve = (1.0 / (sig_tgt * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_curve - mu_tgt) / sig_tgt)**2)
+            fig.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', name=f'Target Fit ({name})', line=dict(color=color_target, width=2.5, shape='spline'), showlegend=(col_idx==1)), row=1, col=col_idx)
+            
+            fig.add_vline(x=c_min, line_dash="dash", line_color="red", line_width=2, row=1, col=col_idx)
+            fig.add_vline(x=c_max, line_dash="dash", line_color="red", line_width=2, row=1, col=col_idx)
+            fig.add_vline(x=t_min, line_dash="dashdot", line_color="purple", line_width=2, row=1, col=col_idx)
+            fig.add_vline(x=t_max, line_dash="dashdot", line_color="purple", line_width=2, row=1, col=col_idx)
+
         fig = make_subplots(rows=1, cols=3, subplot_titles=("Tensile Strength (TS)", "Yield Strength (YS)", "Elongation (EL)"))
         
-        # Khởi tạo các dải biểu đồ Histogram
-        fig.add_trace(go.Histogram(x=g_data['TS'], name='Before (All Coils)', marker_color='lightgray', opacity=0.6, nbinsx=25), row=1, col=1)
-        fig.add_trace(go.Histogram(x=target_data['TS'], name='After (Target Zone)', marker_color='#2F5597', opacity=0.8, nbinsx=25), row=1, col=1)
+        plot_capability_dist(1, g_data['TS'], target_data['TS'], '#2F5597', 'TS')
+        plot_capability_dist(2, g_data['YS'], target_data['YS'], '#375623', 'YS')
+        plot_capability_dist(3, g_data['EL'], target_data['EL'], '#C00000', 'EL')
         
-        fig.add_trace(go.Histogram(x=g_data['YS'], name='Before (All Coils)', marker_color='lightgray', opacity=0.6, nbinsx=25, showlegend=False), row=1, col=2)
-        fig.add_trace(go.Histogram(x=target_data['YS'], name='After (Target Zone)', marker_color='#375623', opacity=0.8, nbinsx=25, showlegend=False), row=1, col=2)
+        fig.update_layout(
+            barmode='overlay', 
+            height=450, 
+            margin=dict(l=20, r=20, t=40, b=20),
+            plot_bgcolor='white',
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+        )
+        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)')
+        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)')
         
-        fig.add_trace(go.Histogram(x=g_data['EL'], name='Before (All Coils)', marker_color='lightgray', opacity=0.6, nbinsx=25, showlegend=False), row=1, col=3)
-        fig.add_trace(go.Histogram(x=target_data['EL'], name='After (Target Zone)', marker_color='#C00000', opacity=0.8, nbinsx=25, showlegend=False), row=1, col=3)
-        
-        fig.update_layout(barmode='overlay', height=400, margin=dict(l=20, r=20, t=40, b=20))
         st.plotly_chart(fig, use_container_width=True)
 
         st.markdown(f"**📉 Statistical Proof of Improvement (Variance Reduction)**")
@@ -953,7 +996,7 @@ if view_mode == "👑 Global Master Dictionary Export":
         col_el.metric("EL Spread (Std Dev)", f"{el_std_after:.2f}", f"{el_std_after - el_std_before:.2f} (Narrower)", delta_color="inverse")
 
     # 🛑 CHỐT CHẶN: Dừng lại hoàn toàn tại đây
-    st.stop() 
+    st.stop()
 
 # ==============================================================================
 # MAIN LOOP (DETAILS)
