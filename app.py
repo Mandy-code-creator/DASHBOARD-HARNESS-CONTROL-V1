@@ -1547,9 +1547,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.download_button("📥 Export Summary CSV", df_total.to_csv(index=False).encode('utf-8-sig'), f"SPC_Summary_{str(qgroup).replace(' ','')}.csv")
 # ==============================================================================
 # ==============================================================================
-# 🌟 GLOBAL MASTER DICTIONARY EXPORT (STRICTLY OUTSIDE ALL LOOPS)
+# 👑 GLOBAL MASTER DICTIONARY EXPORT (FINAL STABLE - OUTSIDE ALL LOOPS)
 # ==============================================================================
-# LƯU Ý: Dòng st.markdown dưới đây phải nằm sát lề trái, không được thụt lề.
+# QUAN TRỌNG: Đảm bảo đoạn code này KHÔNG thụt đầu dòng để thoát khỏi vòng lặp 'for'
 
 st.markdown("---")
 st.header("👑 Master Mechanical Properties Dictionary")
@@ -1560,29 +1560,29 @@ st.info("""
     - **Expected Values**: Predicted mechanical results based on historical trends.
 """)
 
-# Unique keys 'master_gen_btn' and 'master_dl_btn' prevent the DuplicateElementId error.
+# Sử dụng key duy nhất 'master_gen_btn' để tránh lỗi Duplicate ID
 if st.button("🚀 Generate & Download Master Dictionary (Excel)", type="primary", key="master_gen_btn"):
     master_data = []
     
-    # Accessing the "Global Safe Box" data to ensure all 16+ products are included.
+    # Sử dụng 'df_master_full' để quét toàn bộ 100% dữ liệu không phụ thuộc vào bộ lọc Sidebar
     source_df = df_master_full if 'df_master_full' in locals() else df
     clean_master_df = source_df.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
     
-    # Process every Material/Gauge combination in the entire dataset.
+    # Quét qua toàn bộ tổ hợp Material/Gauge trong bộ dữ liệu gốc
     for (mat, gauge), group in clean_master_df.groupby(['Material', 'Gauge_Range']):
         
-        # Ensure statistical reliability with N >= 30.
+        # Đảm bảo tính tin cậy thống kê với N >= 30
         if len(group) < 30: 
             continue 
             
         mean_hrb = group['Hardness_LINE'].mean()
         std_hrb = group['Hardness_LINE'].std() if len(group) > 1 else 0
         
-        # Dual-Limit Logic
+        # Tính toán Giới hạn kép (Dual-Limit)
         t_min, t_max = mean_hrb - std_hrb, mean_hrb + std_hrb
         c_min, c_max = mean_hrb - (3 * std_hrb), mean_hrb + (3 * std_hrb)
         
-        # Target Zone Analysis
+        # Phân tích vùng mục tiêu (Target Zone)
         target_group = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
         
         if len(target_group) > 0:
@@ -1610,7 +1610,7 @@ if st.button("🚀 Generate & Download Master Dictionary (Excel)", type="primary
         with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
             df_final_master.to_excel(writer, sheet_name='Master_Lookup', index=False)
             
-            # Excel Styling for Executive Review
+            # Định dạng chuyên nghiệp cho báo cáo quản lý
             workbook = writer.book
             worksheet = writer.sheets['Master_Lookup']
             
@@ -1625,7 +1625,7 @@ if st.button("🚀 Generate & Download Master Dictionary (Excel)", type="primary
             worksheet.set_column('B:B', 25, cell_fmt)
             worksheet.set_column('C:D', 15, cell_fmt)
             worksheet.set_column('E:E', 22, cell_fmt)
-            worksheet.set_column('F:F', 30, target_fmt) # Highlighted Target Zone
+            worksheet.set_column('F:F', 30, target_fmt) # Tô sáng vùng Target
             worksheet.set_column('G:I', 20, cell_fmt)
             
         st.success(f"✅ Dictionary successfully generated for {len(df_final_master)} product groups.")
