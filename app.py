@@ -1671,9 +1671,3 @@ if view_mode == "👑 Global Master Dictionary Export":
             
     # 🛑 ĐÂY LÀ CHỐT CHẶN QUAN TRỌNG NHẤT: Bắt hệ thống dừng lại, không vẽ thêm gì bên dưới!
     st.stop() 
-
-# ==============================================================================
-# MAIN LOOP (DETAILS)
-# ==============================================================================
-for i, (_, g) in enumerate(valid.iterrows()):
-    # ... code cũ của bạn tiếp tục ở đây ...
