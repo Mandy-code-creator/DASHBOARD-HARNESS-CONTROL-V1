@@ -1272,6 +1272,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             )
     # ================================
    # ================================
+# ================================
     # 7. AI PREDICTION (ULTIMATE FIX: STABLE INPUT + PRO TOOLTIP)
     # ================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
@@ -1296,11 +1297,24 @@ for i, (_, g) in enumerate(valid.iterrows()):
             X_train = train_df[["Hardness_LINE"]].values
             preds = {}
             
+            # --- CHỈ THÊM MỚI: Khởi tạo biến lưu độ tin cậy ---
+            from sklearn.metrics import mean_squared_error
+            model_metrics = {}
+            # --------------------------------------------------
+            
             # Tính toán dự báo ngay lập tức theo target_h mới
             for col in ["TS", "YS", "EL"]:
                 model = LinearRegression().fit(X_train, train_df[col].values)
                 val = model.predict([[target_h]])[0]
                 preds[col] = val 
+                
+                # --- CHỈ THÊM MỚI: Tính R2 và RMSE ---
+                y_true = train_df[col].values
+                y_pred = model.predict(X_train)
+                r2 = r2_score(y_true, y_pred)
+                rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+                model_metrics[col] = {"r2": r2, "rmse": rmse}
+                # -------------------------------------
 
             # --- VẼ BIỂU ĐỒ ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
@@ -1383,8 +1397,19 @@ for i, (_, g) in enumerate(valid.iterrows()):
             last_el = train_df["EL"].iloc[-1]
 
             c1.metric("Tensile Strength (TS)", f"{int(round(preds['TS']))} MPa", f"{get_delta(preds['TS'], last_ts)} vs Last")
+            # --- CHỈ THÊM MỚI: Hiển thị độ tin cậy ---
+            c1.caption(f"🎯 **R² Score:** {model_metrics['TS']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['TS']['rmse']:.1f}")
+            # ------------------------------------------
+
             c2.metric("Yield Strength (YS)", f"{int(round(preds['YS']))} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last")
+            # --- CHỈ THÊM MỚI: Hiển thị độ tin cậy ---
+            c2.caption(f"🎯 **R² Score:** {model_metrics['YS']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['YS']['rmse']:.1f}")
+            # ------------------------------------------
+
             c3.metric("Elongation (EL)", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
+            # --- CHỈ THÊM MỚI: Hiển thị độ tin cậy ---
+            c3.caption(f"🎯 **R² Score:** {model_metrics['EL']['r2']:.2f} | **Sai số (RMSE):** ±{model_metrics['EL']['rmse']:.1f}")
+            # ------------------------------------------
     # ================================
   # ==============================================================================
 # ==============================================================================
