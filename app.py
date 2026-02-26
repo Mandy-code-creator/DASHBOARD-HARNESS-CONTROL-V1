@@ -728,20 +728,19 @@ if view_mode == "📊 Executive KPI Dashboard":
     st.stop()
 # ==============================================================================
 # ==============================================================================
-# 👑 GLOBAL MASTER DICTIONARY EXPORT (WITH INTERACTIVE SIGMA & I-MR)
+# 👑 GLOBAL MASTER DICTIONARY EXPORT (WITH MECH PROPS CONTROL LIMITS)
 # ==============================================================================
 if view_mode == "👑 Global Master Dictionary Export":
     
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary")
     st.info("""
-        This tool performs a **factory-wide scan** to establish standardized production targets.
+        This tool performs a **factory-wide scan** to establish standardized production targets:
         - **Target Limits**: Optimal operating window for consistency.
-        - **Std Control Limits**: Statistical safety boundaries based on overall standard deviation.
-        - **I-MR Limits**: Advanced control boundaries based on coil-to-coil moving range variations.
+        - **Control Limits (HRB & Mech Props)**: Statistical safety boundaries ($\mu \pm k\cdot\sigma$).
+        - **Expected Values**: Predicted mechanical results based on the stable target zone.
     """)
 
-    # --- TÍNH NĂNG MỚI: THANH ĐIỀU CHỈNH HỆ SỐ SIGMA TRỰC TIẾP TRÊN UI ---
     st.markdown("#### ⚙️ Custom Statistical Parameters")
     col_sig1, col_sig2 = st.columns(2)
     with col_sig1:
@@ -749,9 +748,8 @@ if view_mode == "👑 Global Master Dictionary Export":
     with col_sig2:
         control_k = st.number_input("🚧 Control Limit Multiplier (Default: 3.0 σ)", value=3.0, step=0.5, key="k_control")
     
-    st.markdown("<br>", unsafe_allow_html=True) # Tạo khoảng trống cho đẹp
+    st.markdown("<br>", unsafe_allow_html=True)
 
-    # Nút Export
     if st.button("🚀 Generate & Download Master Dictionary", type="primary", key="master_gen_btn_diag"):
         master_data = []
         rejected_data = [] 
@@ -776,26 +774,33 @@ if view_mode == "👑 Global Master Dictionary Export":
                 })
                 continue 
             
-            # 1. Tính toán Thống kê Tiêu chuẩn (Standard Stats)
+            # 1. THỐNG KÊ ĐỘ CỨNG (HRB)
             mean_hrb = group['Hardness_LINE'].mean()
             std_hrb = group['Hardness_LINE'].std() if len(group) > 1 else 0
             
-            # 2. TÍNH TOÁN I-MR (Cơ chế cuộn nối cuộn)
             hrb_values = group['Hardness_LINE'].values
-            mrs = np.abs(np.diff(hrb_values)) # Tính chênh lệch Moving Range
+            mrs = np.abs(np.diff(hrb_values)) 
             mr_bar = np.mean(mrs) if len(mrs) > 0 else 0
-            sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_hrb # Hằng số d2 cho n=2 là 1.128
+            sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_hrb 
             
-            # 3. Tính các Giới hạn dựa trên hệ số K từ giao diện người dùng nhập
             t_min, t_max = mean_hrb - (target_k * std_hrb), mean_hrb + (target_k * std_hrb)
             c_min, c_max = mean_hrb - (control_k * std_hrb), mean_hrb + (control_k * std_hrb)
             imr_min, imr_max = mean_hrb - (control_k * sigma_imr), mean_hrb + (control_k * sigma_imr)
             
+            # 2. THỐNG KÊ GIỚI HẠN CƠ TÍNH (Dựa trên toàn bộ nhóm N cuộn)
+            ts_mu = group['TS'].mean(); ts_sig = group['TS'].std() if valid_coils_count > 1 else 0
+            ys_mu = group['YS'].mean(); ys_sig = group['YS'].std() if valid_coils_count > 1 else 0
+            el_mu = group['EL'].mean(); el_sig = group['EL'].std() if valid_coils_count > 1 else 0
+            
+            ts_cmin, ts_cmax = ts_mu - (control_k * ts_sig), ts_mu + (control_k * ts_sig)
+            ys_cmin, ys_cmax = ys_mu - (control_k * ys_sig), ys_mu + (control_k * ys_sig)
+            el_cmin, el_cmax = max(0, el_mu - (control_k * el_sig)), el_mu + (control_k * el_sig) # EL không âm
+            
+            # 3. TRÍCH XUẤT VÙNG KỲ VỌNG (Dựa trên Target HRB Zone)
             target_group = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
             
             if len(target_group) > 0:
                 specs_list = ", ".join(sorted(group['Product_Spec'].dropna().astype(str).unique())) if 'Product_Spec' in group.columns else "N/A"
-                
                 curr_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
                 curr_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
                 curr_limit_str = f"{curr_min:.0f} ~ {curr_max:.0f}" if (0 < curr_max < 9000) else (f"≥ {curr_min:.0f}" if curr_min > 0 else "N/A")
@@ -804,7 +809,6 @@ if view_mode == "👑 Global Master Dictionary Export":
                 ys_min = target_group['YS'].min(); ys_max = target_group['YS'].max()
                 el_min = target_group['EL'].min(); el_max = target_group['EL'].max()
 
-                # THÊM CỘT I-MR VÀO BẢNG TỔNG HỢP
                 master_data.append({
                     "Rolling Type": rolling_val,
                     "Metallic Type": metal_val,
@@ -815,50 +819,63 @@ if view_mode == "👑 Global Master Dictionary Export":
                     "Current HRB Limit": curr_limit_str,
                     "Valid Coils (N)": valid_coils_count,
                     "Target Zone (N)": len(target_group),
-                    "Std Control Limit": f"{c_min:.1f} ~ {c_max:.1f}",       # <--- Giới hạn Standard
-                    "I-MR Limit (Optimal)": f"{imr_min:.1f} ~ {imr_max:.1f}", # <--- Giới hạn I-MR
-                    "🎯 TARGET LIMIT": f"{t_min:.1f} ~ {t_max:.1f}",
-                    "Expected TS (MPa)": f"{ts_min:.0f} ~ {ts_max:.0f}",
-                    "Expected YS (MPa)": f"{ys_min:.0f} ~ {ys_max:.0f}",
-                    "Expected EL (%)": f"{el_min:.1f} ~ {el_max:.1f}"
+                    "Std Control Limit (HRB)": f"{c_min:.1f} ~ {c_max:.1f}",
+                    "I-MR Limit (HRB)": f"{imr_min:.1f} ~ {imr_max:.1f}",
+                    "🎯 TARGET LIMIT (HRB)": f"{t_min:.1f} ~ {t_max:.1f}",
+                    # Cặp thông số TS
+                    "TS Control Limit": f"{ts_cmin:.0f} ~ {ts_cmax:.0f}",
+                    "Expected TS (Target)": f"{ts_min:.0f} ~ {ts_max:.0f}",
+                    # Cặp thông số YS
+                    "YS Control Limit": f"{ys_cmin:.0f} ~ {ys_cmax:.0f}",
+                    "Expected YS (Target)": f"{ys_min:.0f} ~ {ys_max:.0f}",
+                    # Cặp thông số EL
+                    "EL Control Limit": f"{el_cmin:.1f} ~ {el_cmax:.1f}",
+                    "Expected EL (Target)": f"{el_min:.1f} ~ {el_max:.1f}"
                 })
         
         # =======================================================
-        # HIỂN THỊ VÀ XUẤT EXCEL
+        # XUẤT EXCEL VÀ ĐỊNH DẠNG MÀU SẮC
         # =======================================================
         if len(master_data) > 0:
             df_final_master = pd.DataFrame(master_data)
-            
             import datetime
             from io import BytesIO
             
             output_buffer = BytesIO()
             with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
                 df_final_master.to_excel(writer, sheet_name='Master_Lookup', index=False)
-                
                 workbook = writer.book
                 worksheet = writer.sheets['Master_Lookup']
                 
-                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#2F5597', 'font_color': 'white', 'border': 1, 'align': 'center'})
+                # Bảng màu định dạng chuyên nghiệp
+                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#2F5597', 'font_color': 'white', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
                 target_fmt = workbook.add_format({'bg_color': '#E2EFDA', 'bold': True, 'border': 1, 'font_color': '#375623', 'align': 'center'})
-                imr_fmt = workbook.add_format({'bg_color': '#FFF2CC', 'bold': True, 'border': 1, 'font_color': '#C00000', 'align': 'center'}) # Màu vàng nhấn mạnh cho I-MR
+                imr_fmt = workbook.add_format({'bg_color': '#FFF2CC', 'bold': True, 'border': 1, 'font_color': '#C00000', 'align': 'center'})
+                ctrl_prop_fmt = workbook.add_format({'bg_color': '#F2F2F2', 'border': 1, 'align': 'center', 'font_color': '#595959'}) # Màu xám nhạt cho Control Limit cơ tính
                 cell_fmt = workbook.add_format({'align': 'center', 'border': 1})
                 
                 for col_num, value in enumerate(df_final_master.columns.values): 
                     worksheet.write(0, col_num, value, header_fmt)
                 
-                # Cập nhật lại vị trí các cột do thêm cột I-MR
                 worksheet.set_column('A:C', 14, cell_fmt)
                 worksheet.set_column('D:E', 15, cell_fmt)
                 worksheet.set_column('F:F', 30, cell_fmt)
-                worksheet.set_column('G:G', 20, cell_fmt)
-                worksheet.set_column('H:I', 15, cell_fmt)
-                worksheet.set_column('J:J', 20, cell_fmt)  # Std Control Limit
-                worksheet.set_column('K:K', 22, imr_fmt)   # I-MR Limit (Tô màu vàng nhạt)
-                worksheet.set_column('L:L', 26, target_fmt) # 🎯 TARGET LIMIT (Tô màu xanh lá)
-                worksheet.set_column('M:O', 20, cell_fmt)  # Expected TS/YS/EL
+                worksheet.set_column('G:I', 16, cell_fmt)
+                worksheet.set_column('J:J', 22, cell_fmt)    # Std Control HRB
+                worksheet.set_column('K:K', 20, imr_fmt)     # I-MR Limit HRB
+                worksheet.set_column('L:L', 26, target_fmt)  # 🎯 TARGET HRB
                 
-            st.success(f"✅ Dictionary successfully generated for **{len(df_final_master)} product groups** using {control_k}σ limits.")
+                # Cặp TS
+                worksheet.set_column('M:M', 20, ctrl_prop_fmt) # TS Control
+                worksheet.set_column('N:N', 22, cell_fmt)      # Expected TS
+                # Cặp YS
+                worksheet.set_column('O:O', 20, ctrl_prop_fmt) # YS Control
+                worksheet.set_column('P:P', 22, cell_fmt)      # Expected YS
+                # Cặp EL
+                worksheet.set_column('Q:Q', 20, ctrl_prop_fmt) # EL Control
+                worksheet.set_column('R:R', 22, cell_fmt)      # Expected EL
+                
+            st.success(f"✅ Dictionary successfully generated for **{len(df_final_master)} product groups**.")
             st.download_button(
                 label="📥 Download Master Report (Excel)",
                 data=output_buffer.getvalue(),
@@ -867,9 +884,6 @@ if view_mode == "👑 Global Master Dictionary Export":
                 key="master_dl_btn_diag"
             )
             
-        # =======================================================
-        # DIAGNOSTIC LOG
-        # =======================================================
         st.markdown("---")
         st.markdown("### 🕵️‍♂️ Diagnostic Log: Excluded Groups")
         col1, col2 = st.columns(2)
@@ -877,7 +891,7 @@ if view_mode == "👑 Global Master Dictionary Export":
         col2.error(f"Rows dropped due to missing Mech Props (TS/YS/EL): **{total_raw_rows - total_clean_rows}**")
         
         if len(rejected_data) > 0:
-            st.caption("The following groups were excluded from the dictionary because they have fewer than 30 **coils with complete mechanical data**:")
+            st.caption("Excluded groups (N < 30 coils with complete mechanical data):")
             df_rejected = pd.DataFrame(rejected_data).sort_values(by="Valid Coils", ascending=False)
             st.dataframe(df_rejected, use_container_width=True, hide_index=True)
             
