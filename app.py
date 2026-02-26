@@ -842,6 +842,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     st.dataframe(df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"]).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), hide_index=True)
 
     # ================================
+   # ================================
     # 3. CORRELATION
     # ================================
     elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
@@ -896,7 +897,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             specs_str = f"Specs: {', '.join(str(x) for x in sub[col_spec].dropna().unique())}" if col_spec in sub.columns else "Specs: N/A"
 
             for row in summary.itertuples():
-                # Tính Std Dev cho từng Bin để sếp bạn theo dõi độ ổn định theo dải độ cứng
                 bin_data = sub_corr[sub_corr["HRB_bin"] == row.HRB_bin]
                 
                 corr_bin_summary.append({
@@ -922,7 +922,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     "EL Std": f"{bin_data['EL'].std():.1f}"
                 })
 
-        # --- 3. HIỂN THỊ CÁC BẢNG TỔNG HỢP RIÊNG BIỆT Ở CUỐI TRANG ---
+        # --- 3. HIỂN THỊ CÁC BẢNG TỔNG HỢP VÀ XUẤT EXCEL Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'corr_bin_summary' in locals() and len(corr_bin_summary) > 0:
             st.markdown("---")
             st.markdown(f"## 📊 Hardness Binning Comprehensive Report: {qgroup}")
@@ -931,11 +931,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             def display_bin_table(title, cols, color_code):
                 st.markdown(f"#### {title}")
-                # Lọc ra các cột chung + các cột thông số cụ thể
                 base_cols = ["Specification List", "Material", "Gauge", "Hardness Bin", "N"]
                 target_df = df_full[base_cols + cols]
                 
-                # Highlight cột Std để theo dõi biến động theo từng Bin độ cứng
                 std_col = [c for c in target_df.columns if "Std" in c]
                 styled = target_df.style.set_properties(**{'background-color': color_code, 'font-weight': 'bold'}, subset=std_col)
                 st.dataframe(styled, use_container_width=True, hide_index=True)
@@ -944,10 +942,47 @@ for i, (_, g) in enumerate(valid.iterrows()):
             display_bin_table("📉 YS Analysis by Hardness Bin", ["YS Spec", "YS Actual", "YS Mean", "YS Std"], "#f2fff2")
             display_bin_table("📉 EL Analysis by Hardness Bin", ["EL Spec", "EL Actual", "EL Mean", "EL Std"], "#fff5e6")
             
-            # Xuất file CSV tổng hợp
+            # --- XUẤT FILE EXCEL ĐA SHEET TỐI ƯU ---
             import datetime
-            csv_name = f"Hardness_Bin_Report_{str(qgroup).replace(' ','')}_{datetime.datetime.now().strftime('%Y%m%d')}.csv"
-            st.download_button("📥 Export Binning Report CSV", df_full.to_csv(index=False).encode('utf-8-sig'), csv_name)
+            from io import BytesIO
+            
+            excel_name = f"Hardness_Bin_Report_{str(qgroup).replace(' ','')}_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx"
+            
+            # Khởi tạo buffer trong bộ nhớ thay vì tạo file vật lý
+            output = BytesIO()
+            
+            # Sử dụng Pandas ExcelWriter với engine xlsxwriter
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                # Sheet 1: Tổng hợp toàn bộ (Full Data)
+                df_full.to_excel(writer, sheet_name='All_Data', index=False)
+                
+                # Sheet 2: Chỉ TS
+                df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "TS Spec", "TS Actual", "TS Mean", "TS Std"]].to_excel(writer, sheet_name='TS_Only', index=False)
+                
+                # Sheet 3: Chỉ YS
+                df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "YS Spec", "YS Actual", "YS Mean", "YS Std"]].to_excel(writer, sheet_name='YS_Only', index=False)
+                
+                # Sheet 4: Chỉ EL
+                df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "EL Spec", "EL Actual", "EL Mean", "EL Std"]].to_excel(writer, sheet_name='EL_Only', index=False)
+
+                # Lấy đối tượng workbook và worksheet để định dạng độ rộng cột (tùy chọn nhưng làm Excel trông chuyên nghiệp hơn)
+                workbook = writer.book
+                for sheet_name in writer.sheets:
+                    worksheet = writer.sheets[sheet_name]
+                    worksheet.set_column('A:A', 25) # Specification List
+                    worksheet.set_column('B:C', 15) # Material, Gauge
+                    worksheet.set_column('D:Z', 12) # Các cột số liệu
+            
+            # Thu thập dữ liệu Excel đã ghi vào buffer
+            processed_data = output.getvalue()
+            
+            # Nút Download cho Excel
+            st.download_button(
+                label="📥 Export Binning Report (Excel)",
+                data=processed_data,
+                file_name=excel_name,
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            )
     # ================================
   # 4. MECH PROPS ANALYSIS
     # ================================
