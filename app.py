@@ -728,19 +728,30 @@ if view_mode == "📊 Executive KPI Dashboard":
     st.stop()
 # ==============================================================================
 # ==============================================================================
-# 👑 GLOBAL MASTER DICTIONARY EXPORT (DEDICATED VIEW)
+# 👑 GLOBAL MASTER DICTIONARY EXPORT (WITH INTERACTIVE SIGMA & I-MR)
 # ==============================================================================
 if view_mode == "👑 Global Master Dictionary Export":
     
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary")
     st.info("""
-        This tool performs a **factory-wide scan** to establish standardized production targets:
-        - **Target Limits (1σ)**: Optimal operating window for consistency.
-        - **Control Limits (3σ)**: Statistical safety boundaries.
-        - **Expected Values**: Predicted mechanical results based on actual performance.
+        This tool performs a **factory-wide scan** to establish standardized production targets.
+        - **Target Limits**: Optimal operating window for consistency.
+        - **Std Control Limits**: Statistical safety boundaries based on overall standard deviation.
+        - **I-MR Limits**: Advanced control boundaries based on coil-to-coil moving range variations.
     """)
 
+    # --- TÍNH NĂNG MỚI: THANH ĐIỀU CHỈNH HỆ SỐ SIGMA TRỰC TIẾP TRÊN UI ---
+    st.markdown("#### ⚙️ Custom Statistical Parameters")
+    col_sig1, col_sig2 = st.columns(2)
+    with col_sig1:
+        target_k = st.number_input("🎯 Target Zone Multiplier (Default: 1.0 σ)", value=1.0, step=0.1, key="k_target")
+    with col_sig2:
+        control_k = st.number_input("🚧 Control Limit Multiplier (Default: 3.0 σ)", value=3.0, step=0.5, key="k_control")
+    
+    st.markdown("<br>", unsafe_allow_html=True) # Tạo khoảng trống cho đẹp
+
+    # Nút Export
     if st.button("🚀 Generate & Download Master Dictionary", type="primary", key="master_gen_btn_diag"):
         master_data = []
         rejected_data = [] 
@@ -764,12 +775,21 @@ if view_mode == "👑 Global Master Dictionary Export":
                     "Gauge": gauge, "Valid Coils": valid_coils_count
                 })
                 continue 
-                
+            
+            # 1. Tính toán Thống kê Tiêu chuẩn (Standard Stats)
             mean_hrb = group['Hardness_LINE'].mean()
             std_hrb = group['Hardness_LINE'].std() if len(group) > 1 else 0
             
-            t_min, t_max = mean_hrb - std_hrb, mean_hrb + std_hrb
-            c_min, c_max = mean_hrb - (3 * std_hrb), mean_hrb + (3 * std_hrb)
+            # 2. TÍNH TOÁN I-MR (Cơ chế cuộn nối cuộn)
+            hrb_values = group['Hardness_LINE'].values
+            mrs = np.abs(np.diff(hrb_values)) # Tính chênh lệch Moving Range
+            mr_bar = np.mean(mrs) if len(mrs) > 0 else 0
+            sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_hrb # Hằng số d2 cho n=2 là 1.128
+            
+            # 3. Tính các Giới hạn dựa trên hệ số K từ giao diện người dùng nhập
+            t_min, t_max = mean_hrb - (target_k * std_hrb), mean_hrb + (target_k * std_hrb)
+            c_min, c_max = mean_hrb - (control_k * std_hrb), mean_hrb + (control_k * std_hrb)
+            imr_min, imr_max = mean_hrb - (control_k * sigma_imr), mean_hrb + (control_k * sigma_imr)
             
             target_group = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
             
@@ -784,6 +804,7 @@ if view_mode == "👑 Global Master Dictionary Export":
                 ys_min = target_group['YS'].min(); ys_max = target_group['YS'].max()
                 el_min = target_group['EL'].min(); el_max = target_group['EL'].max()
 
+                # THÊM CỘT I-MR VÀO BẢNG TỔNG HỢP
                 master_data.append({
                     "Rolling Type": rolling_val,
                     "Metallic Type": metal_val,
@@ -794,40 +815,50 @@ if view_mode == "👑 Global Master Dictionary Export":
                     "Current HRB Limit": curr_limit_str,
                     "Valid Coils (N)": valid_coils_count,
                     "Target Zone (N)": len(target_group),
-                    "Control Limit (HRB)": f"{c_min:.1f} ~ {c_max:.1f}",
-                    "🎯 TARGET LIMIT (HRB)": f"{t_min:.1f} ~ {t_max:.1f}",
+                    "Std Control Limit": f"{c_min:.1f} ~ {c_max:.1f}",       # <--- Giới hạn Standard
+                    "I-MR Limit (Optimal)": f"{imr_min:.1f} ~ {imr_max:.1f}", # <--- Giới hạn I-MR
+                    "🎯 TARGET LIMIT": f"{t_min:.1f} ~ {t_max:.1f}",
                     "Expected TS (MPa)": f"{ts_min:.0f} ~ {ts_max:.0f}",
                     "Expected YS (MPa)": f"{ys_min:.0f} ~ {ys_max:.0f}",
                     "Expected EL (%)": f"{el_min:.1f} ~ {el_max:.1f}"
                 })
         
+        # =======================================================
+        # HIỂN THỊ VÀ XUẤT EXCEL
+        # =======================================================
         if len(master_data) > 0:
             df_final_master = pd.DataFrame(master_data)
+            
             import datetime
             from io import BytesIO
             
             output_buffer = BytesIO()
             with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
                 df_final_master.to_excel(writer, sheet_name='Master_Lookup', index=False)
+                
                 workbook = writer.book
                 worksheet = writer.sheets['Master_Lookup']
                 
                 header_fmt = workbook.add_format({'bold': True, 'bg_color': '#2F5597', 'font_color': 'white', 'border': 1, 'align': 'center'})
                 target_fmt = workbook.add_format({'bg_color': '#E2EFDA', 'bold': True, 'border': 1, 'font_color': '#375623', 'align': 'center'})
+                imr_fmt = workbook.add_format({'bg_color': '#FFF2CC', 'bold': True, 'border': 1, 'font_color': '#C00000', 'align': 'center'}) # Màu vàng nhấn mạnh cho I-MR
                 cell_fmt = workbook.add_format({'align': 'center', 'border': 1})
                 
-                for col_num, value in enumerate(df_final_master.columns.values): worksheet.write(0, col_num, value, header_fmt)
+                for col_num, value in enumerate(df_final_master.columns.values): 
+                    worksheet.write(0, col_num, value, header_fmt)
                 
+                # Cập nhật lại vị trí các cột do thêm cột I-MR
                 worksheet.set_column('A:C', 14, cell_fmt)
                 worksheet.set_column('D:E', 15, cell_fmt)
                 worksheet.set_column('F:F', 30, cell_fmt)
                 worksheet.set_column('G:G', 20, cell_fmt)
                 worksheet.set_column('H:I', 15, cell_fmt)
-                worksheet.set_column('J:J', 22, cell_fmt)
-                worksheet.set_column('K:K', 28, target_fmt)
-                worksheet.set_column('L:N', 20, cell_fmt)
+                worksheet.set_column('J:J', 20, cell_fmt)  # Std Control Limit
+                worksheet.set_column('K:K', 22, imr_fmt)   # I-MR Limit (Tô màu vàng nhạt)
+                worksheet.set_column('L:L', 26, target_fmt) # 🎯 TARGET LIMIT (Tô màu xanh lá)
+                worksheet.set_column('M:O', 20, cell_fmt)  # Expected TS/YS/EL
                 
-            st.success(f"✅ Dictionary successfully generated for **{len(df_final_master)} product groups**.")
+            st.success(f"✅ Dictionary successfully generated for **{len(df_final_master)} product groups** using {control_k}σ limits.")
             st.download_button(
                 label="📥 Download Master Report (Excel)",
                 data=output_buffer.getvalue(),
@@ -836,6 +867,9 @@ if view_mode == "👑 Global Master Dictionary Export":
                 key="master_dl_btn_diag"
             )
             
+        # =======================================================
+        # DIAGNOSTIC LOG
+        # =======================================================
         st.markdown("---")
         st.markdown("### 🕵️‍♂️ Diagnostic Log: Excluded Groups")
         col1, col2 = st.columns(2)
@@ -847,9 +881,7 @@ if view_mode == "👑 Global Master Dictionary Export":
             df_rejected = pd.DataFrame(rejected_data).sort_values(by="Valid Coils", ascending=False)
             st.dataframe(df_rejected, use_container_width=True, hide_index=True)
             
-    # 🛑 ĐÂY LÀ CHỐT CHẶN QUAN TRỌNG NHẤT: Bắt hệ thống dừng lại, không vẽ thêm gì bên dưới!
-    st.stop() 
-
+    st.stop()
 # ==============================================================================
 # MAIN LOOP (DETAILS)
 # ==============================================================================
