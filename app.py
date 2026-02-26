@@ -965,8 +965,8 @@ if view_mode == "👑 Global Master Dictionary Export":
 
             # 🌟 KẺ VẠCH SPEC LIMIT BAN ĐẦU
             if orig_min > 0 and orig_max > 0:
-                fig.add_vline(x=orig_min, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Min</b>", annotation_position="top inside", annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
-                fig.add_vline(x=orig_max, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Max</b>", annotation_position="top inside", annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
+                fig.add_vline(x=orig_min, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Min</b>", annotation_position="top right", annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
+                fig.add_vline(x=orig_max, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Max</b>", annotation_position="top left", annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
 
             # Setup Legend 1 lần
             if row_idx == 1 and col_idx == 1:
