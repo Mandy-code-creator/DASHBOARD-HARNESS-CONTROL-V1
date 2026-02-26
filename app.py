@@ -272,6 +272,7 @@ view_mode = st.sidebar.radio(
         "🎯 Find Target Hardness (Reverse Lookup)",
         "🧮 Predict TS/YS/EL from Std Hardness",
         "🎛️ Control Limit Calculator (Compare 3 Methods)",
+        "👑 Global Master Dictionary Export",
     ]
 )
 
