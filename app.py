@@ -1556,7 +1556,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         
         # Vòng lặp quét qua TOÀN BỘ tổ hợp Material và Gauge_Range
         for (mat, gauge), group in clean_df.groupby(['Material', 'Gauge_Range']):
-            if len(group) < 30: 
+            if len(group) < 5: 
                 continue # Bỏ qua các mã hàng chạy quá ít (không đủ độ tin cậy thống kê)
                 
             # Tính toán thống kê cho độ cứng (HRB)
