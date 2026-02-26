@@ -728,7 +728,7 @@ if view_mode == "📊 Executive KPI Dashboard":
     st.stop()
 # ==============================================================================
 # ==============================================================================
-# 👑 GLOBAL MASTER DICTIONARY EXPORT (FULL VIEW - FINAL PERFECTED VERSION)
+# 👑 GLOBAL MASTER DICTIONARY EXPORT (FULL VIEW - ULTIMATE UI VERSION)
 # ==============================================================================
 # LƯU Ý: Chữ 'if' dưới đây phải nằm sát lề trái hoàn toàn
 if view_mode == "👑 Global Master Dictionary Export":
@@ -890,7 +890,7 @@ if view_mode == "👑 Global Master Dictionary Export":
             st.dataframe(df_rejected, use_container_width=True, hide_index=True)
 
     # ==========================================================================
-    # PHẦN 2: BIỂU ĐỒ SIX SIGMA (CAUSE & EFFECT WITH SPEC LIMITS & BORDERS)
+    # PHẦN 2: BIỂU ĐỒ SIX SIGMA (HOÀN THIỆN XỬ LÝ CHỮ VÀ KHUNG VIỀN)
     # ==========================================================================
     st.markdown("---")
     st.markdown("### 📊 Process Capability Analysis: Cause & Effect")
@@ -926,7 +926,6 @@ if view_mode == "👑 Global Master Dictionary Export":
         hrb_t_min, hrb_t_max = hrb_mu_all - (target_k * hrb_sig_all), hrb_mu_all + (target_k * hrb_sig_all)
         target_data = g_data[(g_data['Hardness_LINE'] >= hrb_t_min) & (g_data['Hardness_LINE'] <= hrb_t_max)]
         
-        # 🌟 Lấy Giới hạn Spec ban đầu của Độ cứng
         curr_min = g_data['Limit_Min'].max() if 'Limit_Min' in g_data.columns else 0
         curr_max = g_data['Limit_Max'].min() if 'Limit_Max' in g_data.columns else 0
 
@@ -946,7 +945,7 @@ if view_mode == "👑 Global Master Dictionary Export":
         ys_c_min, ys_c_max, ys_t_min, ys_t_max = calc_limits(g_data, target_data, 'YS')
         el_c_min, el_c_max, el_t_min, el_t_max = calc_limits(g_data, target_data, 'EL')
 
-        # 3. Hàm vẽ biểu đồ với Annotation đầy đủ và Spec Limits
+        # 3. Hàm vẽ biểu đồ được trang bị chống cắt chữ (Anti-Clipping)
         def plot_capability_dist(row_idx, col_idx, data_all, data_target, color_target, name, c_min, c_max, t_min, t_max, orig_min=0, orig_max=0):
             mu_tgt = data_target.mean(); sig_tgt = data_target.std() if len(data_target) > 1 else 1
             if sig_tgt == 0: sig_tgt = 0.001 
@@ -958,17 +957,20 @@ if view_mode == "👑 Global Master Dictionary Export":
             y_curve = (1.0 / (sig_tgt * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_curve - mu_tgt) / sig_tgt)**2)
             fig.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', name=f'Target Fit ({name})', line=dict(color=color_target, width=2.5, shape='spline'), showlegend=(row_idx==1 and col_idx==1)), row=row_idx, col=col_idx)
             
-            fig.add_vline(x=c_min, line_dash="dash", line_color="red", line_width=2, annotation_text="Control Min", annotation_position="top left", annotation_font=dict(color="red", size=10), row=row_idx, col=col_idx)
-            fig.add_vline(x=c_max, line_dash="dash", line_color="red", line_width=2, annotation_text="Control Max", annotation_position="top right", annotation_font=dict(color="red", size=10), row=row_idx, col=col_idx)
-            fig.add_vline(x=t_min, line_dash="dashdot", line_color="purple", line_width=2, annotation_text="Target Min", annotation_position="bottom left", annotation_font=dict(color="purple", size=10), row=row_idx, col=col_idx)
-            fig.add_vline(x=t_max, line_dash="dashdot", line_color="purple", line_width=2, annotation_text="Target Max", annotation_position="bottom right", annotation_font=dict(color="purple", size=10), row=row_idx, col=col_idx)
+            # 🌟 ÁP DỤNG THỦ THUẬT: Ép quay vào TRONG (right/left) và dùng Y-Shift phân tầng
+            # Tầng 1 (Thấp nhất): Control Limit - Đẩy xuống -35px
+            fig.add_vline(x=c_min, line_dash="dash", line_color="red", line_width=2, annotation_text="Control Min", annotation_position="top right", annotation_yshift=-35, annotation_font=dict(color="red", size=10), row=row_idx, col=col_idx)
+            fig.add_vline(x=c_max, line_dash="dash", line_color="red", line_width=2, annotation_text="Control Max", annotation_position="top left", annotation_yshift=-35, annotation_font=dict(color="red", size=10), row=row_idx, col=col_idx)
+            
+            # Tầng 2 (Ngược lên): Target Limit - Đẩy lên 15px khỏi trục X
+            fig.add_vline(x=t_min, line_dash="dashdot", line_color="purple", line_width=2, annotation_text="Target Min", annotation_position="bottom right", annotation_yshift=15, annotation_font=dict(color="purple", size=10), row=row_idx, col=col_idx)
+            fig.add_vline(x=t_max, line_dash="dashdot", line_color="purple", line_width=2, annotation_text="Target Max", annotation_position="bottom left", annotation_yshift=15, annotation_font=dict(color="purple", size=10), row=row_idx, col=col_idx)
 
-            # 🌟 KẺ VẠCH SPEC LIMIT BAN ĐẦU (Đã sửa lỗi vị trí chữ thành top right/left)
+            # Tầng 3 (Giữa): Spec Limit - Đẩy xuống -10px (Nằm trên Control Limit)
             if orig_min > 0 and orig_max > 0:
-                fig.add_vline(x=orig_min, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Min</b>", annotation_position="top right", annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
-                fig.add_vline(x=orig_max, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Max</b>", annotation_position="top left", annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
+                fig.add_vline(x=orig_min, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Min</b>", annotation_position="top right", annotation_yshift=-10, annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
+                fig.add_vline(x=orig_max, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Max</b>", annotation_position="top left", annotation_yshift=-10, annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
 
-            # Setup Legend 1 lần
             if row_idx == 1 and col_idx == 1:
                 if orig_min > 0:
                     fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name='Current Spec Limit', line=dict(color='black', width=2.5, dash='solid')), row=1, col=1)
@@ -981,7 +983,6 @@ if view_mode == "👑 Global Master Dictionary Export":
             vertical_spacing=0.15, horizontal_spacing=0.08
         )
         
-        # Đổ dữ liệu vào biểu đồ (Biểu đồ 1 truyền thêm orig_min, orig_max)
         plot_capability_dist(1, 1, g_data['Hardness_LINE'], target_data['Hardness_LINE'], '#E37222', 'HRB', hrb_c_min, hrb_c_max, hrb_t_min, hrb_t_max, orig_min=curr_min, orig_max=curr_max) 
         plot_capability_dist(1, 2, g_data['TS'], target_data['TS'], '#2F5597', 'TS', ts_c_min, ts_c_max, ts_t_min, ts_t_max)
         plot_capability_dist(2, 1, g_data['YS'], target_data['YS'], '#375623', 'YS', ys_c_min, ys_c_max, ys_t_min, ys_t_max)
@@ -992,7 +993,7 @@ if view_mode == "👑 Global Master Dictionary Export":
             plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="right", x=1)
         )
         
-        # 🌟 NÂNG CẤP: Khung bao xám đậm chuyên nghiệp (mirror=True)
+        # Đóng khung viền bao quanh (Bounding Box) chuyên nghiệp
         fig.update_xaxes(
             showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)',
             showline=True, linewidth=1.5, linecolor='#595959', mirror=True
