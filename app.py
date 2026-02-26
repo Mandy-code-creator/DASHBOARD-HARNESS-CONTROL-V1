@@ -902,31 +902,27 @@ if view_mode == "👑 Global Master Dictionary Export":
             st.dataframe(df_rejected, use_container_width=True, hide_index=True)
             
     # ==========================================================================
-    # 8. BIỂU ĐỒ PHÂN BỐ (SIX SIGMA CAPABILITY ANALYSIS) - ĐỒNG BỘ 5 LOGIC LỌC
+   # ==========================================================================
+    # 8. BIỂU ĐỒ PHÂN BỐ (SIX SIGMA CAPABILITY) - CAUSE & EFFECT (HRB vs MECH PROPS)
     # ==========================================================================
     st.markdown("---")
-    st.markdown("### 📊 Process Capability Analysis (Before vs. After)")
-    st.info("Select a highly specific product group to visualize how operating within the **Target HRB Zone** narrows the distribution of Mechanical Properties.")
+    st.markdown("### 📊 Process Capability Analysis: Cause & Effect")
+    st.info("💡 **Interactive Simulation:** Adjust the **Target Zone Multiplier** at the top of the page to see how narrowing the Hardness limits (Cause) directly reduces the variance in Mechanical Properties (Effect).")
 
     source_df = df_master_full if 'df_master_full' in locals() else df
     clean_master_df = source_df.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
     
-    # Gom nhóm theo 5 cấp độ logic
     valid_groups_df = clean_master_df.groupby(group_cols).size().reset_index(name='count')
     valid_groups_df = valid_groups_df[valid_groups_df['count'] >= 30]
 
     if not valid_groups_df.empty:
-        # Tạo danh sách thả xuống gồm cả 5 thông số
         group_options = [
             f"{row['Rolling_Type']} | {row['Metallic_Type']} | {row['Quality_Group']} | {row['Material']} | {row['Gauge_Range']}" 
             for _, row in valid_groups_df.iterrows()
         ]
         selected_group = st.selectbox("🔍 Select Product Group to Analyze:", group_options)
         
-        # Tách ngược lại thành 5 biến để truy vấn dữ liệu
         sel_roll, sel_metal, sel_qg, sel_mat, sel_gauge = selected_group.split(" | ")
-        
-        # Lọc dữ liệu nguyên chất 100%
         g_data = clean_master_df[
             (clean_master_df['Rolling_Type'] == sel_roll) &
             (clean_master_df['Metallic_Type'] == sel_metal) &
@@ -935,67 +931,95 @@ if view_mode == "👑 Global Master Dictionary Export":
             (clean_master_df['Gauge_Range'] == sel_gauge)
         ]
         
-        # Tính toán lại Target Zone
-        mean_hrb = g_data['Hardness_LINE'].mean()
-        std_hrb = g_data['Hardness_LINE'].std()
-        t_min = mean_hrb - (target_k * std_hrb)
-        t_max = mean_hrb + (target_k * std_hrb)
+        # --- TÍNH TOÁN GIỚI HẠN DỰA TRÊN KẾT QUẢ TƯƠNG TÁC (K) ---
+        # 1. HARDNESS (Nguyên nhân)
+        hrb_mu_all = g_data['Hardness_LINE'].mean()
+        hrb_sig_all = g_data['Hardness_LINE'].std() if len(g_data) > 1 else 1
         
-        target_data = g_data[(g_data['Hardness_LINE'] >= t_min) & (g_data['Hardness_LINE'] <= t_max)]
+        # Control Limit của HRB
+        hrb_c_min, hrb_c_max = hrb_mu_all - (control_k * hrb_sig_all), hrb_mu_all + (control_k * hrb_sig_all)
+        # Target Limit của HRB (Đây chính là phễu lọc)
+        hrb_t_min, hrb_t_max = hrb_mu_all - (target_k * hrb_sig_all), hrb_mu_all + (target_k * hrb_sig_all)
         
-        # HÀM VẼ BIỂU ĐỒ SIX SIGMA CHUYÊN DỤNG
-        def plot_capability_dist(col_idx, data_all, data_target, color_target, name):
-            mu_all = data_all.mean(); sig_all = data_all.std() if len(data_all) > 1 else 1
-            mu_tgt = data_target.mean(); sig_tgt = data_target.std() if len(data_target) > 1 else 1
-            if sig_tgt == 0: sig_tgt = 0.001 # Chống lỗi chia cho 0 khi đường cong quá hoàn hảo
+        # Lọc dữ liệu "Hoa hậu"
+        target_data = g_data[(g_data['Hardness_LINE'] >= hrb_t_min) & (g_data['Hardness_LINE'] <= hrb_t_max)]
+        
+        # 2. HÀM TÍNH TOÁN CƠ TÍNH (Kết quả)
+        def calc_limits(data_all, data_tgt, col_name):
+            mu_a = data_all[col_name].mean(); sig_a = data_all[col_name].std() if len(data_all) > 1 else 1
+            mu_t = data_tgt[col_name].mean(); sig_t = data_tgt[col_name].std() if len(data_tgt) > 1 else 1
             
-            c_min, c_max = mu_all - (control_k * sig_all), mu_all + (control_k * sig_all)
-            t_min, t_max = mu_tgt - (control_k * sig_tgt), mu_tgt + (control_k * sig_tgt)
-            if name == 'EL': 
+            c_min, c_max = mu_a - (control_k * sig_a), mu_a + (control_k * sig_a)
+            t_min, t_max = mu_t - (control_k * sig_t), mu_t + (control_k * sig_t)
+            
+            if col_name == 'EL': 
                 c_min = max(0, c_min); t_min = max(0, t_min)
+            return c_min, c_max, t_min, t_max
+
+        ts_c_min, ts_c_max, ts_t_min, ts_t_max = calc_limits(g_data, target_data, 'TS')
+        ys_c_min, ys_c_max, ys_t_min, ys_t_max = calc_limits(g_data, target_data, 'YS')
+        el_c_min, el_c_max, el_t_min, el_t_max = calc_limits(g_data, target_data, 'EL')
+
+        # --- VẼ BIỂU ĐỒ 2x2 ---
+        import numpy as np
+        def plot_capability_dist(row_idx, col_idx, data_all, data_target, color_target, name, c_min, c_max, t_min, t_max):
+            mu_tgt = data_target.mean(); sig_tgt = data_target.std() if len(data_target) > 1 else 1
+            if sig_tgt == 0: sig_tgt = 0.001 
             
-            fig.add_trace(go.Histogram(x=data_all, histnorm='probability density', name=f'Before ({name})', marker_color='lightgray', opacity=0.5, nbinsx=25, showlegend=(col_idx==1)), row=1, col=col_idx)
-            fig.add_trace(go.Histogram(x=data_target, histnorm='probability density', name=f'After ({name})', marker_color=color_target, opacity=0.7, nbinsx=25, showlegend=(col_idx==1)), row=1, col=col_idx)
+            # Histogram
+            fig.add_trace(go.Histogram(x=data_all, histnorm='probability density', name=f'Before ({name})', marker_color='lightgray', opacity=0.5, nbinsx=25, showlegend=(row_idx==1 and col_idx==1)), row=row_idx, col=col_idx)
+            fig.add_trace(go.Histogram(x=data_target, histnorm='probability density', name=f'After ({name})', marker_color=color_target, opacity=0.7, nbinsx=25, showlegend=(row_idx==1 and col_idx==1)), row=row_idx, col=col_idx)
             
+            # Normal Fit Curve (Chỉ vẽ cho nhóm Target để thấy "Chuông" mới)
             x_curve = np.linspace(data_all.min(), data_all.max(), 200)
             y_curve = (1.0 / (sig_tgt * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_curve - mu_tgt) / sig_tgt)**2)
-            fig.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', name=f'Target Fit ({name})', line=dict(color=color_target, width=2.5, shape='spline'), showlegend=(col_idx==1)), row=1, col=col_idx)
+            fig.add_trace(go.Scatter(x=x_curve, y=y_curve, mode='lines', name=f'Target Fit ({name})', line=dict(color=color_target, width=2.5, shape='spline'), showlegend=(row_idx==1 and col_idx==1)), row=row_idx, col=col_idx)
             
-            fig.add_vline(x=c_min, line_dash="dash", line_color="red", line_width=2, row=1, col=col_idx)
-            fig.add_vline(x=c_max, line_dash="dash", line_color="red", line_width=2, row=1, col=col_idx)
-            fig.add_vline(x=t_min, line_dash="dashdot", line_color="purple", line_width=2, row=1, col=col_idx)
-            fig.add_vline(x=t_max, line_dash="dashdot", line_color="purple", line_width=2, row=1, col=col_idx)
+            # Control Limit Lines (Đỏ)
+            fig.add_vline(x=c_min, line_dash="dash", line_color="red", line_width=2, row=row_idx, col=col_idx)
+            fig.add_vline(x=c_max, line_dash="dash", line_color="red", line_width=2, row=row_idx, col=col_idx)
+            
+            # Target Limit Lines (Tím)
+            fig.add_vline(x=t_min, line_dash="dashdot", line_color="purple", line_width=2, row=row_idx, col=col_idx)
+            fig.add_vline(x=t_max, line_dash="dashdot", line_color="purple", line_width=2, row=row_idx, col=col_idx)
 
-        fig = make_subplots(rows=1, cols=3, subplot_titles=("Tensile Strength (TS)", "Yield Strength (YS)", "Elongation (EL)"))
+        # Tạo lưới 2x2
+        fig = make_subplots(
+            rows=2, cols=2, 
+            subplot_titles=("1. CAUSE: Hardness (HRB)", "2. EFFECT: Tensile Strength (TS)", "3. EFFECT: Yield Strength (YS)", "4. EFFECT: Elongation (EL)"),
+            vertical_spacing=0.15, horizontal_spacing=0.08
+        )
         
-        plot_capability_dist(1, g_data['TS'], target_data['TS'], '#2F5597', 'TS')
-        plot_capability_dist(2, g_data['YS'], target_data['YS'], '#375623', 'YS')
-        plot_capability_dist(3, g_data['EL'], target_data['EL'], '#C00000', 'EL')
+        # Đổ dữ liệu vào 4 ô
+        plot_capability_dist(1, 1, g_data['Hardness_LINE'], target_data['Hardness_LINE'], '#E37222', 'HRB', hrb_c_min, hrb_c_max, hrb_t_min, hrb_t_max) # Màu cam cho HRB
+        plot_capability_dist(1, 2, g_data['TS'], target_data['TS'], '#2F5597', 'TS', ts_c_min, ts_c_max, ts_t_min, ts_t_max)
+        plot_capability_dist(2, 1, g_data['YS'], target_data['YS'], '#375623', 'YS', ys_c_min, ys_c_max, ys_t_min, ys_t_max)
+        plot_capability_dist(2, 2, g_data['EL'], target_data['EL'], '#C00000', 'EL', el_c_min, el_c_max, el_t_min, el_t_max)
         
         fig.update_layout(
-            barmode='overlay', 
-            height=450, 
-            margin=dict(l=20, r=20, t=40, b=20),
-            plot_bgcolor='white',
-            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1)
+            barmode='overlay', height=750, margin=dict(l=20, r=20, t=40, b=20),
+            plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="right", x=1)
         )
         fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)')
         fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)')
         
         st.plotly_chart(fig, use_container_width=True)
 
+        # --- BẢNG CHỨNG MINH THỐNG KÊ (Đã thêm HRB) ---
         st.markdown(f"**📉 Statistical Proof of Improvement (Variance Reduction)**")
-        col_ts, col_ys, col_el = st.columns(3)
+        col_hrb, col_ts, col_ys, col_el = st.columns(4)
         
-        ts_std_before = g_data['TS'].std(); ts_std_after = target_data['TS'].std() if len(target_data) > 1 else 0
-        ys_std_before = g_data['YS'].std(); ys_std_after = target_data['YS'].std() if len(target_data) > 1 else 0
-        el_std_before = g_data['EL'].std(); el_std_after = target_data['EL'].std() if len(target_data) > 1 else 0
+        hrb_std_aft = target_data['Hardness_LINE'].std() if len(target_data) > 1 else 0
+        ts_std_aft = target_data['TS'].std() if len(target_data) > 1 else 0
+        ys_std_aft = target_data['YS'].std() if len(target_data) > 1 else 0
+        el_std_aft = target_data['EL'].std() if len(target_data) > 1 else 0
         
-        col_ts.metric("TS Spread (Std Dev)", f"{ts_std_after:.2f}", f"{ts_std_after - ts_std_before:.2f} (Narrower)", delta_color="inverse")
-        col_ys.metric("YS Spread (Std Dev)", f"{ys_std_after:.2f}", f"{ys_std_after - ys_std_before:.2f} (Narrower)", delta_color="inverse")
-        col_el.metric("EL Spread (Std Dev)", f"{el_std_after:.2f}", f"{el_std_after - el_std_before:.2f} (Narrower)", delta_color="inverse")
+        col_hrb.metric("HRB Spread (Std Dev)", f"{hrb_std_aft:.2f}", f"{hrb_std_aft - hrb_sig_all:.2f} (Controlled)", delta_color="inverse")
+        col_ts.metric("TS Spread (Std Dev)", f"{ts_std_aft:.2f}", f"{ts_std_aft - g_data['TS'].std():.2f} (Narrower)", delta_color="inverse")
+        col_ys.metric("YS Spread (Std Dev)", f"{ys_std_aft:.2f}", f"{ys_std_aft - g_data['YS'].std():.2f} (Narrower)", delta_color="inverse")
+        col_el.metric("EL Spread (Std Dev)", f"{el_std_aft:.2f}", f"{el_std_aft - g_data['EL'].std():.2f} (Narrower)", delta_color="inverse")
 
-    # 🛑 CHỐT CHẶN: Dừng lại hoàn toàn tại đây
+    # 🛑 CHỐT CHẶN
     st.stop()
 
 # ==============================================================================
