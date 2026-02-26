@@ -1547,100 +1547,94 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.download_button("📥 Export Summary CSV", df_total.to_csv(index=False).encode('utf-8-sig'), f"SPC_Summary_{str(qgroup).replace(' ','')}.csv")
 # ==============================================================================
 # ==============================================================================
-# 🌟 MANAGER SPECIAL FEATURE: GLOBAL MASTER LOOKUP EXPORT (FINAL STABLE)
+# 🌟 GLOBAL MASTER DICTIONARY EXPORT (STRICTLY OUTSIDE ALL LOOPS)
 # ==============================================================================
-# ĐẢM BẢO ĐOẠN NÀY KHÔNG THỤT ĐẦU DÒNG (OUTSIDE ANY FOR LOOP)
+# LƯU Ý: Dòng st.markdown dưới đây phải nằm sát lề trái, không được thụt lề.
 
 st.markdown("---")
 st.header("👑 Master Mechanical Properties Dictionary")
 st.info("""
-    This professional tool scans the **entire factory production history**.
-    - Establish **Target Limits (1σ)** for high consistency.
-    - Define **Control Limits (3σ)** for absolute safety boundaries.
+    This tool performs a **factory-wide scan** to establish standardized production targets:
+    - **Target Limits (1σ)**: Optimal operating window for consistency.
+    - **Control Limits (3σ)**: Statistical safety boundaries.
+    - **Expected Values**: Predicted mechanical results based on historical trends.
 """)
 
-# Unique key 'global_master_export' prevents DuplicateElementId error
-if st.button("🚀 Generate & Download Master Dictionary (Excel)", type="primary", key="global_master_export"):
+# Unique keys 'master_gen_btn' and 'master_dl_btn' prevent the DuplicateElementId error.
+if st.button("🚀 Generate & Download Master Dictionary (Excel)", type="primary", key="master_gen_btn"):
     master_data = []
     
-    # Use the "Safe Box" (df_master_full) to access 100% of raw data
-    # If df_master_full doesn't exist, fallback to df (but results will be filtered)
-    target_df = df_master_full if 'df_master_full' in locals() else df
-    clean_df = target_df.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
+    # Accessing the "Global Safe Box" data to ensure all 16+ products are included.
+    source_df = df_master_full if 'df_master_full' in locals() else df
+    clean_master_df = source_df.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL'])
     
-    # Global scan across ALL Materials and Gauges
-    for (mat, gauge), group in clean_df.groupby(['Material', 'Gauge_Range']):
+    # Process every Material/Gauge combination in the entire dataset.
+    for (mat, gauge), group in clean_master_df.groupby(['Material', 'Gauge_Range']):
         
-        # Apply Central Limit Theorem (N >= 30) for statistical reliability
+        # Ensure statistical reliability with N >= 30.
         if len(group) < 30: 
             continue 
             
         mean_hrb = group['Hardness_LINE'].mean()
         std_hrb = group['Hardness_LINE'].std() if len(group) > 1 else 0
         
-        # Calculate Dual Limits
-        target_min, target_max = mean_hrb - std_hrb, mean_hrb + std_hrb
-        control_min, control_max = mean_hrb - (3 * std_hrb), mean_hrb + (3 * std_hrb)
+        # Dual-Limit Logic
+        t_min, t_max = mean_hrb - std_hrb, mean_hrb + std_hrb
+        c_min, c_max = mean_hrb - (3 * std_hrb), mean_hrb + (3 * std_hrb)
         
-        # Analyze target zone consistency
-        target_coils = group[(group['Hardness_LINE'] >= target_min) & (group['Hardness_LINE'] <= target_max)]
+        # Target Zone Analysis
+        target_group = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
         
-        if len(target_coils) > 0:
-            # Stats for Expected Properties
-            ts_mean = target_coils['TS'].mean(); ts_std = target_coils['TS'].std() if len(target_coils) > 1 else 0
-            ys_mean = target_coils['YS'].mean(); ys_std = target_coils['YS'].std() if len(target_coils) > 1 else 0
-            el_mean = target_coils['EL'].mean(); el_std = target_coils['EL'].std() if len(target_coils) > 1 else 0
-            
+        if len(target_group) > 0:
             master_data.append({
                 "Material": mat,
                 "Gauge Range": gauge,
                 "Total History (N)": len(group),
-                "Target Zone (N)": len(target_coils),
-                "Control Limit (HRB)": f"{control_min:.1f} ~ {control_max:.1f}",
-                "🎯 TARGET LIMIT (HRB)": f"{target_min:.1f} ~ {target_max:.1f}",
-                "Expected TS (MPa)": f"{ts_mean:.0f} ±{ts_std:.0f}",
-                "Expected YS (MPa)": f"{ys_mean:.0f} ±{ys_std:.0f}",
-                "Expected EL (%)": f"{el_mean:.1f} ±{el_std:.1f}"
+                "Target Zone (N)": len(target_group),
+                "Control Limit (HRB)": f"{c_min:.1f} ~ {c_max:.1f}",
+                "🎯 TARGET LIMIT (HRB)": f"{t_min:.1f} ~ {t_max:.1f}",
+                "Expected TS (MPa)": f"{target_group['TS'].mean():.0f} ±{target_group['TS'].std():.0f}",
+                "Expected YS (MPa)": f"{target_group['YS'].mean():.0f} ±{target_group['YS'].std():.0f}",
+                "Expected EL (%)": f"{target_group['EL'].mean():.1f} ±{target_group['EL'].std():.1f}"
             })
     
     if len(master_data) > 0:
-        df_master = pd.DataFrame(master_data)
+        df_final_master = pd.DataFrame(master_data)
         
         import datetime
         from io import BytesIO
         
-        excel_name = f"Global_Master_Dictionary_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx"
-        output = BytesIO()
+        excel_filename = f"Master_Hardness_Dictionary_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx"
+        output_buffer = BytesIO()
         
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            df_master.to_excel(writer, sheet_name='Master_Lookup', index=False)
+        with pd.ExcelWriter(output_buffer, engine='xlsxwriter') as writer:
+            df_final_master.to_excel(writer, sheet_name='Master_Lookup', index=False)
+            
+            # Excel Styling for Executive Review
             workbook = writer.book
             worksheet = writer.sheets['Master_Lookup']
             
-            # Professional Formatting for Executive Reports
             header_fmt = workbook.add_format({'bold': True, 'bg_color': '#2F5597', 'font_color': 'white', 'border': 1, 'align': 'center'})
             target_fmt = workbook.add_format({'bg_color': '#E2EFDA', 'bold': True, 'border': 1, 'font_color': '#375623', 'align': 'center'})
-            num_fmt = workbook.add_format({'align': 'center', 'border': 1})
+            cell_fmt = workbook.add_format({'align': 'center', 'border': 1})
             
-            # Apply Header Format
-            for col_num, value in enumerate(df_master.columns.values):
+            for col_num, value in enumerate(df_final_master.columns.values):
                 worksheet.write(0, col_num, value, header_fmt)
             
-            # Formatting Columns
-            worksheet.set_column('A:A', 15, num_fmt)  # Material
-            worksheet.set_column('B:B', 22, num_fmt)  # Gauge Range
-            worksheet.set_column('C:D', 15, num_fmt)  # N counts
-            worksheet.set_column('E:E', 22, num_fmt)  # Control Limit
-            worksheet.set_column('F:F', 30, target_fmt) # 🎯 TARGET LIMIT
-            worksheet.set_column('G:I', 20, num_fmt)  # Expected Props
+            worksheet.set_column('A:A', 15, cell_fmt)
+            worksheet.set_column('B:B', 25, cell_fmt)
+            worksheet.set_column('C:D', 15, cell_fmt)
+            worksheet.set_column('E:E', 22, cell_fmt)
+            worksheet.set_column('F:F', 30, target_fmt) # Highlighted Target Zone
+            worksheet.set_column('G:I', 20, cell_fmt)
             
-        st.success(f"✅ Master Dictionary created with {len(df_master)} products.")
+        st.success(f"✅ Dictionary successfully generated for {len(df_final_master)} product groups.")
         st.download_button(
             label="📥 Download Master Report (Excel)",
-            data=output.getvalue(),
-            file_name=excel_name,
+            data=output_buffer.getvalue(),
+            file_name=excel_filename,
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            key="master_download_btn_final"
+            key="master_dl_btn"
         )
     else:
-        st.error("⚠️ No data groups met the N>=30 requirement. Dictionary could not be generated.")
+        st.error("⚠️ No groups met the N>=30 reliability threshold.")
