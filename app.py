@@ -728,7 +728,7 @@ if view_mode == "📊 Executive KPI Dashboard":
     st.stop()
 # ==============================================================================
 # ==============================================================================
-# 👑 GLOBAL MASTER DICTIONARY EXPORT (FULL VIEW - FINAL VERSION WITH SPEC LIMITS)
+# 👑 GLOBAL MASTER DICTIONARY EXPORT (FULL VIEW - FINAL PERFECTED VERSION)
 # ==============================================================================
 # LƯU Ý: Chữ 'if' dưới đây phải nằm sát lề trái hoàn toàn
 if view_mode == "👑 Global Master Dictionary Export":
@@ -890,7 +890,7 @@ if view_mode == "👑 Global Master Dictionary Export":
             st.dataframe(df_rejected, use_container_width=True, hide_index=True)
 
     # ==========================================================================
-    # PHẦN 2: BIỂU ĐỒ SIX SIGMA (CAUSE & EFFECT WITH SPEC LIMITS)
+    # PHẦN 2: BIỂU ĐỒ SIX SIGMA (CAUSE & EFFECT WITH SPEC LIMITS & BORDERS)
     # ==========================================================================
     st.markdown("---")
     st.markdown("### 📊 Process Capability Analysis: Cause & Effect")
@@ -963,7 +963,7 @@ if view_mode == "👑 Global Master Dictionary Export":
             fig.add_vline(x=t_min, line_dash="dashdot", line_color="purple", line_width=2, annotation_text="Target Min", annotation_position="bottom left", annotation_font=dict(color="purple", size=10), row=row_idx, col=col_idx)
             fig.add_vline(x=t_max, line_dash="dashdot", line_color="purple", line_width=2, annotation_text="Target Max", annotation_position="bottom right", annotation_font=dict(color="purple", size=10), row=row_idx, col=col_idx)
 
-            # 🌟 KẺ VẠCH SPEC LIMIT BAN ĐẦU
+            # 🌟 KẺ VẠCH SPEC LIMIT BAN ĐẦU (Đã sửa lỗi vị trí chữ thành top right/left)
             if orig_min > 0 and orig_max > 0:
                 fig.add_vline(x=orig_min, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Min</b>", annotation_position="top right", annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
                 fig.add_vline(x=orig_max, line_dash="solid", line_color="black", line_width=2.5, annotation_text="<b>Spec Max</b>", annotation_position="top left", annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
@@ -991,8 +991,16 @@ if view_mode == "👑 Global Master Dictionary Export":
             barmode='overlay', height=750, margin=dict(l=20, r=20, t=40, b=20),
             plot_bgcolor='white', legend=dict(orientation="h", yanchor="bottom", y=1.05, xanchor="right", x=1)
         )
-        fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)')
-        fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)')
+        
+        # 🌟 NÂNG CẤP: Khung bao xám đậm chuyên nghiệp (mirror=True)
+        fig.update_xaxes(
+            showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)',
+            showline=True, linewidth=1.5, linecolor='#595959', mirror=True
+        )
+        fig.update_yaxes(
+            showgrid=True, gridwidth=1, gridcolor='rgba(200, 200, 200, 0.3)',
+            showline=True, linewidth=1.5, linecolor='#595959', mirror=True
+        )
         
         st.plotly_chart(fig, use_container_width=True)
 
