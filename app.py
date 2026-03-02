@@ -1872,36 +1872,95 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ax2.legend(loc="upper right", fontsize="small")
                 st.pyplot(fig2)
 
-                # --- LOGIC TÍNH TOÁN CƠ TÍNH ƯỚC TÍNH ---
-                def estimate_mech(hrb_val):
-                    try:
-                        h = float(hrb_val)
-                        ts = 5.5 * h + 75        # Ước tính Tensile
-                        ys = ts * 0.75           # Ước tính Yield (hệ số 0.75)
-                        el = 100 - (1.1 * h)     # Ước tính Elongation
-                        return f"{ts:.0f}", f"{ys:.0f}", f"{el:.1f}%"
-                    except:
-                        return "-", "-", "-"
-
-                # Tạo dữ liệu cho bảng
-                l_types = ["🔘 Control Spec", "🧪 Lab Spec", "🔴 M1: Standard", "🟣 M4: I-MR (SPC)"]
-                mins = [spec_min, lab_min, m1_min, m4_min]
-                maxs = [display_max, display_lab_max, m1_max, m4_max]
+                # ==================================================================
+                # BIỂU ĐỒ 2: CHI TIẾT M1 VS M4 VS SPECS (PHÂN BỔ LINE & LAB)
+                # ==================================================================
+                st.write("---") 
+                st.markdown(f"#### 📊 Detailed Distribution Analysis: {rule_name}")
                 
+                n_samples = len(data)
+                bins_sturges = int(round(1 + 3.322 * np.log10(n_samples))) if n_samples > 0 else 10
+                
+                from scipy.stats import norm
+                fig2, ax2 = plt.subplots(figsize=(12, 6))
+                
+                # Hiển thị phân bổ thực tế
+                ax2.hist(data, bins=bins_sturges, density=True, alpha=0.2, color="#1f77b4", label="LINE Actual")
+                if not data_lab.empty:
+                    ax2.hist(data_lab, bins=bins_sturges, density=True, alpha=0.15, color="#ff7f0e", label="LAB Actual")
+                
+                # Vẽ đường cong PDF
+                x_min_val = min([m1_min, m4_min, spec_min, lab_min, data.min()]) - 5
+                x_max_val = max([m1_max, m4_max, display_max, display_lab_max, data.max()]) + 5
+                x_axis = np.linspace(x_min_val, x_max_val, 500)
+                
+                ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="red", lw=2, label=f"M1 Standard (σ={std_dev:.2f})")
+                ax2.plot(x_axis, norm.pdf(x_axis, mu, sigma_imr), color="purple", lw=2, ls="--", label=f"M4 I-MR (σ={sigma_imr:.2f})")
+
+                # Kẻ các đường giới hạn
+                ax2.axvline(m1_min, color="red", ls=":", lw=1.5); ax2.axvline(m1_max, color="red", ls=":", lw=1.5)
+                ax2.axvline(m4_min, color="purple", ls="-.", lw=2); ax2.axvline(m4_max, color="purple", ls="-.", lw=2)
+                if spec_min > 0: ax2.axvline(spec_min, color="black", lw=2.5, label="Control Spec")
+                if display_max > 0: ax2.axvline(display_max, color="black", lw=2.5)
+                if lab_min > 0: ax2.axvline(lab_min, color="#555555", ls="--", lw=1.5, label="Lab Spec")
+                if display_lab_max > 0: ax2.axvline(display_lab_max, color="#555555", ls="--", lw=1.5)
+
+                ax2.xaxis.set_major_locator(plt.MultipleLocator(5))
+                ax2.xaxis.set_minor_locator(plt.MultipleLocator(1))
+                ax2.grid(which='both', axis='x', linestyle='--', alpha=0.3)
+                ax2.set_title(f"Detailed Analysis (Sturges k={bins_sturges})", fontsize=11, fontweight="bold")
+                ax2.legend(loc="upper right", fontsize="small")
+                st.pyplot(fig2)
+
+                # ==================================================================
+                # 3. BẢNG ĐỐI CHIẾU CƠ TÍNH & BIẾN ĐỘNG DỮ LIỆU LỊCH SỬ
+                # ==================================================================
+                st.markdown(f"**📌 Mechanical Properties & Variation Comparison: {rule_name}**")
+                
+                # Hàm ước tính cơ tính từ HRB (Ví dụ cho thép Carbon thấp)
+                def get_mech(h_val):
+                    try:
+                        h = float(h_val)
+                        ts = 5.5 * h + 75        # Tensile Strength ước tính
+                        ys = ts * 0.75           # Yield Strength ước tính
+                        el = 100 - (1.1 * h)     # Elongation ước tính
+                        return ts, ys, el
+                    except: return 0, 0, 0
+
+                # Chuẩn bị dữ liệu bảng
                 rows = []
-                for lt, mn, mx in zip(l_types, mins, maxs):
-                    ts_min, ys_min, el_min = estimate_mech(mn)
-                    ts_max, ys_max, el_max = estimate_mech(mx)
+                comparison_list = [
+                    ("🔘 Control Spec", spec_min, display_max, "-"),
+                    ("🧪 Lab Spec", lab_min, display_lab_max, "-"),
+                    ("🔴 M1: Standard", m1_min, m1_max, std_dev),
+                    ("🟣 M4: I-MR (SPC)", m4_min, m4_max, sigma_imr)
+                ]
+
+                for name, mn, mx, sig in comparison_list:
+                    ts_min, ys_min, el_min = get_mech(mn)
+                    ts_max, ys_max, el_max = get_mech(mx)
+                    
                     rows.append({
-                        "Limit Category": lt,
-                        "Hardness Range": f"{mn:.1f} ~ {mx:.1f}",
-                        "Est. TS (MPa)": f"{ts_min} ~ {ts_max}",
-                        "Est. YS (MPa)": f"{ys_min} ~ {ys_max}",
-                        "Est. EL (%)": f"{el_min} ~ {el_max}"
+                        "Category": name,
+                        "Hardness (HRB)": f"{mn:.1f} ~ {mx:.1f}",
+                        "Est. TS (MPa)": f"{ts_min:.0f} ~ {ts_max:.0f}",
+                        "Est. YS (MPa)": f"{ys_min:.0f} ~ {ys_max:.0f}",
+                        "Est. EL (%)": f"{el_max:.1f}% ~ {el_min:.1f}%", # EL tỷ lệ nghịch
+                        "Sigma (σ)": f"{sig:.2f}" if isinstance(sig, float) else sig
                     })
 
-                st.markdown(f"**📌 Mechanical Properties Correlation (Estimated):**")
-                st.table(pd.DataFrame(rows))
+                df_mech = pd.DataFrame(rows)
+                st.table(df_mech)
+
+                # So sánh độ biến động lịch sử
+                hist_range = data.max() - data.min()
+                st.info(f"""
+                **📊 Phân tích độ biến động dữ liệu lịch sử (N={n_samples}):**
+                * **Khoảng biến thiên thực tế:** {data.min():.1f} ~ {data.max():.1f} (Rộng: {hist_range:.1f} HRB)
+                * **Độ lệch chuẩn tổng thể (σ - M1):** {std_dev:.2f} 
+                * **Độ lệch chuẩn ổn định (σ_imr - M4):** {sigma_imr:.2f}
+                * **Nhận xét:** {"M4 tối ưu hơn vì loại bỏ biến động nhiễu." if sigma_imr < std_dev else "Dữ liệu có sự ổn định cao giữa các lô."}
+                """)
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
