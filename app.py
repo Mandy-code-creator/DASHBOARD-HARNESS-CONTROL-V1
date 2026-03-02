@@ -1800,94 +1800,78 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "M4: I-MR (Optimal)": f"{m4_min:.1f} ~ {m4_max:.1f}",
                 "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
-     # --- TÍNH TOÁN BINS THEO STURGES ---
-            n_samples = len(data)
-            bins_sturges = int(round(1 + 3.322 * np.log10(n_samples))) if n_samples > 0 else 10
-
-            # --- VẼ BIỂU ĐỒ ---
+    # --- VẼ BIỂU ĐỒ SO SÁNH ---
             col_chart, col_table = st.columns([2, 1])
             with col_chart:
-                # 1. BIỂU ĐỒ GỐC (GIỮ NGUYÊN)
+                # ==================================================================
+                # BIỂU ĐỒ 1: GIỮ NGUYÊN GỐC (KHÔNG SỬA LOGIC)
+                # ==================================================================
                 fig, ax = plt.subplots(figsize=(10, 5))
-                ax.hist(data, bins=bins_sturges, density=True, alpha=0.6, color="#1f77b4", label="LINE")
-                if not data_lab.empty: 
-                    ax.hist(data_lab, bins=bins_sturges, density=True, alpha=0.4, color="#ff7f0e", label="LAB")
-                
-                # Các đường giới hạn phương pháp
-                ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="M1")
+                ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
+                if not data_lab.empty: ax.hist(data_lab, bins=30, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
+                ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="M1: Standard")
                 ax.axvline(m1_max, c="red", ls=":", alpha=0.4)
-                ax.axvline(m4_min, c="purple", ls="-.", lw=2, label="M4 (SPC)")
+                ax.axvline(m2_min, c="blue", ls="--", alpha=0.5, label="M2: IQR")
+                ax.axvline(m2_max, c="blue", ls="--", alpha=0.5)
+                ax.axvline(m4_min, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
                 ax.axvline(m4_max, c="purple", ls="-.", lw=2)
-                ax.axvspan(m3_min, m3_max, color="green", alpha=0.1, label="Hybrid Zone")
-                
-                # Giới hạn Spec
+                ax.axvspan(m3_min, m3_max, color="green", alpha=0.15, label="M3: Hybrid Zone")
                 if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
                 if display_max > 0: ax.axvline(display_max, c="black", lw=2)
-                
-                ax.set_title(f"Limits Comparison (Sturges Bins k={bins_sturges})", fontsize=10, fontweight="bold")
+                ax.set_title(f"Limits Comparison (σ={sigma_n})", fontsize=10, fontweight="bold")
                 ax.legend(loc="upper right", fontsize="small")
                 st.pyplot(fig)
 
-                # 2. BIỂU ĐỒ SO SÁNH CHI TIẾT (M1 VS M4 VS SPECS)
+                # ==================================================================
+                # BIỂU ĐỒ 2: THÊM MỚI - SO SÁNH CHI TIẾT (STURGES BINS & LAB LIMITS)
+                # ==================================================================
                 st.write("---")
                 st.markdown(f"#### 📊 Detailed Distribution Analysis: {rule_name}")
                 
+                # Tính toán bins theo Sturges cho biểu đồ mới
+                n_samples = len(data)
+                bins_sturges = int(round(1 + 3.322 * np.log10(n_samples))) if n_samples > 0 else 10
+                
                 from scipy.stats import norm
-                fig_compare, ax_comp = plt.subplots(figsize=(12, 5))
+                fig2, ax2 = plt.subplots(figsize=(12, 6))
                 
-                # Tính toán trục X chi tiết hơn
-                all_limits = [m1_min, m1_max, m4_min, m4_max, spec_min, display_max, lab_min, display_lab_max]
-                x_min_plot = min([v for v in all_limits if v > 0]) - 5
-                x_max_plot = max(all_limits) + 5
-                x_axis = np.linspace(x_min_plot, x_max_plot, 500)
-
-                # Vẽ Histogram nền cực mờ
-                ax_comp.hist(data, bins=bins_sturges, density=True, alpha=0.15, color="#1f77b4")
-
-                # Vẽ đường cong PDF
-                ax_comp.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="red", lw=2, label=f"M1 (σ={std_dev:.2f})")
-                ax_comp.plot(x_axis, norm.pdf(x_axis, mu, sigma_imr), color="purple", lw=2, ls="--", label=f"M4 (σ={sigma_imr:.2f})")
-
-                # --- TÔ MÀU CÁC VÙNG (SHADING) ---
-                # Vùng nằm trong Lab Spec (Rộng nhất - màu xám nhạt)
-                if lab_min > 0 and display_lab_max > 0:
-                    ax_comp.axvspan(lab_min, display_lab_max, color='gray', alpha=0.05, label="Lab Range")
+                # Vẽ Histogram nền mờ (dùng bins Sturges)
+                ax2.hist(data, bins=bins_sturges, density=True, alpha=0.15, color="#1f77b4", label="Actual Distribution")
                 
-                # Vùng nằm trong Control Spec (Màu xanh nhạt)
-                if spec_min > 0 and display_max > 0:
-                    ax_comp.axvspan(spec_min, display_max, color='lightblue', alpha=0.15, label="Control Range")
-
-                # --- KẺ CÁC ĐƯỜNG GIỚI HẠN ---
-                # M1 & M4
-                ax_comp.axvline(m1_min, color="red", ls=":", lw=1.5); ax_comp.axvline(m1_max, color="red", ls=":", lw=1.5)
-                ax_comp.axvline(m4_min, color="purple", ls="-.", lw=2); ax_comp.axvline(m4_max, color="purple", ls="-.", lw=2)
+                # Tính toán đường cong PDF cho M1 và M4
+                x_min_val = min([m1_min, m4_min, spec_min, lab_min]) - 5
+                x_max_val = max([m1_max, m4_max, display_max, display_lab_max]) + 5
+                x_axis = np.linspace(x_min_val, x_max_val, 500)
                 
-                # Control Spec (Đen đậm)
-                if spec_min > 0: ax_comp.axvline(spec_min, color="black", lw=2.5)
-                if display_max > 0: ax_comp.axvline(display_max, color="black", lw=2.5)
-                
-                # Lab Spec (Xám đứt nét)
-                if lab_min > 0: ax_comp.axvline(lab_min, color="#555555", ls="--", lw=1.5)
-                if display_lab_max > 0: ax_comp.axvline(display_lab_max, color="#555555", ls="--", lw=1.5)
+                ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="red", lw=2, label="M1 Standard Curve")
+                ax2.plot(x_axis, norm.pdf(x_axis, mu, sigma_imr), color="purple", lw=2, ls="--", label="M4 I-MR Curve")
 
-                # Chia nhỏ vạch chia trục X (Major & Minor ticks)
-                ax_comp.xaxis.set_major_locator(plt.MultipleLocator(5)) # Vạch chính mỗi 5 đơn vị
-                ax_comp.xaxis.set_minor_locator(plt.MultipleLocator(1)) # Vạch phụ mỗi 1 đơn vị
-                ax_comp.grid(which='both', axis='x', linestyle='--', alpha=0.3)
+                # Kẻ các giới hạn (Lines Only)
+                ax2.axvline(m1_min, color="red", ls=":", lw=1.5); ax2.axvline(m1_max, color="red", ls=":", lw=1.5)
+                ax2.axvline(m4_min, color="purple", ls="-.", lw=2); ax2.axvline(m4_max, color="purple", ls="-.", lw=2)
+                if spec_min > 0: ax2.axvline(spec_min, color="black", lw=2.5, label="Control Spec")
+                if display_max > 0: ax2.axvline(display_max, color="black", lw=2.5)
+                if lab_min > 0: ax2.axvline(lab_min, color="#555555", ls="--", lw=1.5, label="Lab Spec")
+                if display_lab_max > 0: ax2.axvline(display_lab_max, color="#555555", ls="--", lw=1.5)
 
-                ax_comp.set_title("Theoretical vs Actual Distribution", fontsize=11, fontweight="bold")
-                ax_comp.legend(loc="upper right", fontsize="small")
-                st.pyplot(fig_compare)
+                # Phân chi tiết trục X (Minor ticks mỗi 1 đơn vị)
+                ax2.xaxis.set_major_locator(plt.MultipleLocator(5))
+                ax2.xaxis.set_minor_locator(plt.MultipleLocator(1))
+                ax2.grid(which='both', axis='x', linestyle='--', alpha=0.3)
 
-                # --- BẢNG TỔNG HỢP GHI CHÚ NGOÀI BIỂU ĐỒ ---
-                st.markdown(f"**📌 {rule_name} | Summary Data:**")
-                summary_df = pd.DataFrame({
-                    "Thông số (Parameter)": ["🔘 Control Spec", "🧪 Lab Spec", "🔴 M1: Standard", "🟣 M4: I-MR (SPC)"],
-                    "Giới hạn dưới (Min)": [f"{spec_min:.1f}", f"{lab_min:.1f}", f"{m1_min:.1f}", f"{m4_min:.1f}"],
-                    "Giới hạn trên (Max)": [f"{display_max:.1f}", f"{display_lab_max:.1f}", f"{m1_max:.1f}", f"{m4_max:.1f}"],
-                    "Độ biến động (Variation)": ["-", "-", f"σ={std_dev:.2f}", f"σ={sigma_imr:.2f}"]
+                ax2.set_title(f"Sturges Distribution (k={bins_sturges})", fontsize=11, fontweight="bold")
+                ax2.legend(loc="upper right", fontsize="small")
+                st.pyplot(fig2)
+
+                # --- BẢNG GHI CHÚ NGOÀI BIỂU ĐỒ ---
+                st.markdown(f"**📌 Limit Summary for {rule_name}:**")
+                summary_table = pd.DataFrame({
+                    "Limit Type": ["🔘 Control Spec", "🧪 Lab Spec", "🔴 M1: Standard", "🟣 M4: I-MR (SPC)"],
+                    "Lower (Min)": [f"{spec_min:.1f}", f"{lab_min:.1f}", f"{m1_min:.1f}", f"{m4_min:.1f}"],
+                    "Upper (Max)": [f"{display_max:.1f}", f"{display_lab_max:.1f}", f"{m1_max:.1f}", f"{m4_max:.1f}"],
+                    "Sigma Value": ["-", "-", f"σ={std_dev:.2f}", f"σ={sigma_imr:.2f}"]
                 })
-                st.table(summary_df)
+                st.table(summary_table)
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
