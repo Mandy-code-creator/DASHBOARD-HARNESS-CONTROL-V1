@@ -1801,53 +1801,66 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
 
-           # --- VẼ BIỂU ĐỒ SO SÁNH ---
+          # --- VẼ BIỂU ĐỒ SO SÁNH ---
             col_chart, col_table = st.columns([2, 1])
             with col_chart:
-                # 1. Biểu đồ Histogram (Giữ nguyên của bạn)
-                fig, ax = plt.subplots(figsize=(10, 4))
-                ax.hist(data, bins=30, density=True, alpha=0.4, color="#1f77b4", label="LINE Data Distribution")
+                # 1. BIỂU ĐỒ GỐC (GIỮ NGUYÊN KHÔNG SỬA LOGIC)
+                fig, ax = plt.subplots(figsize=(10, 5))
+                ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
+                if not data_lab.empty: ax.hist(data_lab, bins=30, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
                 ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="M1: Standard")
                 ax.axvline(m1_max, c="red", ls=":", alpha=0.4)
+                ax.axvline(m2_min, c="blue", ls="--", alpha=0.5, label="M2: IQR")
+                ax.axvline(m2_max, c="blue", ls="--", alpha=0.5)
                 ax.axvline(m4_min, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
                 ax.axvline(m4_max, c="purple", ls="-.", lw=2)
-                if spec_min > 0: ax.axvline(spec_min, c="black", lw=2, label="Spec Limit")
+                ax.axvspan(m3_min, m3_max, color="green", alpha=0.15, label="M3: Hybrid Zone")
+                if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
                 if display_max > 0: ax.axvline(display_max, c="black", lw=2)
-                ax.set_title(f"Histogram & Limits (N={len(data)})", fontsize=10, fontweight="bold")
+                ax.set_title(f"Limits Comparison (σ={sigma_n})", fontsize=10, fontweight="bold")
                 ax.legend(loc="upper right", fontsize="small")
                 st.pyplot(fig)
 
-                # --- 2. BIỂU ĐỒ PHÂN PHỐI CHUẨN (M1 vs M4) ---
-                st.markdown("#### 📈 Normal Distribution Comparison: M1 vs M4")
+                # 2. THÊM BIỂU ĐỒ MỚI: CHỈ SO SÁNH M1, M4 VÀ SPEC
+                st.write("---") # Đường kẻ phân cách
+                st.markdown("#### 📊 Specific Comparison: M1 vs M4 vs Current Spec")
+                
                 from scipy.stats import norm
+                fig_compare, ax_comp = plt.subplots(figsize=(10, 4))
                 
-                fig2, ax2 = plt.subplots(figsize=(10, 4))
-                # Tạo dải dữ liệu X từ -4 sigma đến +4 sigma để vẽ đường cong
-                x_min = min(m1_min, m4_min) - 5
-                x_max = max(m1_max, m4_max) + 5
-                x_axis = np.linspace(x_min, x_max, 500)
-                
-                # Đường cong M1: Dựa trên Standard Deviation (Biến động tổng thể)
-                pdf_m1 = norm.pdf(x_axis, mu, std_dev)
-                ax2.plot(x_axis, pdf_m1, color="red", lw=2, label=f"M1 (Total σ={std_dev:.2f})")
-                ax2.fill_between(x_axis, pdf_m1, alpha=0.1, color="red")
-                
-                # Đường cong M4: Dựa trên Sigma I-MR (Biến động ngắn hạn/ổn định)
-                pdf_m4 = norm.pdf(x_axis, mu, sigma_imr)
-                ax2.plot(x_axis, pdf_m4, color="purple", lw=2, ls="--", label=f"M4 (SPC σ={sigma_imr:.2f})")
-                ax2.fill_between(x_axis, pdf_m4, alpha=0.1, color="purple")
+                # Thiết lập trục X (lấy rộng ra 4 sigma để thấy rõ đuôi biểu đồ)
+                x_start = min(m1_min, m4_min, spec_min) - 5
+                x_end = max(m1_max, m4_max, display_max) + 5
+                x_range = np.linspace(x_start, x_end, 500)
 
-                # Vẽ các đường giới hạn (LCL/UCL) trực tiếp lên biểu đồ phân phối
-                ax2.axvline(m1_min, color="red", ls=":", alpha=0.7)
-                ax2.axvline(m1_max, color="red", ls=":", alpha=0.7)
-                ax2.axvline(m4_min, color="purple", ls="-.", alpha=0.9)
-                ax2.axvline(m4_max, color="purple", ls="-.", alpha=0.9)
+                # Vẽ đường cong cho M1 (Standard Deviation tổng)
+                pdf_m1 = norm.pdf(x_range, mu, std_dev)
+                ax_comp.plot(x_range, pdf_m1, color="red", lw=2, label=f"M1 Standard (σ={std_dev:.2f})")
+                ax_comp.fill_between(x_range, pdf_m1, alpha=0.1, color="red")
                 
-                ax2.set_title("Probability Density Function: M1 vs M4", fontsize=10)
-                ax2.set_xlabel("Hardness Value")
-                ax2.set_ylabel("Probability Density")
-                ax2.legend(fontsize="small")
-                st.pyplot(fig2)
+                # Vẽ đường cong cho M4 (I-MR Sigma - Năng lực thực tế)
+                pdf_m4 = norm.pdf(x_range, mu, sigma_imr)
+                ax_comp.plot(x_range, pdf_m4, color="purple", lw=2, ls="--", label=f"M4 I-MR (σ={sigma_imr:.2f})")
+                ax_comp.fill_between(x_range, pdf_m4, alpha=0.1, color="purple")
+
+                # Kẻ các đường giới hạn M1 (Đỏ)
+                ax_comp.axvline(m1_min, color="red", ls=":", lw=1.5)
+                ax_comp.axvline(m1_max, color="red", ls=":", lw=1.5)
+                
+                # Kẻ các đường giới hạn M4 (Tím)
+                ax_comp.axvline(m4_min, color="purple", ls="-.", lw=2)
+                ax_comp.axvline(m4_max, color="purple", ls="-.", lw=2)
+
+                # Kẻ giới hạn Control hiện tại (Đen)
+                if spec_min > 0:
+                    ax_comp.axvline(spec_min, color="black", lw=2.5, label="Current Spec")
+                if display_max > 0:
+                    ax_comp.axvline(display_max, color="black", lw=2.5)
+
+                ax_comp.set_title("Distribution Curve Comparison", fontsize=10, fontweight="bold")
+                ax_comp.set_ylabel("Probability Density")
+                ax_comp.legend(loc="upper right", fontsize="small")
+                st.pyplot(fig_compare)
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
