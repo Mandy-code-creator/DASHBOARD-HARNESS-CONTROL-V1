@@ -1846,8 +1846,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     ax2.hist(data_lab, bins=bins_sturges, density=True, alpha=0.15, color="#ff7f0e", label="LAB Actual")
                 
                 # Tính toán dải trục X và vẽ đường cong PDF lý thuyết
-                x_min_val = min([m1_min, m4_min, spec_min, lab_min, data.min() if not data.empty else 0]) - 5
-                x_max_val = max([m1_max, m4_max, display_max, display_lab_max, data.max() if not data.empty else 100]) + 5
+                x_min_val = min([m1_min, m4_min, spec_min, lab_min, data.min() if not data.empty else 0]) - 2
+                x_max_val = max([m1_max, m4_max, display_max, display_lab_max, data.max() if not data.empty else 100]) + 2
                 x_axis = np.linspace(x_min_val, x_max_val, 500)
                 
                 ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="red", lw=2, label=f"M1 Curve (σ={std_dev:.2f})")
