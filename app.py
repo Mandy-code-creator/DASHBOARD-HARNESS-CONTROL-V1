@@ -1801,48 +1801,51 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
 
-            # --- VẼ BIỂU ĐỒ SO SÁNH ---
+           # --- VẼ BIỂU ĐỒ SO SÁNH ---
             col_chart, col_table = st.columns([2, 1])
             with col_chart:
-                # 1. Biểu đồ Histogram hiện tại
-                fig, ax = plt.subplots(figsize=(10, 5))
-                ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
-                if not data_lab.empty: ax.hist(data_lab, bins=30, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
+                # 1. Biểu đồ Histogram (Giữ nguyên của bạn)
+                fig, ax = plt.subplots(figsize=(10, 4))
+                ax.hist(data, bins=30, density=True, alpha=0.4, color="#1f77b4", label="LINE Data Distribution")
                 ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="M1: Standard")
                 ax.axvline(m1_max, c="red", ls=":", alpha=0.4)
-                ax.axvline(m2_min, c="blue", ls="--", alpha=0.5, label="M2: IQR")
-                ax.axvline(m2_max, c="blue", ls="--", alpha=0.5)
                 ax.axvline(m4_min, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
                 ax.axvline(m4_max, c="purple", ls="-.", lw=2)
-                ax.axvspan(m3_min, m3_max, color="green", alpha=0.15, label="M3: Hybrid Zone")
-                if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
+                if spec_min > 0: ax.axvline(spec_min, c="black", lw=2, label="Spec Limit")
                 if display_max > 0: ax.axvline(display_max, c="black", lw=2)
-                ax.set_title(f"Limits Comparison (σ={sigma_n})", fontsize=10, fontweight="bold")
+                ax.set_title(f"Histogram & Limits (N={len(data)})", fontsize=10, fontweight="bold")
                 ax.legend(loc="upper right", fontsize="small")
                 st.pyplot(fig)
 
-                # --- MỚI: BIỂU ĐỒ PHÂN PHỐI CHUẨN SO SÁNH M1 & M4 ---
-                st.markdown("#### 📈 Distribution Curve Comparison (M1 vs M4)")
+                # --- 2. BIỂU ĐỒ PHÂN PHỐI CHUẨN (M1 vs M4) ---
+                st.markdown("#### 📈 Normal Distribution Comparison: M1 vs M4")
                 from scipy.stats import norm
                 
                 fig2, ax2 = plt.subplots(figsize=(10, 4))
-                x_axis = np.linspace(mu - 4*std_dev, mu + 4*std_dev, 200)
+                # Tạo dải dữ liệu X từ -4 sigma đến +4 sigma để vẽ đường cong
+                x_min = min(m1_min, m4_min) - 5
+                x_max = max(m1_max, m4_max) + 5
+                x_axis = np.linspace(x_min, x_max, 500)
                 
-                # Vẽ đường cong cho M1 (Dựa trên Standard Deviation tổng)
-                ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="red", lw=2, label="M1: Standard (Total Variation)")
-                ax2.fill_between(x_axis, norm.pdf(x_axis, mu, std_dev), alpha=0.1, color="red")
+                # Đường cong M1: Dựa trên Standard Deviation (Biến động tổng thể)
+                pdf_m1 = norm.pdf(x_axis, mu, std_dev)
+                ax2.plot(x_axis, pdf_m1, color="red", lw=2, label=f"M1 (Total σ={std_dev:.2f})")
+                ax2.fill_between(x_axis, pdf_m1, alpha=0.1, color="red")
                 
-                # Vẽ đường cong cho M4 (Dựa trên Sigma I-MR)
-                ax2.plot(x_axis, norm.pdf(x_axis, mu, sigma_imr), color="purple", lw=2, ls="--", label="M4: I-MR (Short-term Variation)")
-                ax2.fill_between(x_axis, norm.pdf(x_axis, mu, sigma_imr), alpha=0.1, color="purple")
+                # Đường cong M4: Dựa trên Sigma I-MR (Biến động ngắn hạn/ổn định)
+                pdf_m4 = norm.pdf(x_axis, mu, sigma_imr)
+                ax2.plot(x_axis, pdf_m4, color="purple", lw=2, ls="--", label=f"M4 (SPC σ={sigma_imr:.2f})")
+                ax2.fill_between(x_axis, pdf_m4, alpha=0.1, color="purple")
 
-                # Kẻ các đường giới hạn
-                ax2.axvline(m1_min, color="red", ls=":", alpha=0.6)
-                ax2.axvline(m1_max, color="red", ls=":", alpha=0.6)
-                ax2.axvline(m4_min, color="purple", ls="-.", alpha=0.8)
-                ax2.axvline(m4_max, color="purple", ls="-.", alpha=0.8)
+                # Vẽ các đường giới hạn (LCL/UCL) trực tiếp lên biểu đồ phân phối
+                ax2.axvline(m1_min, color="red", ls=":", alpha=0.7)
+                ax2.axvline(m1_max, color="red", ls=":", alpha=0.7)
+                ax2.axvline(m4_min, color="purple", ls="-.", alpha=0.9)
+                ax2.axvline(m4_max, color="purple", ls="-.", alpha=0.9)
                 
-                ax2.set_title("Standard Deviation vs. I-MR Sigma", fontsize=10)
+                ax2.set_title("Probability Density Function: M1 vs M4", fontsize=10)
+                ax2.set_xlabel("Hardness Value")
+                ax2.set_ylabel("Probability Density")
                 ax2.legend(fontsize="small")
                 st.pyplot(fig2)
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
