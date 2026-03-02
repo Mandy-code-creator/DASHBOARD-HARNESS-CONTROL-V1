@@ -1915,11 +1915,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 # ==================================================================
         # ==================================================================
                # ==================================================================
-                # 3. SUMMARY TABLE: MECHANICAL ESTIMATION (THEORETICAL VS ACTUAL)
+                # 3. SUMMARY TABLE & EXCEL EXPORT: MECHANICAL ESTIMATION
                 # ==================================================================
                 st.markdown(f"**📌 Limit Summary & Mechanical Estimation: {rule_name}**")
                 
-                # Function to estimate mechanical properties from Hardness (TS: Tensile Strength, YS: Yield Strength, EL: Elongation)
+                # Function to estimate mechanical properties from Hardness
                 def get_mech(h_val):
                     try:
                         h = float(h_val)
@@ -1939,11 +1939,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ]
 
                 for cat, l_min, l_max, sig in configs:
-                    # 1. Calculate mechanical properties based on theoretical boundaries
+                    # 1. Theoretical boundaries
                     ts_lmin, ys_lmin, el_lmax = get_mech(l_min)
                     ts_lmax, ys_lmax, el_lmin = get_mech(l_max)
                     
-                    # 2. Find ACTUAL data falling within this control range
+                    # 2. Actual data falling within this control range
                     valid_data = data[(data >= l_min) & (data <= l_max)] if l_max > 0 else []
                     
                     if len(valid_data) > 0:
@@ -1956,7 +1956,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     else:
                         act_ts = act_el = "N/A"
 
-                    # Append to list for display
                     rows.append({
                         "Limit Type": cat,
                         "Hardness Limits": f"{l_min:.1f} ~ {l_max:.1f}",
@@ -1967,12 +1966,34 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         "Actual EL (%)": act_el
                     })
 
-                # Display the table
+                # Display the table in Streamlit
                 df_summary = pd.DataFrame(rows)
                 st.dataframe(df_summary, use_container_width=True, hide_index=True)
-                
-                # Explanatory caption
                 st.caption("*(**) TS: Tensile Strength (MPa) | EL: Elongation (%) - Note: Elongation is inversely proportional to hardness.*")
+
+                # --- EXCEL EXPORT BUTTON ---
+                import io
+                
+                # Create a buffer to save the Excel file in memory
+                buffer = io.BytesIO()
+                
+                # Write DataFrame to buffer
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    df_summary.to_excel(writer, sheet_name='Summary', index=False)
+                    
+                    # Optional: Auto-adjust column widths for better formatting
+                    worksheet = writer.sheets['Summary']
+                    for idx, col in enumerate(df_summary.columns):
+                        max_len = max(df_summary[col].astype(str).map(len).max(), len(col)) + 2
+                        worksheet.set_column(idx, idx, max_len)
+
+                # Streamlit Download Button
+                st.download_button(
+                    label="📥 Download Summary as Excel",
+                    data=buffer.getvalue(),
+                    file_name=f"Mechanical_Estimation_{rule_name.replace(' ', '_')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                )
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
