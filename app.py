@@ -1914,12 +1914,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                 # ==================================================================
         # ==================================================================
-                # ==================================================================
-                # 3. BẢNG TỔNG HỢP: ĐỐI CHIẾU CƠ TÍNH (LÝ THUYẾT VS THỰC TẾ)
+               # ==================================================================
+                # 3. SUMMARY TABLE: MECHANICAL ESTIMATION (THEORETICAL VS ACTUAL)
                 # ==================================================================
                 st.markdown(f"**📌 Limit Summary & Mechanical Estimation: {rule_name}**")
                 
-                # Hàm tính cơ tính từ HRB (TS: Độ bền kéo, YS: Độ bền chảy, EL: Độ dãn dài)
+                # Function to estimate mechanical properties from Hardness (TS: Tensile Strength, YS: Yield Strength, EL: Elongation)
                 def get_mech(h_val):
                     try:
                         h = float(h_val)
@@ -1939,11 +1939,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ]
 
                 for cat, l_min, l_max, sig in configs:
-                    # 1. Tính cơ tính theo biên giới hạn lý thuyết
+                    # 1. Calculate mechanical properties based on theoretical boundaries
                     ts_lmin, ys_lmin, el_lmax = get_mech(l_min)
                     ts_lmax, ys_lmax, el_lmin = get_mech(l_max)
                     
-                    # 2. Tìm dải dữ liệu THỰC TẾ lọt vào khoảng kiểm soát này
+                    # 2. Find ACTUAL data falling within this control range
                     valid_data = data[(data >= l_min) & (data <= l_max)] if l_max > 0 else []
                     
                     if len(valid_data) > 0:
@@ -1951,29 +1951,28 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         ts_amin, ys_amin, el_amax = get_mech(act_min)
                         ts_amax, ys_amax, el_amin = get_mech(act_max)
                         
-                        act_hrb = f"{act_min:.1f} ~ {act_max:.1f}"
                         act_ts = f"{ts_amin:.0f} ~ {ts_amax:.0f}"
                         act_el = f"{el_amax:.1f} ~ {el_amin:.1f}"
                     else:
-                        act_hrb = act_ts = act_el = "N/A"
+                        act_ts = act_el = "N/A"
 
-                    # Đưa vào danh sách hiển thị
+                    # Append to list for display
                     rows.append({
-                        "Phân loại": cat,
-                        "Độ cứng (Giới hạn)": f"{l_min:.1f} ~ {l_max:.1f}",
-                        "Biến động": f"σ={sig:.2f}" if isinstance(sig, float) else sig,
-                        "TS (Từ Giới hạn)": f"{ts_lmin:.0f} ~ {ts_lmax:.0f}",
-                        "TS (Thực tế)": act_ts,
-                        "EL% (Từ Giới hạn)": f"{el_lmax:.1f} ~ {el_lmin:.1f}",
-                        "EL% (Thực tế)": act_el
+                        "Limit Type": cat,
+                        "Hardness Limits": f"{l_min:.1f} ~ {l_max:.1f}",
+                        "Variation (σ)": f"σ={sig:.2f}" if isinstance(sig, float) else sig,
+                        "Theoretical TS": f"{ts_lmin:.0f} ~ {ts_lmax:.0f}",
+                        "Actual TS": act_ts,
+                        "Theoretical EL (%)": f"{el_lmax:.1f} ~ {el_lmin:.1f}",
+                        "Actual EL (%)": act_el
                     })
 
-                # Hiển thị bảng
+                # Display the table
                 df_summary = pd.DataFrame(rows)
                 st.dataframe(df_summary, use_container_width=True, hide_index=True)
                 
-                # Chú thích thêm cho người đọc
-                st.caption("*(**) TS: Tensile Strength (MPa) | EL: Elongation (%) - Độ dãn dài tỷ lệ nghịch với độ cứng.*")
+                # Explanatory caption
+                st.caption("*(**) TS: Tensile Strength (MPa) | EL: Elongation (%) - Note: Elongation is inversely proportional to hardness.*")
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
