@@ -1913,54 +1913,96 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.pyplot(fig2)
 
                 # ==================================================================
-                # 3. BẢNG ĐỐI CHIẾU CƠ TÍNH & BIẾN ĐỘNG DỮ LIỆU LỊCH SỬ
+        # ==================================================================
+                # 3. BÁO CÁO QUẢN TRỊ: SO SÁNH BIẾN THIÊN CƠ TÍNH (TRƯỚC VS SAU)
                 # ==================================================================
-                st.markdown(f"**📌 Mechanical Properties & Variation Comparison: {rule_name}**")
-                
-                # Hàm ước tính cơ tính từ HRB (Ví dụ cho thép Carbon thấp)
-                def get_mech(h_val):
+                st.write("---")
+                st.markdown("#### 📉 Báo Cáo Quyết Định: Hiệu Quả Kiểm Soát Cơ Tính (TS, YS, EL)")
+                st.caption("So sánh sự phân tán của cơ tính giữa dữ liệu lịch sử thả nổi (M1) và năng lực thực tế sau khi áp dụng SPC (M4).")
+
+                # Hàm tính cơ tính từ HRB (Ước lượng)
+                def get_mech_val(h_val):
                     try:
                         h = float(h_val)
-                        ts = 5.5 * h + 75        # Tensile Strength ước tính
-                        ys = ts * 0.75           # Yield Strength ước tính
-                        el = 100 - (1.1 * h)     # Elongation ước tính
+                        ts = 5.5 * h + 75        # Tensile Strength
+                        ys = ts * 0.75           # Yield Strength
+                        el = 100 - (1.1 * h)     # Elongation
                         return ts, ys, el
                     except: return 0, 0, 0
 
-                # Chuẩn bị dữ liệu bảng
-                rows = []
-                comparison_list = [
-                    ("🔘 Control Spec", spec_min, display_max, "-"),
-                    ("🧪 Lab Spec", lab_min, display_lab_max, "-"),
-                    ("🔴 M1: Standard", m1_min, m1_max, std_dev),
-                    ("🟣 M4: I-MR (SPC)", m4_min, m4_max, sigma_imr)
+                # Lấy giá trị cơ tính cho M1 (Lịch sử / Không kiểm soát chặt)
+                m1_ts_min, m1_ys_min, m1_el_max = get_mech_val(m1_min)
+                m1_ts_max, m1_ys_max, m1_el_min = get_mech_val(m1_max)
+                
+                # Lấy giá trị cơ tính cho M4 (Sau khi áp dụng SPC)
+                m4_ts_min, m4_ys_min, m4_el_max = get_mech_val(m4_min)
+                m4_ts_max, m4_ys_max, m4_el_min = get_mech_val(m4_max)
+
+                # Tính toán khoảng biến thiên (Range / Delta)
+                range_m1_ts = abs(m1_ts_max - m1_ts_min)
+                range_m4_ts = abs(m4_ts_max - m4_ts_min)
+                
+                range_m1_ys = abs(m1_ys_max - m1_ys_min)
+                range_m4_ys = abs(m4_ys_max - m4_ys_min)
+                
+                range_m1_el = abs(m1_el_max - m1_el_min)
+                range_m4_el = abs(m4_el_max - m4_el_min)
+
+                # Tính % Thu hẹp biến thiên
+                def calc_reduction(r_m1, r_m4):
+                    if r_m1 == 0: return 0
+                    return ((r_m1 - r_m4) / r_m1) * 100
+
+                red_ts = calc_reduction(range_m1_ts, range_m4_ts)
+                red_ys = calc_reduction(range_m1_ys, range_m4_ys)
+                red_el = calc_reduction(range_m1_el, range_m4_el)
+
+                # Tạo DataFrame báo cáo cho Sếp
+                report_data = [
+                    {
+                        "Chỉ tiêu Cơ tính": "Độ bền kéo (TS - MPa)",
+                        "Lịch sử / Không kiểm soát (M1)": f"{min(m1_ts_min, m1_ts_max):.0f} ~ {max(m1_ts_min, m1_ts_max):.0f} (Δ = {range_m1_ts:.0f})",
+                        "Áp dụng SPC (M4)": f"{min(m4_ts_min, m4_ts_max):.0f} ~ {max(m4_ts_min, m4_ts_max):.0f} (Δ = {range_m4_ts:.0f})",
+                        "Mức độ đồng đều tăng thêm": f"🚀 Tốt hơn {red_ts:.1f}%" if red_ts > 0 else f"Tương đương"
+                    },
+                    {
+                        "Chỉ tiêu Cơ tính": "Độ bền chảy (YS - MPa)",
+                        "Lịch sử / Không kiểm soát (M1)": f"{min(m1_ys_min, m1_ys_max):.0f} ~ {max(m1_ys_min, m1_ys_max):.0f} (Δ = {range_m1_ys:.0f})",
+                        "Áp dụng SPC (M4)": f"{min(m4_ys_min, m4_ys_max):.0f} ~ {max(m4_ys_min, m4_ys_max):.0f} (Δ = {range_m4_ys:.0f})",
+                        "Mức độ đồng đều tăng thêm": f"🚀 Tốt hơn {red_ys:.1f}%" if red_ys > 0 else f"Tương đương"
+                    },
+                    {
+                        "Chỉ tiêu Cơ tính": "Độ dãn dài (EL - %)",
+                        "Lịch sử / Không kiểm soát (M1)": f"{min(m1_el_min, m1_el_max):.1f} ~ {max(m1_el_min, m1_el_max):.1f} (Δ = {range_m1_el:.1f})",
+                        "Áp dụng SPC (M4)": f"{min(m4_el_min, m4_el_max):.1f} ~ {max(m4_el_min, m4_el_max):.1f} (Δ = {range_m4_el:.1f})",
+                        "Mức độ đồng đều tăng thêm": f"🚀 Tốt hơn {red_el:.1f}%" if red_el > 0 else f"Tương đương"
+                    }
                 ]
 
-                for name, mn, mx, sig in comparison_list:
-                    ts_min, ys_min, el_min = get_mech(mn)
-                    ts_max, ys_max, el_max = get_mech(mx)
-                    
-                    rows.append({
-                        "Category": name,
-                        "Hardness (HRB)": f"{mn:.1f} ~ {mx:.1f}",
-                        "Est. TS (MPa)": f"{ts_min:.0f} ~ {ts_max:.0f}",
-                        "Est. YS (MPa)": f"{ys_min:.0f} ~ {ys_max:.0f}",
-                        "Est. EL (%)": f"{el_max:.1f}% ~ {el_min:.1f}%", # EL tỷ lệ nghịch
-                        "Sigma (σ)": f"{sig:.2f}" if isinstance(sig, float) else sig
-                    })
+                df_report = pd.DataFrame(report_data)
+                
+                # Hàm tô màu cột cải thiện để gây ấn tượng thị giác
+                def highlight_improvement(val):
+                    if '🚀' in str(val):
+                        return 'color: #155724; font-weight: bold; background-color: #d4edda' # Màu xanh lá cây nhạt
+                    return ''
 
-                df_mech = pd.DataFrame(rows)
-                st.table(df_mech)
+                # Hiển thị bảng với màu sắc
+                st.dataframe(
+                    df_report.style.applymap(highlight_improvement, subset=["Mức độ đồng đều tăng thêm"]), 
+                    use_container_width=True, 
+                    hide_index=True
+                )
 
-                # So sánh độ biến động lịch sử
-                hist_range = data.max() - data.min()
-                st.info(f"""
-                **📊 Phân tích độ biến động dữ liệu lịch sử (N={n_samples}):**
-                * **Khoảng biến thiên thực tế:** {data.min():.1f} ~ {data.max():.1f} (Rộng: {hist_range:.1f} HRB)
-                * **Độ lệch chuẩn tổng thể (σ - M1):** {std_dev:.2f} 
-                * **Độ lệch chuẩn ổn định (σ_imr - M4):** {sigma_imr:.2f}
-                * **Nhận xét:** {"M4 tối ưu hơn vì loại bỏ biến động nhiễu." if sigma_imr < std_dev else "Dữ liệu có sự ổn định cao giữa các lô."}
-                """)
+                # Hộp thoại kết luận cho Sếp
+                if red_ts > 0:
+                    st.success(f"""
+                    **✅ KẾT LUẬN & ĐỀ XUẤT CHO BAN QUẢN LÝ:**
+                    * Việc chuyển đổi sang giới hạn **M4 (I-MR)** giúp loại bỏ các nhiễu loạn bất thường trong quá khứ, làm cho độ bền và độ dẻo của cuộn thép đồng đều hơn khoảng **{red_ts:.1f}%**.
+                    * **Lợi ích kinh tế:** Nguyên liệu đầu vào ổn định hơn đồng nghĩa với việc khách hàng dập hình ít bị lỗi nứt (do quá cứng) hoặc nhăn (do quá mềm), giảm chi phí bồi thường NG và không cần tinh chỉnh khuôn dập liên tục.
+                    """)
+                else:
+                    st.info("**💡 KẾT LUẬN:** Dữ liệu sản xuất trong lịch sử hiện đang rất ổn định, không có sự sai lệch lớn giữa giới hạn tiêu chuẩn và năng lực thực tế.")
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
