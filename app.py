@@ -1804,7 +1804,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
           # --- VẼ BIỂU ĐỒ SO SÁNH ---
             col_chart, col_table = st.columns([2, 1])
             with col_chart:
-                # 1. BIỂU ĐỒ GỐC (GIỮ NGUYÊN KHÔNG SỬA LOGIC)
+                # 1. BIỂU ĐỒ GỐC (GIỮ NGUYÊN HOÀN TOÀN LOGIC CỦA BẠN)
                 fig, ax = plt.subplots(figsize=(10, 5))
                 ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
                 if not data_lab.empty: ax.hist(data_lab, bins=30, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
@@ -1821,28 +1821,34 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ax.legend(loc="upper right", fontsize="small")
                 st.pyplot(fig)
 
-                # 2. THÊM BIỂU ĐỒ MỚI: CHỈ SO SÁNH M1, M4 VÀ SPEC
+                # 2. BIỂU ĐỒ MỚI: SO SÁNH CỤ THỂ M1, M4, SPEC VÀ PHÂN BỐ DỮ LIỆU THỰC TẾ
                 st.write("---") # Đường kẻ phân cách
-                st.markdown("#### 📊 Specific Comparison: M1 vs M4 vs Current Spec")
+                st.markdown("#### 📊 Specific Comparison with Data Distribution: M1 vs M4 vs Current Spec")
                 
                 from scipy.stats import norm
-                fig_compare, ax_comp = plt.subplots(figsize=(10, 4))
+                fig_compare, ax_comp = plt.subplots(figsize=(10, 5)) # Tăng chiều cao một chút để dễ nhìn histogram
                 
+                # --- A. VẼ PHÂN BỐ DỮ LIỆU THỰC TẾ (HISTOGRAM) ---
+                # Sử dụng alpha thấp (độ mờ cao) để làm nền, không đè lên các đường giới hạn
+                ax_comp.hist(data, bins=30, density=True, alpha=0.3, color="#1f77b4", label="LINE Data")
+                if not data_lab.empty:
+                    ax_comp.hist(data_lab, bins=30, density=True, alpha=0.2, color="#ff7f0e", label="LAB Data")
+
+                # --- B. VẼ ĐƯỜNG CONG PHÂN PHỐI CHUẨN LÝ THUYẾT ---
                 # Thiết lập trục X (lấy rộng ra 4 sigma để thấy rõ đuôi biểu đồ)
-                x_start = min(m1_min, m4_min, spec_min) - 5
-                x_end = max(m1_max, m4_max, display_max) + 5
+                x_start = min(m1_min, m4_min, spec_min, data.min() if not data.empty else 0) - 5
+                x_end = max(m1_max, m4_max, display_max, data.max() if not data.empty else 100) + 5
                 x_range = np.linspace(x_start, x_end, 500)
 
                 # Vẽ đường cong cho M1 (Standard Deviation tổng)
                 pdf_m1 = norm.pdf(x_range, mu, std_dev)
-                ax_comp.plot(x_range, pdf_m1, color="red", lw=2, label=f"M1 Standard (σ={std_dev:.2f})")
-                ax_comp.fill_between(x_range, pdf_m1, alpha=0.1, color="red")
+                ax_comp.plot(x_range, pdf_m1, color="red", lw=2, label=f"M1 Standard Curve (σ={std_dev:.2f})")
                 
                 # Vẽ đường cong cho M4 (I-MR Sigma - Năng lực thực tế)
                 pdf_m4 = norm.pdf(x_range, mu, sigma_imr)
-                ax_comp.plot(x_range, pdf_m4, color="purple", lw=2, ls="--", label=f"M4 I-MR (σ={sigma_imr:.2f})")
-                ax_comp.fill_between(x_range, pdf_m4, alpha=0.1, color="purple")
+                ax_comp.plot(x_range, pdf_m4, color="purple", lw=2, ls="--", label=f"M4 I-MR Curve (σ={sigma_imr:.2f})")
 
+                # --- C. VẼ CÁC ĐƯỜNG GIỚI HẠN (LIMIT LINES) ---
                 # Kẻ các đường giới hạn M1 (Đỏ)
                 ax_comp.axvline(m1_min, color="red", ls=":", lw=1.5)
                 ax_comp.axvline(m1_max, color="red", ls=":", lw=1.5)
@@ -1851,13 +1857,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ax_comp.axvline(m4_min, color="purple", ls="-.", lw=2)
                 ax_comp.axvline(m4_max, color="purple", ls="-.", lw=2)
 
-                # Kẻ giới hạn Control hiện tại (Đen)
+                # Kẻ giới hạn Control hiện tại (Đen) - Nét đậm nhất
                 if spec_min > 0:
                     ax_comp.axvline(spec_min, color="black", lw=2.5, label="Current Spec")
                 if display_max > 0:
                     ax_comp.axvline(display_max, color="black", lw=2.5)
 
-                ax_comp.set_title("Distribution Curve Comparison", fontsize=10, fontweight="bold")
+                ax_comp.set_title("Distribution & Limits Comparison", fontsize=10, fontweight="bold")
                 ax_comp.set_ylabel("Probability Density")
                 ax_comp.legend(loc="upper right", fontsize="small")
                 st.pyplot(fig_compare)
