@@ -1846,8 +1846,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     ax2.hist(data_lab, bins=bins_sturges, density=True, alpha=0.15, color="#ff7f0e", label="LAB Actual")
                 
                 # Tính toán dải trục X và vẽ đường cong PDF lý thuyết
-                x_min_val = min([m1_min, m4_min, spec_min, lab_min, data.min() if not data.empty else 0]) - 2
-                x_max_val = max([m1_max, m4_max, display_max, display_lab_max, data.max() if not data.empty else 100]) + 2
+                x_min_val = min([m1_min, m4_min, spec_min, lab_min, data.min() if not data.empty else 0]) - 5
+                x_max_val = max([m1_max, m4_max, display_max, display_lab_max, data.max() if not data.empty else 100]) + 5
                 x_axis = np.linspace(x_min_val, x_max_val, 500)
                 
                 ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="red", lw=2, label=f"M1 Curve (σ={std_dev:.2f})")
@@ -1872,15 +1872,36 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ax2.legend(loc="upper right", fontsize="small")
                 st.pyplot(fig2)
 
-                # --- BẢNG TỔNG HỢP GHI CHÚ NGOÀI BIỂU ĐỒ ---
-                st.markdown(f"**📌 Limit Summary for {rule_name}:**")
-                summary_table = pd.DataFrame({
-                    "Limit Category": ["🔘 Control Spec", "🧪 Lab Spec", "🔴 M1: Standard", "🟣 M4: I-MR (SPC)"],
-                    "Lower Limit": [f"{spec_min:.1f}", f"{lab_min:.1f}", f"{m1_min:.1f}", f"{m4_min:.1f}"],
-                    "Upper Limit": [f"{display_max:.1f}", f"{display_lab_max:.1f}", f"{m1_max:.1f}", f"{m4_max:.1f}"],
-                    "Sigma Variation": ["-", "-", f"σ={std_dev:.2f}", f"σ={sigma_imr:.2f}"]
-                })
-                st.table(summary_table)
+                # --- LOGIC TÍNH TOÁN CƠ TÍNH ƯỚC TÍNH ---
+                def estimate_mech(hrb_val):
+                    try:
+                        h = float(hrb_val)
+                        ts = 5.5 * h + 75        # Ước tính Tensile
+                        ys = ts * 0.75           # Ước tính Yield (hệ số 0.75)
+                        el = 100 - (1.1 * h)     # Ước tính Elongation
+                        return f"{ts:.0f}", f"{ys:.0f}", f"{el:.1f}%"
+                    except:
+                        return "-", "-", "-"
+
+                # Tạo dữ liệu cho bảng
+                l_types = ["🔘 Control Spec", "🧪 Lab Spec", "🔴 M1: Standard", "🟣 M4: I-MR (SPC)"]
+                mins = [spec_min, lab_min, m1_min, m4_min]
+                maxs = [display_max, display_lab_max, m1_max, m4_max]
+                
+                rows = []
+                for lt, mn, mx in zip(l_types, mins, maxs):
+                    ts_min, ys_min, el_min = estimate_mech(mn)
+                    ts_max, ys_max, el_max = estimate_mech(mx)
+                    rows.append({
+                        "Limit Category": lt,
+                        "Hardness Range": f"{mn:.1f} ~ {mx:.1f}",
+                        "Est. TS (MPa)": f"{ts_min} ~ {ts_max}",
+                        "Est. YS (MPa)": f"{ys_min} ~ {ys_max}",
+                        "Est. EL (%)": f"{el_min} ~ {el_max}"
+                    })
+
+                st.markdown(f"**📌 Mechanical Properties Correlation (Estimated):**")
+                st.table(pd.DataFrame(rows))
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
