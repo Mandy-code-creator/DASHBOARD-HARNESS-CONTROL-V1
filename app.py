@@ -1804,6 +1804,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             # --- VẼ BIỂU ĐỒ SO SÁNH ---
             col_chart, col_table = st.columns([2, 1])
             with col_chart:
+                # 1. Biểu đồ Histogram hiện tại
                 fig, ax = plt.subplots(figsize=(10, 5))
                 ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
                 if not data_lab.empty: ax.hist(data_lab, bins=30, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
@@ -1817,17 +1818,33 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
                 if display_max > 0: ax.axvline(display_max, c="black", lw=2)
                 ax.set_title(f"Limits Comparison (σ={sigma_n})", fontsize=10, fontweight="bold")
-                ax.legend(loc="upper right", fontsize="small"); st.pyplot(fig)
+                ax.legend(loc="upper right", fontsize="small")
+                st.pyplot(fig)
 
-            with col_table:
-                st.dataframe(pd.DataFrame([
-                    {"Method": "0. Spec", "Min": spec_min, "Max": display_max},
-                    {"Method": "1. Standard", "Min": m1_min, "Max": m1_max},
-                    {"Method": "2. IQR", "Min": m2_min, "Max": m2_max},
-                    {"Method": "3. Hybrid", "Min": m3_min, "Max": m3_max},
-                    {"Method": "4. I-MR", "Min": m4_min, "Max": m4_max}
-                ]).style.format("{:.1f}", subset=["Min", "Max"]), use_container_width=True, hide_index=True)
+                # --- MỚI: BIỂU ĐỒ PHÂN PHỐI CHUẨN SO SÁNH M1 & M4 ---
+                st.markdown("#### 📈 Distribution Curve Comparison (M1 vs M4)")
+                from scipy.stats import norm
+                
+                fig2, ax2 = plt.subplots(figsize=(10, 4))
+                x_axis = np.linspace(mu - 4*std_dev, mu + 4*std_dev, 200)
+                
+                # Vẽ đường cong cho M1 (Dựa trên Standard Deviation tổng)
+                ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="red", lw=2, label="M1: Standard (Total Variation)")
+                ax2.fill_between(x_axis, norm.pdf(x_axis, mu, std_dev), alpha=0.1, color="red")
+                
+                # Vẽ đường cong cho M4 (Dựa trên Sigma I-MR)
+                ax2.plot(x_axis, norm.pdf(x_axis, mu, sigma_imr), color="purple", lw=2, ls="--", label="M4: I-MR (Short-term Variation)")
+                ax2.fill_between(x_axis, norm.pdf(x_axis, mu, sigma_imr), alpha=0.1, color="purple")
 
+                # Kẻ các đường giới hạn
+                ax2.axvline(m1_min, color="red", ls=":", alpha=0.6)
+                ax2.axvline(m1_max, color="red", ls=":", alpha=0.6)
+                ax2.axvline(m4_min, color="purple", ls="-.", alpha=0.8)
+                ax2.axvline(m4_max, color="purple", ls="-.", alpha=0.8)
+                
+                ax2.set_title("Standard Deviation vs. I-MR Sigma", fontsize=10)
+                ax2.legend(fontsize="small")
+                st.pyplot(fig2)
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
