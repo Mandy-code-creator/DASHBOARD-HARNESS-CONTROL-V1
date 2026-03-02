@@ -1800,72 +1800,56 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "M4: I-MR (Optimal)": f"{m4_min:.1f} ~ {m4_max:.1f}",
                 "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
-
-          # --- VẼ BIỂU ĐỒ SO SÁNH ---
-            col_chart, col_table = st.columns([2, 1])
-            with col_chart:
-                # 1. BIỂU ĐỒ GỐC (GIỮ NGUYÊN HOÀN TOÀN LOGIC CỦA BẠN)
-                fig, ax = plt.subplots(figsize=(10, 5))
-                ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
-                if not data_lab.empty: ax.hist(data_lab, bins=30, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
-                ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="M1: Standard")
-                ax.axvline(m1_max, c="red", ls=":", alpha=0.4)
-                ax.axvline(m2_min, c="blue", ls="--", alpha=0.5, label="M2: IQR")
-                ax.axvline(m2_max, c="blue", ls="--", alpha=0.5)
-                ax.axvline(m4_min, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
-                ax.axvline(m4_max, c="purple", ls="-.", lw=2)
-                ax.axvspan(m3_min, m3_max, color="green", alpha=0.15, label="M3: Hybrid Zone")
-                if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
-                if display_max > 0: ax.axvline(display_max, c="black", lw=2)
-                ax.set_title(f"Limits Comparison (σ={sigma_n})", fontsize=10, fontweight="bold")
-                ax.legend(loc="upper right", fontsize="small")
-                st.pyplot(fig)
-
-                # 2. BIỂU ĐỒ MỚI: SO SÁNH CỤ THỂ M1, M4, SPEC VÀ PHÂN BỐ DỮ LIỆU THỰC TẾ
-                st.write("---") # Đường kẻ phân cách
-                st.markdown("#### 📊 Specific Comparison with Data Distribution: M1 vs M4 vs Current Spec")
+# 2. BIỂU ĐỒ MỚI: SO SÁNH CỤ THỂ M1, M4, SPEC VỚI GHI CHÚ GIÁ TRỊ
+                st.write("---") 
+                st.markdown("#### 📊 Specific Comparison with Data & Limit Values")
                 
                 from scipy.stats import norm
-                fig_compare, ax_comp = plt.subplots(figsize=(10, 5)) # Tăng chiều cao một chút để dễ nhìn histogram
+                fig_compare, ax_comp = plt.subplots(figsize=(10, 6)) # Tăng chiều cao để đủ chỗ ghi chú
                 
                 # --- A. VẼ PHÂN BỐ DỮ LIỆU THỰC TẾ (HISTOGRAM) ---
-                # Sử dụng alpha thấp (độ mờ cao) để làm nền, không đè lên các đường giới hạn
-                ax_comp.hist(data, bins=30, density=True, alpha=0.3, color="#1f77b4", label="LINE Data")
+                ax_comp.hist(data, bins=30, density=True, alpha=0.25, color="#1f77b4", label="LINE Data")
                 if not data_lab.empty:
-                    ax_comp.hist(data_lab, bins=30, density=True, alpha=0.2, color="#ff7f0e", label="LAB Data")
+                    ax_comp.hist(data_lab, bins=30, density=True, alpha=0.15, color="#ff7f0e", label="LAB Data")
 
-                # --- B. VẼ ĐƯỜNG CONG PHÂN PHỐI CHUẨN LÝ THUYẾT ---
-                # Thiết lập trục X (lấy rộng ra 4 sigma để thấy rõ đuôi biểu đồ)
-                x_start = min(m1_min, m4_min, spec_min, data.min() if not data.empty else 0) - 5
-                x_end = max(m1_max, m4_max, display_max, data.max() if not data.empty else 100) + 5
+                # --- B. THIẾT LẬP TRỤC X VÀ ĐƯỜNG CONG ---
+                x_start = min(m1_min, m4_min, spec_min) - 5
+                x_end = max(m1_max, m4_max, display_max) + 5
                 x_range = np.linspace(x_start, x_end, 500)
+                y_max = norm.pdf(mu, mu, sigma_imr) # Lấy đỉnh cao nhất để đặt vị trí chữ
 
-                # Vẽ đường cong cho M1 (Standard Deviation tổng)
-                pdf_m1 = norm.pdf(x_range, mu, std_dev)
-                ax_comp.plot(x_range, pdf_m1, color="red", lw=2, label=f"M1 Standard Curve (σ={std_dev:.2f})")
+                # Vẽ đường cong M1 & M4
+                ax_comp.plot(x_range, norm.pdf(x_range, mu, std_dev), color="red", lw=2, label="M1 Curve")
+                ax_comp.plot(x_range, norm.pdf(x_range, mu, sigma_imr), color="purple", lw=2, ls="--", label="M4 Curve")
+
+                # --- C. VẼ GIỚI HẠN & GHI CHÚ GIÁ TRỊ (ANNOTATION) ---
                 
-                # Vẽ đường cong cho M4 (I-MR Sigma - Năng lực thực tế)
-                pdf_m4 = norm.pdf(x_range, mu, sigma_imr)
-                ax_comp.plot(x_range, pdf_m4, color="purple", lw=2, ls="--", label=f"M4 I-MR Curve (σ={sigma_imr:.2f})")
-
-                # --- C. VẼ CÁC ĐƯỜNG GIỚI HẠN (LIMIT LINES) ---
-                # Kẻ các đường giới hạn M1 (Đỏ)
+                # 1. Ghi chú cho M1 (Màu đỏ)
                 ax_comp.axvline(m1_min, color="red", ls=":", lw=1.5)
                 ax_comp.axvline(m1_max, color="red", ls=":", lw=1.5)
-                
-                # Kẻ các đường giới hạn M4 (Tím)
+                ax_comp.text(m1_min, y_max*0.1, f' M1 LCL\n {m1_min:.1f}', color="red", ha='right', fontsize=9, fontweight='bold')
+                ax_comp.text(m1_max, y_max*0.1, f' M1 UCL\n {m1_max:.1f}', color="red", ha='left', fontsize=9, fontweight='bold')
+
+                # 2. Ghi chú cho M4 (Màu tím)
                 ax_comp.axvline(m4_min, color="purple", ls="-.", lw=2)
                 ax_comp.axvline(m4_max, color="purple", ls="-.", lw=2)
+                ax_comp.text(m4_min, y_max*0.3, f' M4 LCL\n {m4_min:.1f}', color="purple", ha='right', fontsize=9, fontweight='bold')
+                ax_comp.text(m4_max, y_max*0.3, f' M4 UCL\n {m4_max:.1f}', color="purple", ha='left', fontsize=9, fontweight='bold')
 
-                # Kẻ giới hạn Control hiện tại (Đen) - Nét đậm nhất
+                # 3. Ghi chú cho Current Spec (Màu đen)
                 if spec_min > 0:
-                    ax_comp.axvline(spec_min, color="black", lw=2.5, label="Current Spec")
+                    ax_comp.axvline(spec_min, color="black", lw=2.5)
+                    ax_comp.text(spec_min, y_max*0.6, f' Spec Min\n {spec_min:.1f}', color="black", ha='right', fontsize=10, fontweight='bold')
                 if display_max > 0:
                     ax_comp.axvline(display_max, color="black", lw=2.5)
+                    ax_comp.text(display_max, y_max*0.6, f' Spec Max\n {display_max:.1f}', color="black", ha='left', fontsize=10, fontweight='bold')
 
-                ax_comp.set_title("Distribution & Limits Comparison", fontsize=10, fontweight="bold")
-                ax_comp.set_ylabel("Probability Density")
+                ax_comp.set_title("Distribution Curve & Limit Values Comparison", fontsize=12, fontweight="bold")
+                ax_comp.set_xlabel("Hardness Value")
                 ax_comp.legend(loc="upper right", fontsize="small")
+                
+                # Điều chỉnh lề để chữ không bị cắt
+                plt.tight_layout()
                 st.pyplot(fig_compare)
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
