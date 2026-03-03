@@ -1914,7 +1914,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                 # ==================================================================
         # ==================================================================
-               # ==================================================================
+              # ==================================================================
                 # 3. SUMMARY TABLE & EXCEL EXPORT: MECHANICAL ESTIMATION
                 # ==================================================================
                 st.markdown(f"**📌 Limit Summary & Mechanical Estimation: {rule_name}**")
@@ -1952,9 +1952,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         ts_amax, ys_amax, el_amin = get_mech(act_max)
                         
                         act_ts = f"{ts_amin:.0f} ~ {ts_amax:.0f}"
+                        act_ys = f"{ys_amin:.0f} ~ {ys_amax:.0f}"
                         act_el = f"{el_amax:.1f} ~ {el_amin:.1f}"
                     else:
-                        act_ts = act_el = "N/A"
+                        act_ts = act_ys = act_el = "N/A"
 
                     rows.append({
                         "Limit Type": cat,
@@ -1962,6 +1963,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         "Variation (σ)": f"σ={sig:.2f}" if isinstance(sig, float) else sig,
                         "Theoretical TS": f"{ts_lmin:.0f} ~ {ts_lmax:.0f}",
                         "Actual TS": act_ts,
+                        "Theoretical YS": f"{ys_lmin:.0f} ~ {ys_lmax:.0f}",
+                        "Actual YS": act_ys,
                         "Theoretical EL (%)": f"{el_lmax:.1f} ~ {el_lmin:.1f}",
                         "Actual EL (%)": act_el
                     })
@@ -1969,7 +1972,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 # Display the table in Streamlit
                 df_summary = pd.DataFrame(rows)
                 st.dataframe(df_summary, use_container_width=True, hide_index=True)
-                st.caption("*(**) TS: Tensile Strength (MPa) | EL: Elongation (%) - Note: Elongation is inversely proportional to hardness.*")
+                st.caption("*(**) TS: Tensile Strength (MPa) | YS: Yield Strength (MPa) | EL: Elongation (%)*")
 
                 # --- EXCEL EXPORT BUTTON ---
                 import io
