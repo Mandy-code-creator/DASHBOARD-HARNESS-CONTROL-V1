@@ -1930,12 +1930,19 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         return ts, ys, el
                     except: return 0, 0, 0
 
+                # --- TÍNH TOÁN GIỚI HẠN MỤC TIÊU MỚI (BULLSEYE TARGET) ---
+                # Vì M4 là +/- 2 Sigma, Mục tiêu tối ưu nên là +/- 1 Sigma (Vùng lõi 68% dữ liệu)
+                target_k = 1.0 
+                new_target_min = mu - target_k * sigma_imr
+                new_target_max = mu + target_k * sigma_imr
+
                 rows = []
                 configs = [
-                    ("🔘 Control Spec", spec_min, display_max, "-"),
+                    ("🎯 Old Target Goal", spec_min, display_max, "-"),
                     ("🧪 Lab Spec", lab_min, display_lab_max, "-"),
-                    ("🔴 M1: Standard", m1_min, m1_max, std_dev),
-                    ("🟣 M4: I-MR (SPC)", m4_min, m4_max, sigma_imr)
+                    ("🔴 M1: Standard (Historical)", m1_min, m1_max, std_dev),
+                    ("🟣 M4: I-MR (Control Limits)", m4_min, m4_max, sigma_imr),
+                    (f"🌟 New Core Target (±{target_k}σ)", new_target_min, new_target_max, "-") # Đổi tên thành Core Target
                 ]
 
                 for cat, l_min, l_max, sig in configs:
@@ -1960,7 +1967,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     rows.append({
                         "Limit Type": cat,
                         "Hardness Limits": f"{l_min:.1f} ~ {l_max:.1f}",
-                        "Variation (σ)": f"σ={sig:.2f}" if isinstance(sig, float) else sig,
+                        "Variation": f"σ={sig:.2f}" if isinstance(sig, float) else sig,
                         "Theoretical TS": f"{ts_lmin:.0f} ~ {ts_lmax:.0f}",
                         "Actual TS": act_ts,
                         "Theoretical YS": f"{ys_lmin:.0f} ~ {ys_lmax:.0f}",
@@ -1971,26 +1978,30 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                 # Display the table in Streamlit
                 df_summary = pd.DataFrame(rows)
-                st.dataframe(df_summary, use_container_width=True, hide_index=True)
+                
+                # Highlight dòng mục tiêu mới 
+                def highlight_new_target(s):
+                    if "🌟 New Core Target" in s['Limit Type']:
+                        return ['background-color: #d4edda; font-weight: bold; color: #155724'] * len(s)
+                    return [''] * len(s)
+
+                st.dataframe(
+                    df_summary.style.apply(highlight_new_target, axis=1), 
+                    use_container_width=True, 
+                    hide_index=True
+                )
                 st.caption("*(**) TS: Tensile Strength (MPa) | YS: Yield Strength (MPa) | EL: Elongation (%)*")
 
                 # --- EXCEL EXPORT BUTTON ---
                 import io
-                
-                # Create a buffer to save the Excel file in memory
                 buffer = io.BytesIO()
-                
-                # Write DataFrame to buffer
                 with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                     df_summary.to_excel(writer, sheet_name='Summary', index=False)
-                    
-                    # Optional: Auto-adjust column widths for better formatting
                     worksheet = writer.sheets['Summary']
                     for idx, col in enumerate(df_summary.columns):
                         max_len = max(df_summary[col].astype(str).map(len).max(), len(col)) + 2
                         worksheet.set_column(idx, idx, max_len)
 
-                # Streamlit Download Button
                 st.download_button(
                     label="📥 Download Summary as Excel",
                     data=buffer.getvalue(),
