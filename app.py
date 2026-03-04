@@ -1800,12 +1800,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "M4: I-MR (Optimal)": f"{m4_min:.1f} ~ {m4_max:.1f}",
                 "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
             })
-                # ==================================================================
-                # --- VẼ BIỂU ĐỒ SO SÁNH ---
+            # ==================================================================
+            # --- VẼ BIỂU ĐỒ SO SÁNH ---
             col_chart, col_table = st.columns([2, 1])
             with col_chart:
                 # ==================================================================
-                # BIỂU ĐỒ 1: GIỮ NGUYÊN GỐC (KHÔNG SỬA LOGIC)
+                # BIỂU ĐỒ 1: GIỮ NGUYÊN GỐC
                 # ==================================================================
                 fig, ax = plt.subplots(figsize=(10, 5))
                 ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
@@ -1872,51 +1872,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ax2.legend(loc="upper right", fontsize="small")
                 st.pyplot(fig2)
 
-                # ==================================================================
-                # BIỂU ĐỒ 2: CHI TIẾT M1 VS M4 VS SPECS (PHÂN BỔ LINE & LAB)
-                # ==================================================================
-                st.write("---") 
-                st.markdown(f"#### 📊 Detailed Distribution Analysis: {rule_name}")
-                
-                n_samples = len(data)
-                bins_sturges = int(round(1 + 3.322 * np.log10(n_samples))) if n_samples > 0 else 10
-                
-                from scipy.stats import norm
-                fig2, ax2 = plt.subplots(figsize=(12, 6))
-                
-                # Hiển thị phân bổ thực tế
-                ax2.hist(data, bins=bins_sturges, density=True, alpha=0.2, color="#1f77b4", label="LINE Actual")
-                if not data_lab.empty:
-                    ax2.hist(data_lab, bins=bins_sturges, density=True, alpha=0.15, color="#ff7f0e", label="LAB Actual")
-                
-                # Vẽ đường cong PDF
-                x_min_val = min([m1_min, m4_min, spec_min, lab_min, data.min()]) - 5
-                x_max_val = max([m1_max, m4_max, display_max, display_lab_max, data.max()]) + 5
-                x_axis = np.linspace(x_min_val, x_max_val, 500)
-                
-                ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="red", lw=2, label=f"M1 Standard (σ={std_dev:.2f})")
-                ax2.plot(x_axis, norm.pdf(x_axis, mu, sigma_imr), color="purple", lw=2, ls="--", label=f"M4 I-MR (σ={sigma_imr:.2f})")
-
-                # Kẻ các đường giới hạn
-                ax2.axvline(m1_min, color="red", ls=":", lw=1.5); ax2.axvline(m1_max, color="red", ls=":", lw=1.5)
-                ax2.axvline(m4_min, color="purple", ls="-.", lw=2); ax2.axvline(m4_max, color="purple", ls="-.", lw=2)
-                if spec_min > 0: ax2.axvline(spec_min, color="black", lw=2.5, label="Control Spec")
-                if display_max > 0: ax2.axvline(display_max, color="black", lw=2.5)
-                if lab_min > 0: ax2.axvline(lab_min, color="#555555", ls="--", lw=1.5, label="Lab Spec")
-                if display_lab_max > 0: ax2.axvline(display_lab_max, color="#555555", ls="--", lw=1.5)
-
-                ax2.xaxis.set_major_locator(plt.MultipleLocator(5))
-                ax2.xaxis.set_minor_locator(plt.MultipleLocator(1))
-                ax2.grid(which='both', axis='x', linestyle='--', alpha=0.3)
-                ax2.set_title(f"Detailed Analysis (Sturges k={bins_sturges})", fontsize=11, fontweight="bold")
-                ax2.legend(loc="upper right", fontsize="small")
-                st.pyplot(fig2)
-
-                # ==================================================================
-        # ==================================================================
-              # ==================================================================
-                # 3. SUMMARY TABLE & EXCEL EXPORT: MECHANICAL ESTIMATION
-                # ==================================================================
+            # ==================================================================
+            # 3. SUMMARY TABLE & EXCEL EXPORT: MECHANICAL ESTIMATION
+            # ==================================================================
+            with col_table: # MÌNH ĐƯA BẢNG NÀY VÀO col_table NHƯ KHAI BÁO CỦA BẠN BÊN TRÊN
                 st.markdown(f"**📌 Limit Summary & Mechanical Estimation: {rule_name}**")
                 
                 # Function to estimate mechanical properties from Hardness
@@ -1931,7 +1890,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     except: return 0, 0, 0
 
                 # --- TÍNH TOÁN GIỚI HẠN MỤC TIÊU MỚI (BULLSEYE TARGET) ---
-                # Vì M4 là +/- 2 Sigma, Mục tiêu tối ưu nên là +/- 1 Sigma (Vùng lõi 68% dữ liệu)
                 target_k = 1.0 
                 new_target_min = mu - target_k * sigma_imr
                 new_target_max = mu + target_k * sigma_imr
@@ -1942,7 +1900,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     ("🧪 Lab Spec", lab_min, display_lab_max, "-"),
                     ("🔴 M1: Standard (Historical)", m1_min, m1_max, std_dev),
                     ("🟣 M4: I-MR (Control Limits)", m4_min, m4_max, sigma_imr),
-                    (f"🌟 New Core Target (±{target_k}σ)", new_target_min, new_target_max, "-") # Đổi tên thành Core Target
+                    (f"🌟 New Core Target (±{target_k}σ)", new_target_min, new_target_max, "-")
                 ]
 
                 for cat, l_min, l_max, sig in configs:
@@ -2002,11 +1960,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         max_len = max(df_summary[col].astype(str).map(len).max(), len(col)) + 2
                         worksheet.set_column(idx, idx, max_len)
 
+                # ✅ ĐÃ SỬA LỖI Ở ĐÂY BẰNG CÁCH THÊM KEY ĐỘNG THEO BIẾN i
                 st.download_button(
                     label="📥 Download Summary as Excel",
                     data=buffer.getvalue(),
                     file_name=f"Mechanical_Estimation_{rule_name.replace(' ', '_')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"download_summary_excel_{i}_{rule_name}"  # <-- THE FIX
                 )
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
