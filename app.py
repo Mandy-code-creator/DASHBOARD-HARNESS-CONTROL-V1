@@ -946,7 +946,7 @@ if view_mode == "👑 Global Master Dictionary Export":
         ys_c_min, ys_c_max, ys_t_min, ys_t_max = calc_limits(g_data, target_data, 'YS')
         el_c_min, el_c_max, el_t_min, el_t_max = calc_limits(g_data, target_data, 'EL')
 
-        # 3. HÀM VẼ BIỂU ĐỒ VỚI CHỮ XOAY DỌC (KÈM THEO GIÁ TRỊ SỐ MAX/MIN)
+        # 3. HÀM VẼ BIỂU ĐỒ VỚI CHỮ XOAY DỌC
         def plot_capability_dist(row_idx, col_idx, data_all, data_target, color_target, name, c_min, c_max, t_min, t_max, orig_min=0, orig_max=0):
             mu_tgt = data_target.mean(); sig_tgt = data_target.std() if len(data_target) > 1 else 1
             if sig_tgt == 0: sig_tgt = 0.001 
@@ -961,7 +961,6 @@ if view_mode == "👑 Global Master Dictionary Export":
             # Định dạng số: TS/YS hiển thị số nguyên (.0f), HRB/EL hiển thị 1 số thập phân (.1f)
             fmt = ".0f" if name in ['TS', 'YS'] else ".1f"
             
-            # 🌟 XOAY DỌC CHỮ (-90 độ) VÀ ÉP VÀO TRONG (HIỂN THỊ KÈM GIÁ TRỊ)
             if orig_min > 0 and orig_max > 0:
                 fig.add_vline(x=orig_min, line_dash="solid", line_color="black", line_width=2, 
                               annotation_text=f" Spec Min: {orig_min:{fmt}} ", annotation_position="top right", annotation_textangle=-90, annotation_font=dict(color="black", size=11), row=row_idx, col=col_idx)
@@ -984,17 +983,21 @@ if view_mode == "👑 Global Master Dictionary Export":
                 fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name=f'Control Limit (±{control_k}σ)', line=dict(color='red', width=1.5, dash='dash')), row=1, col=1)
                 fig.add_trace(go.Scatter(x=[None], y=[None], mode='lines', name=f'Target Limit (±{target_k}σ)', line=dict(color='purple', width=1.5, dash='dashdot')), row=1, col=1)
 
-        # KHỞI TẠO FRAME BIỂU ĐỒ 2x2 (Thêm thẻ <br> để đẩy chữ ra xa biểu đồ một chút)
+        # KHỞI TẠO FRAME BIỂU ĐỒ 2x2
         fig = make_subplots(
             rows=2, cols=2, 
             subplot_titles=(
-                "1. CAUSE: Hardness (HRB)<br>", 
-                "2. EFFECT: Tensile Strength (TS)<br>", 
-                "3. EFFECT: Yield Strength (YS)<br>", 
-                "4. EFFECT: Elongation (EL)<br>"
+                "1. CAUSE: Hardness (HRB)", 
+                "2. EFFECT: Tensile Strength (TS)", 
+                "3. EFFECT: Yield Strength (YS)", 
+                "4. EFFECT: Elongation (EL)"
             ),
             vertical_spacing=0.15, horizontal_spacing=0.08
         )
+        
+        # 🌟 BÍ QUYẾT TRỊ LỖI ĐÈ CHỮ: ĐẨY TẤT CẢ TIÊU ĐỀ LÊN CAO 15 PIXEL
+        for annotation in fig['layout']['annotations']:
+            annotation['yshift'] = 15
         
         # GỌI HÀM VẼ 4 BIỂU ĐỒ
         plot_capability_dist(1, 1, g_data['Hardness_LINE'], target_data['Hardness_LINE'], '#E37222', 'HRB', hrb_c_min, hrb_c_max, hrb_t_min, hrb_t_max, orig_min=curr_min, orig_max=curr_max) 
@@ -1002,7 +1005,7 @@ if view_mode == "👑 Global Master Dictionary Export":
         plot_capability_dist(2, 1, g_data['YS'], target_data['YS'], '#375623', 'YS', ys_c_min, ys_c_max, ys_t_min, ys_t_max)
         plot_capability_dist(2, 2, g_data['EL'], target_data['EL'], '#C00000', 'EL', el_c_min, el_c_max, el_t_min, el_t_max)
         
-        # 🛠️ CẬP NHẬT LAYOUT: TĂNG LỀ TRÊN VÀ ĐẨY LEGEND LÊN CAO
+        # CẬP NHẬT LAYOUT: LỀ TRÊN ĐỦ RỘNG CHO CẢ LEGEND VÀ TIÊU ĐỀ MỚI ĐƯỢC ĐẨY LÊN
         fig.update_layout(
             barmode='overlay', 
             height=800, 
@@ -1011,7 +1014,7 @@ if view_mode == "👑 Global Master Dictionary Export":
             legend=dict(
                 orientation="h", 
                 yanchor="bottom", 
-                y=1.15,               
+                y=1.12,               
                 xanchor="right", 
                 x=1
             )
