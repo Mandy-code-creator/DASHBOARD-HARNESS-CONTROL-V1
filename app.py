@@ -273,7 +273,7 @@ view_mode = st.sidebar.radio(
         "🎯 Find Target Hardness (Reverse Lookup)",
         "🧮 Predict TS/YS/EL from Std Hardness",
         "🎛️ Control Limit Calculator (Compare 3 Methods)",
-        "👑 Global Master Dictionary Export",
+        "👑 Master Dictionary Export",
     ]
 )
 
@@ -729,10 +729,10 @@ if view_mode == "📊 Executive KPI Dashboard":
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-# 👑 GLOBAL MASTER DICTIONARY EXPORT (FULL VIEW - ULTIMATE UI VERSION)
+# 👑 MASTER DICTIONARY EXPORT (FULL VIEW - ULTIMATE UI VERSION)
 # ==============================================================================
 # LƯU Ý: Chữ 'if' dưới đây phải nằm sát lề trái hoàn toàn
-if view_mode == "👑 Global Master Dictionary Export":
+if view_mode == "👑 Master Dictionary Export":
     
     import numpy as np
     import pandas as pd
