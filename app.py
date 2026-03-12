@@ -1169,6 +1169,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
     # ================================
    # ================================
+   # ================================
     # 3. CORRELATION
     # ================================
     elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
@@ -1191,32 +1192,60 @@ for i, (_, g) in enumerate(valid.iterrows()):
             EL_mean=("EL","mean"), EL_min=("EL","min"), EL_max=("EL","max"),
             Std_TS_min=("Standard TS min", "max"), Std_TS_max=("Standard TS max", "max"),
             Std_YS_min=("Standard YS min", "max"), Std_YS_max=("Standard YS max", "max"),
-            Std_EL_min=("Standard EL min", "max"), Std_EL_max=("Standard EL max", "max"),
+            Std_EL_min=("Standard EL min", "max")
         ).reset_index())
         summary = summary[summary["N_coils"]>0]
 
         if not summary.empty:
             x = np.arange(len(summary))
             fig, ax = plt.subplots(figsize=(15,6))
-            def plot_prop(x, y, ymin, ymax, c, lbl, m):
-                ax.plot(x, y, marker=m, color=c, label=lbl, lw=2)
-                ax.fill_between(x, ymin, ymax, color=c, alpha=0.1)
+            ax2 = ax.twinx() # Tách trục Y thứ 2 cho EL (đơn vị %)
             
-            plot_prop(x, summary["TS_mean"], summary["TS_min"], summary["TS_max"], "#1f77b4", "TS", "o")
-            plot_prop(x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "#2ca02c", "YS", "s")
-            plot_prop(x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL", "^")
+            def plot_prop(ax_obj, x, y, ymin, ymax, c, lbl, m):
+                ax_obj.plot(x, y, marker=m, color=c, label=lbl, lw=2)
+                ax_obj.fill_between(x, ymin, ymax, color=c, alpha=0.1)
+            
+            plot_prop(ax, x, summary["TS_mean"], summary["TS_min"], summary["TS_max"], "#1f77b4", "TS Actual", "o")
+            plot_prop(ax, x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "#2ca02c", "YS Actual", "s")
+            plot_prop(ax2, x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL Actual", "^")
+
+            # --- VẼ ĐƯỜNG GIỚI HẠN SPEC ---
+            g_ts_min = summary["Std_TS_min"].max()
+            g_ts_max = summary["Std_TS_max"].min()
+            g_ys_min = summary["Std_YS_min"].max()
+            g_ys_max = summary["Std_YS_max"].min()
+            g_el_min = summary["Std_EL_min"].max()
+
+            if pd.notna(g_ts_min) and g_ts_min > 0: ax.axhline(g_ts_min, color="#1f77b4", linestyle="--", lw=1.5, alpha=0.5, label=f"TS LSL ({g_ts_min:.0f})")
+            if pd.notna(g_ts_max) and 0 < g_ts_max < 9000: ax.axhline(g_ts_max, color="#1f77b4", linestyle="--", lw=1.5, alpha=0.5, label=f"TS USL ({g_ts_max:.0f})")
+            if pd.notna(g_ys_min) and g_ys_min > 0: ax.axhline(g_ys_min, color="#2ca02c", linestyle="-.", lw=1.5, alpha=0.5, label=f"YS LSL ({g_ys_min:.0f})")
+            if pd.notna(g_ys_max) and 0 < g_ys_max < 9000: ax.axhline(g_ys_max, color="#2ca02c", linestyle="-.", lw=1.5, alpha=0.5, label=f"YS USL ({g_ys_max:.0f})")
+            if pd.notna(g_el_min) and g_el_min > 0: ax2.axhline(g_el_min, color="#ff7f0e", linestyle=":", lw=2, alpha=0.6, label=f"EL LSL ({g_el_min:.0f})")
 
             for j, row in enumerate(summary.itertuples()):
-                ax.annotate(f"{row.TS_mean:.0f}", (x[j], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#1f77b4")
-                ax.annotate(f"{row.YS_mean:.0f}", (x[j], row.YS_mean), xytext=(0,-15), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="#2ca02c")
-                el_spec = row.Std_EL_min
-                is_fail = (el_spec > 0) and (row.EL_mean < el_spec)
-                lbl = f"{row.EL_mean:.1f}%" + ("❌" if is_fail else "")
-                clr = "red" if is_fail else "#ff7f0e"
-                ax.annotate(lbl, (x[j], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color=clr, fontweight=("bold" if is_fail else "normal"))
+                ts_min, ts_max = row.Std_TS_min, row.Std_TS_max
+                ys_min, ys_max = row.Std_YS_min, row.Std_YS_max
+                el_spec = row.Std_EL_min if pd.notna(row.Std_EL_min) else 0
+                
+                # Đánh giá Đạt/Không Đạt
+                ts_fail = (pd.notna(ts_min) and ts_min > 0 and row.TS_mean < ts_min) or (pd.notna(ts_max) and 0 < ts_max < 9000 and row.TS_mean > ts_max)
+                ys_fail = (pd.notna(ys_min) and ys_min > 0 and row.YS_mean < ys_min) or (pd.notna(ys_max) and 0 < ys_max < 9000 and row.YS_mean > ys_max)
+                el_fail = (el_spec > 0) and (row.EL_mean < el_spec)
+                
+                ax.annotate(f"{row.TS_mean:.0f}" + (" ❌" if ts_fail else ""), (x[j], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="red" if ts_fail else "#1f77b4")
+                ax.annotate(f"{row.YS_mean:.0f}" + (" ❌" if ys_fail else ""), (x[j], row.YS_mean), xytext=(0,-15), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="red" if ys_fail else "#2ca02c")
+                ax2.annotate(f"{row.EL_mean:.1f}%" + (" ❌" if el_fail else ""), (x[j], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color="red" if el_fail else "#ff7f0e", fontweight=("bold" if el_fail else "normal"))
 
             ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
-            ax.set_title("Hardness vs Mechanical Properties"); ax.grid(True, ls="--", alpha=0.5); ax.legend(); st.pyplot(fig)
+            ax.set_ylabel("Strength (MPa)", fontweight="bold")
+            ax2.set_ylabel("Elongation (%)", fontweight="bold", color="#ff7f0e")
+            
+            # Gộp Legend của 2 trục lại
+            lines_1, labels_1 = ax.get_legend_handles_labels()
+            lines_2, labels_2 = ax2.get_legend_handles_labels()
+            ax.legend(lines_1 + lines_2, labels_1 + labels_2, loc="center left", bbox_to_anchor=(1.05, 0.5))
+            
+            ax.grid(True, ls="--", alpha=0.5); fig.tight_layout(); st.pyplot(fig)
 
             # --- 2. THU THẬP DỮ LIỆU TỔNG HỢP ---
             col_spec = "Product_Spec"
@@ -1274,35 +1303,22 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             excel_name = f"Hardness_Bin_Report_{str(qgroup).replace(' ','')}_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx"
             
-            # Khởi tạo buffer trong bộ nhớ thay vì tạo file vật lý
             output = BytesIO()
-            
-            # Sử dụng Pandas ExcelWriter với engine xlsxwriter
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                # Sheet 1: Tổng hợp toàn bộ (Full Data)
                 df_full.to_excel(writer, sheet_name='All_Data', index=False)
-                
-                # Sheet 2: Chỉ TS
                 df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "TS Spec", "TS Actual", "TS Mean", "TS Std"]].to_excel(writer, sheet_name='TS_Only', index=False)
-                
-                # Sheet 3: Chỉ YS
                 df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "YS Spec", "YS Actual", "YS Mean", "YS Std"]].to_excel(writer, sheet_name='YS_Only', index=False)
-                
-                # Sheet 4: Chỉ EL
                 df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "EL Spec", "EL Actual", "EL Mean", "EL Std"]].to_excel(writer, sheet_name='EL_Only', index=False)
 
-                # Lấy đối tượng workbook và worksheet để định dạng độ rộng cột (tùy chọn nhưng làm Excel trông chuyên nghiệp hơn)
                 workbook = writer.book
                 for sheet_name in writer.sheets:
                     worksheet = writer.sheets[sheet_name]
-                    worksheet.set_column('A:A', 25) # Specification List
-                    worksheet.set_column('B:C', 15) # Material, Gauge
-                    worksheet.set_column('D:Z', 12) # Các cột số liệu
+                    worksheet.set_column('A:A', 25) 
+                    worksheet.set_column('B:C', 15) 
+                    worksheet.set_column('D:Z', 12) 
             
-            # Thu thập dữ liệu Excel đã ghi vào buffer
             processed_data = output.getvalue()
             
-            # Nút Download cho Excel
             st.download_button(
                 label="📥 Export Binning Report (Excel)",
                 data=processed_data,
