@@ -1384,6 +1384,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             )                   
     # ================================
  # ================================
+  # ================================
     # 4. MECH PROPS ANALYSIS
     # ================================
     elif view_mode == "⚙️ Mech Props Analysis":
@@ -1392,8 +1393,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
         if i == 0:
             ts_summary, ys_summary, el_summary = [], [], []
 
-        # [CẬP NHẬT] Đưa Giới hạn kiểm soát HRB (lo ~ hi) lên thẳng tiêu đề
-        st.markdown(f"### ⚙️ Mechanical Properties Analysis: {g['Material']} | {g['Gauge_Range']} 🎯 (HRB Control: {lo:.1f} ~ {hi:.1f})")
+        # Hiển thị cả 2 dải giới hạn trên tiêu đề
+        lab_str = f" | Target Zone: {l_lo:.1f} ~ {l_hi:.1f}" if l_lo > 0 else ""
+        st.markdown(f"### ⚙️ Mechanical Properties Analysis: {g['Material']} | {g['Gauge_Range']} 🎯 (Control: {lo:.1f} ~ {hi:.1f}{lab_str})")
         
         # Lấy dữ liệu cơ tính và giữ lại Hardness_LINE để tính dải độ cứng
         sub_mech = sub.dropna(subset=["TS","YS","EL"])
@@ -1415,10 +1417,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             # --- TÍNH TOÁN DẢI ĐỘ CỨNG THỰC TẾ ---
             if "Hardness_LINE" in sub_mech.columns:
                 h_data = sub_mech["Hardness_LINE"].dropna()
-                if not h_data.empty:
-                    hardness_range_str = f"{h_data.min():.1f} ~ {h_data.max():.1f}"
-                else:
-                    hardness_range_str = "N/A"
+                hardness_range_str = f"{h_data.min():.1f} ~ {h_data.max():.1f}" if not h_data.empty else "N/A"
             else:
                 hardness_range_str = "N/A"
 
@@ -1450,15 +1449,16 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
                 axes[j].grid(alpha=0.3, linestyle="--")
 
-                # --- PHÂN LOẠI DỮ LIỆU VÀO 3 BẢNG RIÊNG (BỔ SUNG CỘT HRB LIMIT) ---
+                # --- PHÂN LOẠI DỮ LIỆU VÀO 3 BẢNG RIÊNG VỚI ĐẦY ĐỦ CÁC GIỚI HẠN ---
                 row_data = {
                     "Specification List": specs_str,
                     "Material": g["Material"],
                     "Gauge": g["Gauge_Range"],
                     "N": len(sub_mech),
-                    "HRB Limit (Control)": f"{lo:.1f} ~ {hi:.1f}", # <--- CỘT MỚI: GIỚI HẠN KIỂM SOÁT
-                    "HRB Actual Range": hardness_range_str,       # Đổi tên cho rõ ràng
-                    "Limit (Spec)": f"{spec_min:.0f}~{spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else f"≥ {spec_min:.0f}",
+                    "Control Limit (HRB)": f"{lo:.1f} ~ {hi:.1f}",
+                    "Target Zone (HRB)": f"{l_lo:.1f} ~ {l_hi:.1f}" if (l_lo > 0 and l_hi > 0) else "N/A", # Bổ sung Lab Limit
+                    "Actual Range (HRB)": hardness_range_str,
+                    "Limit (Spec)": f"{spec_min:.0f}~{spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else (f"≥ {spec_min:.0f}" if spec_min > 0 else "-"),
                     "Actual Range": f"{data.min():.1f}~{data.max():.1f}",
                     "Mean": f"{mean:.1f}",
                     "Std Dev": f"{std:.1f}",
@@ -1471,7 +1471,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 elif col == "EL": el_summary.append(row_data)
             
             st.pyplot(fig)
-            plt.close(fig) # [Bổ sung] Chống tràn RAM Matplotlib
+            plt.close(fig) 
 
         # --- 2. HIỂN THỊ 3 BẢNG TỔNG HỢP RIÊNG BIỆT Ở CUỐI VÒNG LẶP ---
         if i == len(valid) - 1:
@@ -1483,10 +1483,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     st.markdown(f"#### {title}")
                     df = pd.DataFrame(data_list)
                     
-                    # [CẬP NHẬT] Đổ nền Vàng nhạt cho HRB Limit và Xanh nhạt cho HRB Actual để sếp dễ phân biệt
+                    # Bôi vàng cho CẢ 2 cột Giới hạn (Control và Target)
                     styled_df = df.style.set_properties(**{'font-weight': 'bold'}, subset=['Mean']) \
-                                        .set_properties(**{'background-color': '#FFF2CC', 'font-weight': 'bold', 'color': '#856404'}, subset=['HRB Limit (Control)']) \
-                                        .set_properties(**{'background-color': '#f0f8ff', 'font-weight': 'bold', 'color': '#0056b3'}, subset=['HRB Actual Range']) \
+                                        .set_properties(**{'background-color': '#FFF2CC', 'font-weight': 'bold', 'color': '#856404'}, subset=['Control Limit (HRB)', 'Target Zone (HRB)']) \
+                                        .set_properties(**{'background-color': '#f0f8ff', 'font-weight': 'bold', 'color': '#0056b3'}, subset=['Actual Range (HRB)']) \
                                         .set_properties(**{'background-color': color_code, 'color': '#004085'}, subset=['LCL (-3σ)', 'UCL (+3σ)'])
                     st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
