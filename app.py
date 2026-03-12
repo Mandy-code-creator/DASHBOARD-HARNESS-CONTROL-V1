@@ -14,7 +14,7 @@ import matplotlib.pyplot as plt
 import uuid
 from datetime import datetime
 from sklearn.linear_model import LinearRegression
-from sklearn.metrics import r2_score
+from sklearn.metrics import r2_score, mean_squared_error
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
