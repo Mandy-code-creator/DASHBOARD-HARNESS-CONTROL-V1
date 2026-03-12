@@ -1077,18 +1077,26 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
     
     # ================================
-    # 1. DATA INSPECTION (CLEAN - INTEGERS ONLY)
+    # ================================
+    # 1. DATA INSPECTION (SMART FORMATTING)
     # ================================
     if view_mode == "📋 Data Inspection":
         st.markdown(f"### 📋 {g['Material']} | {g['Gauge_Range']}")
-        def highlight_ng_rows(row): return ['background-color: #ffe6e6'] * len(row) if row['NG'] else [''] * len(row)
         
-        # Lấy danh sách các cột số để làm tròn
+        def highlight_ng_rows(row): 
+            # Bôi đỏ nhạt các cuộn NG (Out of Limit)
+            return ['background-color: #ffe6e6; color: #a00000'] * len(row) if row.get('NG', False) else [''] * len(row)
+        
         num_cols = sub.select_dtypes(include=[np.number]).columns.tolist()
         
+        # Tách riêng cột Độ cứng/Giới hạn (1 số thập phân) và cột Cơ tính/Khác (Số nguyên)
+        hard_cols = [c for c in num_cols if "Hardness" in c or "Limit" in c or "Lab" in c]
+        other_num_cols = [c for c in num_cols if c not in hard_cols]
+        
         st.dataframe(
-            sub.style.format("{:.0f}", subset=num_cols) # <--- LÀM TRÒN TẤT CẢ CỘT SỐ
-            .apply(highlight_ng_rows, axis=1), 
+            sub.style.format("{:.1f}", subset=hard_cols)
+                     .format("{:.0f}", subset=other_num_cols)
+                     .apply(highlight_ng_rows, axis=1), 
             use_container_width=True
         )
 # ==========================================================
