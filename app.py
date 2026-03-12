@@ -1540,150 +1540,106 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.error(f"❌ No coils found in the range {mn} ~ {mx} HRB.")
     # ================================
  # ================================
-    # 6. REVERSE LOOKUP
-    # ================================
+   # ==============================================================================
+    # 6. REVERSE LOOKUP (TARGET HARDNESS) - WITH MECH CONTROL LIMITS
+    # ==============================================================================
     elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
         
-        # --- 1. Initialize summary list at the first iteration ---
+        # --- 1. Khởi tạo danh sách tổng hợp ở vòng lặp đầu tiên ---
         if i == 0:
             reverse_lookup_summary = []
 
-        st.subheader(f"🎯 Target Hardness Calculator: {g['Material']} | {g['Gauge_Range']}")
+        st.markdown(f"### 🎯 Target Hardness Finder: {g['Material']} | {g['Gauge_Range']}")
         
-        # --- PRESERVED LOGIC FOR SMART LIMITS ---
-        def calculate_smart_limits(name, col_val, col_spec_min, col_spec_max, step=5.0):
-            try:
-                series_val = pd.to_numeric(sub[col_val], errors='coerce')
-                valid_data = series_val[series_val > 0.1].dropna()
-                if valid_data.empty: return 0.0, 0.0
-                mean = float(valid_data.mean()); std = float(valid_data.std()) if len(valid_data) > 1 else 0.0
-                stat_min = mean - (3 * std); stat_max = mean + (3 * std)
-                
-                spec_min = 0.0
-                if col_spec_min in sub.columns:
-                    s_min = pd.to_numeric(sub[col_spec_min], errors='coerce').max()
-                    if not pd.isna(s_min): spec_min = float(s_min)
-                
-                spec_max = 9999.0
-                if col_spec_max in sub.columns:
-                    s_max_series = pd.to_numeric(sub[col_spec_max], errors='coerce')
-                    s_max_valid = s_max_series[s_max_series > 0]
-                    if not s_max_valid.empty: spec_max = float(s_max_valid.min())
+        # --- TÍNH TOÁN GIỚI HẠN KIỂM SOÁT CƠ TÍNH (MECH CONTROL LIMITS) ---
+        # Loại bỏ dữ liệu rác để tính toán chuẩn
+        sub_clean = sub.dropna(subset=["TS", "YS", "EL", "Hardness_LINE"]).copy()
+        sub_clean = sub_clean[sub_clean["Hardness_LINE"] > 0]
 
-                is_no_spec = (spec_min < 1.0) and (spec_max > 9000.0)
-                final_min = max(stat_min, spec_min)
-                final_max = min(stat_max, spec_max) if spec_max < 9000 else (stat_max + (1 * std) if is_no_spec else stat_max)
-                if final_min >= final_max: final_min, final_max = stat_min, stat_max + std
-                return float(round(max(0.0, final_min) / step) * step), float(round(final_max / step) * step)
-            except: return 0.0, 0.0
-
-        d_ys_min, d_ys_max = calculate_smart_limits('YS', 'YS', 'Standard YS min', 'Standard YS max', 5.0)
-        d_ts_min, d_ts_max = calculate_smart_limits('TS', 'TS', 'Standard TS min', 'Standard TS max', 5.0)
-        d_el_min, d_el_max = calculate_smart_limits('EL', 'EL', 'Standard EL min', 'Standard EL max', 1.0)
-
-        c1, c2, c3 = st.columns(3)
-        
-        # Keys added to prevent duplicate widget errors
-        r_ys_min = c1.number_input("Min YS", value=d_ys_min, step=5.0, key=f"ymin_{i}")
-        r_ys_max = c1.number_input("Max YS", value=d_ys_max, step=5.0, key=f"ymax_{i}")
-        r_ts_min = c2.number_input("Min TS", value=d_ts_min, step=5.0, key=f"tmin_{i}")
-        r_ts_max = c2.number_input("Max TS", value=d_ts_max, step=5.0, key=f"tmax_{i}")
-        r_el_min = c3.number_input("Min EL", value=d_el_min, step=1.0, key=f"emin_{i}")
-        r_el_max = c3.number_input("Max EL", value=d_el_max, step=1.0, key=f"emax_{i}")
-
-        filtered = sub[
-            (sub['YS'] >= r_ys_min) & (sub['YS'] <= r_ys_max) &
-            (sub['TS'] >= r_ts_min) & (sub['TS'] <= r_ts_max) &
-            ((sub['EL'] >= r_el_min) | (r_el_min==0)) & (sub['EL'] <= r_el_max)
-        ]
-        
-        if not filtered.empty:
-            target_min = filtered['Hardness_LINE'].min()
-            target_max = filtered['Hardness_LINE'].max()
-            n_coils = len(filtered)
-            target_text = f"{target_min:.1f} ~ {target_max:.1f}"
-            st.success(f"✅ Target Hardness: **{target_text} HRB** (N={n_coils})")
-            st.dataframe(filtered[['COIL_NO','Hardness_LINE','YS','TS','EL']], height=300)
-        else: 
-            target_text = "❌ No Coils Found"
-            n_coils = 0
-            st.error("❌ No coils found matching these specs.")
-
-        # --- 2. XỬ LÝ CHUỖI TIÊU CHUẨN (SPECS) TỪ CỘT Product_Spec ---
-        col_name = "Product_Spec"  
-        
-        if col_name in sub.columns:
-            unique_specs = sub[col_name].dropna().unique()
-            if len(unique_specs) > 0:
-                specs_str = f"Specs: {', '.join(str(x) for x in unique_specs)}"
-            else:
-                specs_str = "Specs: N/A"
+        if sub_clean.empty:
+            st.warning("⚠️ Không có dữ liệu hợp lệ để phân tích ngược.")
         else:
-            specs_str = "Specs: N/A"
+            def get_stat_limits(series):
+                mu_val = series.mean()
+                sigma_val = series.std()
+                return round(mu_val - 3*sigma_val, 0), round(mu_val + 3*sigma_val, 0)
 
-        # LƯU VÀO DANH SÁCH TỔNG HỢP
-        reverse_lookup_summary.append({
-            "Specification List": specs_str,
-            "Material": g["Material"],
-            "Gauge": g["Gauge_Range"],
-            "YS Setup": f"{r_ys_min:.0f} ~ {r_ys_max:.0f}",
-            "TS Setup": f"{r_ts_min:.0f} ~ {r_ts_max:.0f}",
-            "EL Setup": f"{r_el_min:.0f} ~ {r_el_max:.0f}",
-            "Target Hardness (HRB)": target_text,
-            "Matching Coils": n_coils
-        })
+            # Tính toán dải mục tiêu gợi ý cho sếp
+            ts_low, ts_high = get_stat_limits(sub_clean["TS"])
+            ys_low, ys_high = get_stat_limits(sub_clean["YS"])
+            el_low, el_high = get_stat_limits(sub_clean["EL"])
+
+            st.info(f"💡 **Suggested Mech Targets (Based on 3σ):** TS: {ts_low:.0f}~{ts_high:.0f} | YS: {ys_low:.0f}~{ys_high:.0f} | EL: ≥{el_low:.0f}%")
+
+            c1, c2, c3 = st.columns(3)
+            
+            with c1:
+                st.markdown("**🔹 Tensile (TS)**")
+                r_ts_min = st.number_input("Min TS Target", value=ts_low, step=5.0, key=f"rev_tsmin_{i}")
+                r_ts_max = st.number_input("Max TS Target", value=ts_high, step=5.0, key=f"rev_tsmax_{i}")
+            
+            with c2:
+                st.markdown("**🔸 Yield (YS)**")
+                r_ys_min = st.number_input("Min YS Target", value=ys_low, step=5.0, key=f"rev_ysmin_{i}")
+                r_ys_max = st.number_input("Max YS Target", value=ys_high, step=5.0, key=f"rev_ysmax_{i}")
+            
+            with c3:
+                st.markdown("**🔻 Elongation (EL)**")
+                r_el_min = st.number_input("Min EL % Target", value=el_low, step=1.0, key=f"rev_elmin_{i}")
+                # EL max thường không quá quan trọng nhưng vẫn để mặc định cao
+                r_el_max = st.number_input("Max EL % Target", value=100.0, step=1.0, key=f"rev_elmax_{i}")
+
+            # Lọc tìm các cuộn đạt chuẩn cơ tính sếp vừa nhập
+            filtered = sub_clean[
+                (sub_clean['TS'] >= r_ts_min) & (sub_clean['TS'] <= r_ts_max) &
+                (sub_clean['YS'] >= r_ys_min) & (sub_clean['YS'] <= r_ys_max) &
+                (sub_clean['EL'] >= r_el_min) & (sub_clean['EL'] <= r_el_max)
+            ]
+            
+            if not filtered.empty:
+                target_min = filtered['Hardness_LINE'].min()
+                target_max = filtered['Hardness_LINE'].max()
+                target_avg = filtered['Hardness_LINE'].mean()
+                n_coils = len(filtered)
+                
+                st.success(f"✅ Để đạt cơ tính trên, hãy kiểm soát HRB: **{target_min:.1f} ~ {target_max:.1f}** (Trung bình: {target_avg:.1f})")
+                
+                # Biểu đồ phân bố HRB tương ứng với dải cơ tính đó
+                fig, ax = plt.subplots(figsize=(10, 3))
+                ax.hist(filtered['Hardness_LINE'], bins=15, color="#8e44ad", alpha=0.7, edgecolor='white')
+                ax.set_title(f"Phân bố HRB cần thiết (N={n_coils})", fontsize=10, fontweight='bold')
+                st.pyplot(fig)
+                plt.close(fig)
+
+                target_text = f"{target_min:.1f} ~ {target_max:.1f}"
+            else: 
+                st.error("❌ Không tìm thấy cuộn nào có dải cơ tính này. Vui lòng nới lỏng mục tiêu.")
+                target_text = "N/A"
+                n_coils = 0
+
+            # Lưu vào danh sách tổng hợp để xuất báo cáo
+            col_spec = "Product_Spec"
+            specs_str = f"{', '.join(str(x) for x in sub[col_spec].dropna().unique())}" if col_spec in sub.columns else "N/A"
+
+            reverse_lookup_summary.append({
+                "Specification": specs_str,
+                "Material": g["Material"],
+                "Gauge": g["Gauge_Range"],
+                "TS Target Set": f"{r_ts_min:.0f}~{r_ts_max:.0f}",
+                "YS Target Set": f"{r_ys_min:.0f}~{r_ys_max:.0f}",
+                "EL Target Set": f"≥{r_el_min:.0f}%",
+                "👉 Recommended HRB": target_text,
+                "Sample Count": n_coils
+            })
         
-        # --- 3. DISPLAY THE SUMMARY TABLE AT THE LAST ITERATION ---
-        if i == len(valid) - 1 and 'reverse_lookup_summary' in locals() and len(reverse_lookup_summary) > 0:
+        # Xuất bảng tổng hợp cuối trang
+        if i == len(valid) - 1 and len(reverse_lookup_summary) > 0:
             st.markdown("---")
-            st.markdown(f"## 🎯 Comprehensive Target Hardness Summary for {qgroup}")
+            st.markdown("#### 📊 Global Target Hardness Summary")
+            df_rev = pd.DataFrame(reverse_lookup_summary)
             
-            df_target = pd.DataFrame(reverse_lookup_summary)
-            
-            # Apply styling for better visualization
-            def style_target(val):
-                if isinstance(val, str) and "❌" in val:
-                    return 'color: red; font-weight: bold'
-                elif isinstance(val, str) and "~" in val:
-                    return 'color: #0056b3; font-weight: bold; background-color: #e6f2ff'
-                return ''
-
-            st.dataframe(
-                df_target.style.map(style_target, subset=['Target Hardness (HRB)']) if hasattr(df_target.style, "map") else df_target.style.applymap(style_target, subset=['Target Hardness (HRB)']),
-                use_container_width=True,
-                hide_index=True
-            )
-            
-            # --- XUẤT FILE EXCEL THAY VÌ CSV ---
-            import datetime
-            from io import BytesIO
-            
-            today_str = datetime.datetime.now().strftime("%Y%m%d")
-            safe_qgroup = str(qgroup).replace(" / ", "_").replace("/", "_").replace(" ", "")
-            excel_filename = f"Target_Hardness_{safe_qgroup}_{today_str}.xlsx"
-            
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_target.to_excel(writer, sheet_name='Target_Hardness', index=False)
-                
-                # Định dạng độ rộng cột cho Excel
-                workbook = writer.book
-                worksheet = writer.sheets['Target_Hardness']
-                worksheet.set_column('A:A', 30) # Specification List
-                worksheet.set_column('B:C', 15) # Material, Gauge
-                worksheet.set_column('D:F', 18) # YS, TS, EL Setup
-                worksheet.set_column('G:G', 25) # Target Hardness (HRB)
-                worksheet.set_column('H:H', 15) # Matching Coils
-                
-            processed_data = output.getvalue()
-            
-            st.download_button(
-                label="📥 Export Target Hardness (Excel)",
-                data=processed_data,
-                file_name=excel_filename,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-    # ================================
+            styled_rev = df_rev.style.set_properties(**{'background-color': '#f3e5f5', 'font-weight': 'bold', 'color': '#4a148c'}, subset=['👉 Recommended HRB'])
+            st.dataframe(styled_rev, use_container_width=True, hide_index=True)
    # ================================
 # ================================
     # 7. AI PREDICTION (ULTIMATE FIX: STABLE INPUT + PRO TOOLTIP)
