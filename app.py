@@ -1541,7 +1541,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
     # ================================
  # ================================
 # ==============================================================================
-    # 6. REVERSE LOOKUP (TARGET HARDNESS) - WITH SPEC REFERENCE
+   # ==============================================================================
+    # 6. REVERSE LOOKUP (TARGET HARDNESS) - WITH ENGLISH SPEC REFERENCE
     # ==============================================================================
     elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
         
@@ -1550,35 +1551,42 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
         st.markdown(f"### 🎯 Target Hardness Finder: {g['Material']} | {g['Gauge_Range']}")
         
-        # 1. Lấy Spec thực tế của nhóm này từ dữ liệu (để sếp biết mức chuẩn)
+        # 1. Extract actual Spec reference for this group
         sub_clean = sub.dropna(subset=["TS", "YS", "EL", "Hardness_LINE"]).copy()
         sub_clean = sub_clean[sub_clean["Hardness_LINE"] > 0]
 
         if sub_clean.empty:
-            st.warning("⚠️ Không có dữ liệu hợp lệ.")
+            st.warning("⚠️ No valid data available for reverse analysis.")
         else:
-            # Lấy Spec tối đa/tối thiểu của nhóm
+            # Extract Max/Min Specs
             s_ts_min = sub_clean["Standard TS min"].max()
             s_ts_max = sub_clean["Standard TS max"].min()
             s_ys_min = sub_clean["Standard YS min"].max()
             s_ys_max = sub_clean["Standard YS max"].min()
             s_el_min = sub_clean["Standard EL min"].max()
 
-            # Hiển thị vạch Spec để sếp tham chiếu trước khi nhập
-            st.caption(f"📌 **Mechanical Spec Reference:** TS: {s_ts_min:.0f}~{s_ts_max:.0f} | YS: {s_ys_min:.0f}~{s_ys_max:.0f} | EL: ≥{s_el_min:.0f}%")
+            # Display Reference with explicit Min/Max labels
+            ts_ref = f"{s_ts_min:.0f} (Min)" if s_ts_max > 9000 else f"{s_ts_min:.0f} (Min) ~ {s_ts_max:.0f} (Max)"
+            ys_ref = f"{s_ys_min:.0f} (Min)" if s_ys_max > 9000 else f"{s_ys_min:.0f} (Min) ~ {s_ys_max:.0f} (Max)"
+            el_ref = f"{s_el_min:.0f}% (Min)"
+
+            st.caption(f"📌 **Mechanical Spec Reference:** TS: {ts_ref} | YS: {ys_ref} | EL: {el_ref}")
 
             c1, c2, c3 = st.columns(3)
             with c1:
-                r_ts_min = st.number_input("Min TS Target", value=float(s_ts_min), step=5.0, key=f"rev_tsmin_{i}")
-                r_ts_max = st.number_input("Max TS Target", value=float(s_ts_max if s_ts_max < 9000 else s_ts_min + 100), step=5.0, key=f"rev_tsmax_{i}")
+                st.markdown("**Tensile Strength (TS)**")
+                r_ts_min = st.number_input("Target TS (Min)", value=float(s_ts_min), step=5.0, key=f"rev_tsmin_{i}")
+                r_ts_max = st.number_input("Target TS (Max)", value=float(s_ts_max if s_ts_max < 9000 else s_ts_min + 100), step=5.0, key=f"rev_tsmax_{i}")
             with c2:
-                r_ys_min = st.number_input("Min YS Target", value=float(s_ys_min), step=5.0, key=f"rev_ysmin_{i}")
-                r_ys_max = st.number_input("Max YS Target", value=float(s_ys_max if s_ys_max < 9000 else s_ys_min + 100), step=5.0, key=f"rev_ysmax_{i}")
+                st.markdown("**Yield Strength (YS)**")
+                r_ys_min = st.number_input("Target YS (Min)", value=float(s_ys_min), step=5.0, key=f"rev_ysmin_{i}")
+                r_ys_max = st.number_input("Target YS (Max)", value=float(s_ys_max if s_ys_max < 9000 else s_ys_min + 100), step=5.0, key=f"rev_ysmax_{i}")
             with c3:
-                r_el_min = st.number_input("Min EL % Target", value=float(s_el_min), step=1.0, key=f"rev_elmin_{i}")
-                r_el_max = st.number_input("Max EL % Target", value=100.0, step=1.0, key=f"rev_elmax_{i}")
+                st.markdown("**Elongation (EL)**")
+                r_el_min = st.number_input("Target EL % (Min)", value=float(s_el_min), step=1.0, key=f"rev_elmin_{i}")
+                r_el_max = st.number_input("Target EL % (Max)", value=100.0, step=1.0, key=f"rev_elmax_{i}")
 
-            # Lọc tìm kết quả
+            # Filter logic
             filtered = sub_clean[
                 (sub_clean['TS'] >= r_ts_min) & (sub_clean['TS'] <= r_ts_max) &
                 (sub_clean['YS'] >= r_ys_min) & (sub_clean['YS'] <= r_ys_max) &
@@ -1588,22 +1596,22 @@ for i, (_, g) in enumerate(valid.iterrows()):
             if not filtered.empty:
                 target_min = filtered['Hardness_LINE'].min()
                 target_max = filtered['Hardness_LINE'].max()
-                st.success(f"✅ Để đạt cơ tính trên, hãy kiểm soát HRB: **{target_min:.1f} ~ {target_max:.1f}** (N={len(filtered)})")
+                st.success(f"✅ Recommended Hardness Control: **{target_min:.1f} ~ {target_max:.1f} HRB** (Coils: {len(filtered)})")
                 target_text = f"{target_min:.1f} ~ {target_max:.1f}"
             else: 
-                st.error("❌ Không tìm thấy cuộn nào khớp dải mục tiêu này.")
+                st.error("❌ No coils match the specified mechanical targets.")
                 target_text = "N/A"
 
-            # Lưu vào báo cáo tổng hợp
+            # Summary collection
             col_spec = "Product_Spec"
             specs_str = f"{', '.join(str(x) for x in sub[col_spec].dropna().unique())}" if col_spec in sub.columns else "N/A"
             reverse_lookup_summary.append({
                 "Specification": specs_str,
                 "Material": g["Material"],
                 "Gauge": g["Gauge_Range"],
-                "Target TS": f"{r_ts_min:.0f}~{r_ts_max:.0f}",
-                "Target YS": f"{r_ys_min:.0f}~{r_ys_max:.0f}",
-                "Target EL": f"≥{r_el_min:.0f}%",
+                "TS Target": f"{r_ts_min:.0f}~{r_ts_max:.0f}",
+                "YS Target": f"{r_ys_min:.0f}~{r_ys_max:.0f}",
+                "EL Target": f"≥{r_el_min:.0f}%",
                 "Recommended HRB": target_text
             })
 
