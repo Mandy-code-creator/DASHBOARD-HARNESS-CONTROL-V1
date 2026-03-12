@@ -1383,7 +1383,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
             )                   
     # ================================
-  # 4. MECH PROPS ANALYSIS
+ # ================================
+    # 4. MECH PROPS ANALYSIS
     # ================================
     elif view_mode == "⚙️ Mech Props Analysis":
         
@@ -1391,7 +1392,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
         if i == 0:
             ts_summary, ys_summary, el_summary = [], [], []
 
-        st.markdown(f"### ⚙️ Mechanical Properties Analysis: {g['Material']} | {g['Gauge_Range']}")
+        # [CẬP NHẬT] Đưa Giới hạn kiểm soát HRB (lo ~ hi) lên thẳng tiêu đề
+        st.markdown(f"### ⚙️ Mechanical Properties Analysis: {g['Material']} | {g['Gauge_Range']} 🎯 (HRB Control: {lo:.1f} ~ {hi:.1f})")
+        
         # Lấy dữ liệu cơ tính và giữ lại Hardness_LINE để tính dải độ cứng
         sub_mech = sub.dropna(subset=["TS","YS","EL"])
         
@@ -1405,7 +1408,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ]
             fig, axes = plt.subplots(1, 3, figsize=(18, 6))
             
-            # Xử lý trích xuất Specs từ cột Product_Spec giống View 6
+            # Xử lý trích xuất Specs từ cột Product_Spec
             col_spec = "Product_Spec"
             specs_str = f"Specs: {', '.join(str(x) for x in sub[col_spec].dropna().unique())}" if col_spec in sub.columns else "Specs: N/A"
 
@@ -1447,13 +1450,14 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
                 axes[j].grid(alpha=0.3, linestyle="--")
 
-                # --- PHÂN LOẠI DỮ LIỆU VÀO 3 BẢNG RIÊNG VỚI CỘT 3-SIGMA VÀ HARDNESS RANGE ---
+                # --- PHÂN LOẠI DỮ LIỆU VÀO 3 BẢNG RIÊNG (BỔ SUNG CỘT HRB LIMIT) ---
                 row_data = {
                     "Specification List": specs_str,
                     "Material": g["Material"],
                     "Gauge": g["Gauge_Range"],
                     "N": len(sub_mech),
-                    "Hardness Range (HRB)": hardness_range_str, # <--- CỘT MỚI: DẢI ĐỘ CỨNG THỰC TẾ
+                    "HRB Limit (Control)": f"{lo:.1f} ~ {hi:.1f}", # <--- CỘT MỚI: GIỚI HẠN KIỂM SOÁT
+                    "HRB Actual Range": hardness_range_str,       # Đổi tên cho rõ ràng
                     "Limit (Spec)": f"{spec_min:.0f}~{spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else f"≥ {spec_min:.0f}",
                     "Actual Range": f"{data.min():.1f}~{data.max():.1f}",
                     "Mean": f"{mean:.1f}",
@@ -1467,6 +1471,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 elif col == "EL": el_summary.append(row_data)
             
             st.pyplot(fig)
+            plt.close(fig) # [Bổ sung] Chống tràn RAM Matplotlib
 
         # --- 2. HIỂN THỊ 3 BẢNG TỔNG HỢP RIÊNG BIỆT Ở CUỐI VÒNG LẶP ---
         if i == len(valid) - 1:
@@ -1477,9 +1482,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 if data_list:
                     st.markdown(f"#### {title}")
                     df = pd.DataFrame(data_list)
-                    # Định dạng in đậm cột Mean, Hardness Range và highlight cụm cột 3-Sigma
+                    
+                    # [CẬP NHẬT] Đổ nền Vàng nhạt cho HRB Limit và Xanh nhạt cho HRB Actual để sếp dễ phân biệt
                     styled_df = df.style.set_properties(**{'font-weight': 'bold'}, subset=['Mean']) \
-                                        .set_properties(**{'background-color': '#f0f8ff', 'font-weight': 'bold', 'color': '#0056b3'}, subset=['Hardness Range (HRB)']) \
+                                        .set_properties(**{'background-color': '#FFF2CC', 'font-weight': 'bold', 'color': '#856404'}, subset=['HRB Limit (Control)']) \
+                                        .set_properties(**{'background-color': '#f0f8ff', 'font-weight': 'bold', 'color': '#0056b3'}, subset=['HRB Actual Range']) \
                                         .set_properties(**{'background-color': color_code, 'color': '#004085'}, subset=['LCL (-3σ)', 'UCL (+3σ)'])
                     st.dataframe(styled_df, use_container_width=True, hide_index=True)
 
@@ -1489,8 +1496,16 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             import datetime
             today_str = datetime.datetime.now().strftime("%Y%m%d")
-            full_df = pd.concat([pd.DataFrame(ts_summary), pd.DataFrame(ys_summary), pd.DataFrame(el_summary)], keys=['TS','YS','EL'])
-            st.download_button("📥 Export Full Mech Report CSV", full_df.to_csv(index=True).encode('utf-8-sig'), f"Full_Mech_Report_{today_str}.csv")
+            
+            if ts_summary or ys_summary or el_summary:
+                dfs = []
+                keys = []
+                if ts_summary: dfs.append(pd.DataFrame(ts_summary)); keys.append('TS')
+                if ys_summary: dfs.append(pd.DataFrame(ys_summary)); keys.append('YS')
+                if el_summary: dfs.append(pd.DataFrame(el_summary)); keys.append('EL')
+                
+                full_df = pd.concat(dfs, keys=keys)
+                st.download_button("📥 Export Full Mech Report CSV", full_df.to_csv(index=True).encode('utf-8-sig'), f"Full_Mech_Report_{today_str}.csv")
    # ================================
    # ==============================================================================
     # 5. LOOKUP (FIXED: STABLE INPUT KEYS)
