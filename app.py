@@ -1100,6 +1100,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         )
         # ================================
     # ================================
+   # ================================
     # 2. HARDNESS ANALYSIS
     # ================================
     elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
@@ -1108,34 +1109,32 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
         with tab_trend:
             x = np.arange(1, len(sub)+1)
-            fig, ax = plt.subplots(figsize=(10, 4.5))
+            fig, ax = plt.subplots(figsize=(12, 5))
             
-            # Vẽ đường Line và Lab
-            ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.5)
-            ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.9) 
-            
-            # Highlight các điểm NG (Out of Control) trên LINE
-            ng_line_mask = (sub["Hardness_LINE"] < lo) | (sub["Hardness_LINE"] > hi)
-            if ng_line_mask.any():
-                ax.scatter(x[ng_line_mask], sub["Hardness_LINE"][ng_line_mask], color='red', s=100, zorder=5, label="Out of Control")
-
-            # Vẽ vạch giới hạn
-            ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"Control LSL={lo:.1f}")
-            ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"Control USL={hi:.1f}")
+            # 1. Vẽ vùng Target Zone (Đổ bóng Xanh lá nhạt)
             if l_lo > 0 and l_hi > 0:
-                ax.axhline(l_lo, linestyle="-.", linewidth=1.5, color="purple", label=f"Lab LSL={l_lo:.1f}", alpha=0.7)
-                ax.axhline(l_hi, linestyle="-.", linewidth=1.5, color="purple", label=f"Lab USL={l_hi:.1f}", alpha=0.7)
+                ax.fill_between(x, l_lo, l_hi, color="green", alpha=0.1, label="Target Zone")
+                ax.axhline(l_lo, linestyle="--", linewidth=2, color="green", label=f"Target LSL={l_lo:.1f}")
+                ax.axhline(l_hi, linestyle="--", linewidth=2, color="green", label=f"Target USL={l_hi:.1f}")
             
-            ax.set_title(f"Hardness Trend by Coil Sequence - {g['Material']}", weight="bold")
-            ax.set_xlabel("Coil Sequence")
-            ax.set_ylabel("Hardness (HRB)")
-            ax.grid(alpha=0.25, linestyle="--")
-            ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=5)
+            # 2. Vẽ đường Giới hạn Standard (Vạch Đỏ đứt nét)
+            ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"Std LSL={lo:.1f}")
+            ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"Std USL={hi:.1f}")
+            
+            # 3. Vẽ đường Dữ liệu thực tế
+            ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, color="#7fb3d5", markersize=6, label="LAB")
+            ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, color="#f5871f", markersize=6, label="LINE") 
+            
+            # 4. Trang trí giống hệt ảnh mẫu
+            ax.set_title("Hardness Trend by Coil Sequence", weight="bold", fontsize=14)
+            ax.grid(False) # Tắt lưới dọc/ngang thừa thãi
+            
+            # Sắp xếp Legend nằm dưới cùng, chia làm 4 cột
+            ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=4, fontsize=10)
+            
             plt.tight_layout()
-            
             st.pyplot(fig)
             
-            # [FIX] Dùng biến i làm key thay vì uuid để nút bấm không bị giật/reset UI
             st.download_button("📥 Download Trend Chart", data=fig_to_png(fig), file_name=f"trend_{g['Material']}.png", mime="image/png", key=f"dl_trend_{i}")
             plt.close(fig) # Chống tràn bộ nhớ
 
@@ -1191,7 +1190,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ax2.legend()
                 ax2.grid(alpha=0.3)
                 st.pyplot(fig2)
-                plt.close(fig2) # Chống tràn bộ nhớ
+                plt.close(fig2)
 
                 st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
                 if spc_line:
@@ -1210,7 +1209,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         styled_spc = styled_spc.applymap(style_rating, subset=['Rating'])
                         
                     st.dataframe(styled_spc, hide_index=True)
-    # ================================
    # ================================
    # ================================
     # 3. CORRELATION
