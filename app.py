@@ -374,7 +374,7 @@ if view_mode == "🚀 Global Summary Dashboard":
     # --- TAB 2: PHÂN TÍCH RỦI RO (AI DECISION SUPPORT) ---
     with tab2:
         st.markdown("#### 🧠 AI Decision Support (Risk-Based)")
-        st.caption("Dự báo cơ tính dựa trên mô hình AI khi nhà máy chạy ở mức HRB mục tiêu.")
+        st.caption("💡 **Note:** The **HRB Spec** column is the original hardness standard (to compare with Target HRB). The **Est. Range** is automatically compared against the **Mech Spec** to trigger bidirectional risk warnings (Low/High).")
 
         col_in1, col_in2 = st.columns([1, 1])
         with col_in1:
