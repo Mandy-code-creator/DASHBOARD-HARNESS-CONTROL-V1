@@ -1078,28 +1078,38 @@ for i, (_, g) in enumerate(valid.iterrows()):
     
     # ================================
     # ================================
-    # 1. DATA INSPECTION (SMART FORMATTING)
+    # 1. DATA INSPECTION (SMART FORMATTING & COLUMN FILTERING)
     # ================================
     if view_mode == "📋 Data Inspection":
         st.markdown(f"### 📋 {g['Material']} | {g['Gauge_Range']}")
+        
+        # Tạo bản sao dữ liệu để xử lý hiển thị mà không làm ảnh hưởng đến dữ liệu gốc
+        df_display = sub.copy()
+        
+        # 1. Cắt bỏ thời gian, chỉ giữ lại định dạng Ngày (YYYY-MM-DD)
+        if "PRODUCTION DATE" in df_display.columns:
+            df_display["PRODUCTION DATE"] = pd.to_datetime(df_display["PRODUCTION DATE"], errors='coerce').dt.strftime('%Y-%m-%d')
+            
+        # 2. Ẩn bỏ các cột không cần thiết
+        cols_to_hide = ["Rolling_Type", "Rule_Name"]
+        df_display = df_display.drop(columns=[c for c in cols_to_hide if c in df_display.columns])
         
         def highlight_ng_rows(row): 
             # Bôi đỏ nhạt các cuộn NG (Out of Limit)
             return ['background-color: #ffe6e6; color: #a00000'] * len(row) if row.get('NG', False) else [''] * len(row)
         
-        num_cols = sub.select_dtypes(include=[np.number]).columns.tolist()
+        num_cols = df_display.select_dtypes(include=[np.number]).columns.tolist()
         
         # Tách riêng cột Độ cứng/Giới hạn (1 số thập phân) và cột Cơ tính/Khác (Số nguyên)
         hard_cols = [c for c in num_cols if "Hardness" in c or "Limit" in c or "Lab" in c]
         other_num_cols = [c for c in num_cols if c not in hard_cols]
         
         st.dataframe(
-            sub.style.format("{:.1f}", subset=hard_cols)
-                     .format("{:.0f}", subset=other_num_cols)
-                     .apply(highlight_ng_rows, axis=1), 
+            df_display.style.format("{:.1f}", subset=hard_cols)
+                            .format("{:.0f}", subset=other_num_cols)
+                            .apply(highlight_ng_rows, axis=1), 
             use_container_width=True
         )
-# ==========================================================
         # ================================
     # 2. HARDNESS ANALYSIS
     # ================================
