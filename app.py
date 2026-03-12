@@ -1100,272 +1100,130 @@ for i, (_, g) in enumerate(valid.iterrows()):
         )
         # ================================
     # ================================
-   # ================================
+  # ================================
     # 2. HARDNESS ANALYSIS
     # ================================
     elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
         st.markdown("### 📉 Hardness Analysis: Process Stability & Capability")
-        tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
+        
+        # --- BỘ LỌC THÔNG MINH: LOẠI BỎ 0 VÀ NaN ---
+        df_valid = sub[(sub["Hardness_LINE"].notna()) & (sub["Hardness_LINE"] > 0)].copy()
+        
+        # Chuyển các giá trị 0 của LAB thành NaN để không bị vẽ cắm đầu xuống đất
+        if "Hardness_LAB" in df_valid.columns:
+            df_valid["Hardness_LAB"] = df_valid["Hardness_LAB"].replace(0, np.nan)
 
-        with tab_trend:
-            x = np.arange(1, len(sub)+1)
-            fig, ax = plt.subplots(figsize=(12, 5))
-            
-            # 1. Vẽ vùng Target Zone (Đổ bóng Xanh lá nhạt)
-            if l_lo > 0 and l_hi > 0:
-                ax.fill_between(x, l_lo, l_hi, color="green", alpha=0.1, label="Target Zone")
-                ax.axhline(l_lo, linestyle="--", linewidth=2, color="green", label=f"Target LSL={l_lo:.1f}")
-                ax.axhline(l_hi, linestyle="--", linewidth=2, color="green", label=f"Target USL={l_hi:.1f}")
-            
-            # 2. Vẽ đường Giới hạn Standard (Vạch Đỏ đứt nét)
-            ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"Std LSL={lo:.1f}")
-            ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"Std USL={hi:.1f}")
-            
-            # 3. Vẽ đường Dữ liệu thực tế
-            ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, color="#7fb3d5", markersize=6, label="LAB")
-            ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, color="#f5871f", markersize=6, label="LINE") 
-            
-            # 4. Trang trí giống hệt ảnh mẫu
-            ax.set_title("Hardness Trend by Coil Sequence", weight="bold", fontsize=14)
-            ax.grid(False) # Tắt lưới dọc/ngang thừa thãi
-            
-            # Sắp xếp Legend nằm dưới cùng, chia làm 4 cột
-            ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=4, fontsize=10)
-            
-            plt.tight_layout()
-            st.pyplot(fig)
-            
-            st.download_button("📥 Download Trend Chart", data=fig_to_png(fig), file_name=f"trend_{g['Material']}.png", mime="image/png", key=f"dl_trend_{i}")
-            plt.close(fig) # Chống tràn bộ nhớ
+        if df_valid.empty:
+            st.warning("⚠️ Không có dữ liệu hợp lệ (tất cả các cuộn đều bị rỗng hoặc bằng 0).")
+        else:
+            tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
 
-        with tab_dist:
-            line = sub["Hardness_LINE"].dropna()
-            lab = sub["Hardness_LAB"].dropna()
-            
-            if len(line) < 5: 
-                st.warning("⚠️ Not enough LINE data (N < 5) to plot distribution.")
-            else:
-                def calc_spc_metrics(data, lsl, usl):
-                    if len(data) < 2: return None
-                    mean = data.mean()
-                    std = data.std(ddof=1)
-                    if std == 0: return None 
-                    cp = (usl - lsl) / (6 * std)
-                    mid = (usl + lsl) / 2
-                    tol = (usl - lsl)
-                    ca = ((mean - mid) / (tol / 2)) * 100 if tol > 0 else 0
-                    cpu = (usl - mean) / (3 * std)
-                    cpl = (mean - lsl) / (3 * std)
-                    return mean, std, cp, ca, min(cpu, cpl)
-
-                spc_line = calc_spc_metrics(line, lo, hi)
-                mean_line, std_line = line.mean(), line.std(ddof=1)
+            with tab_trend:
+                x = np.arange(1, len(df_valid)+1)
+                fig, ax = plt.subplots(figsize=(12, 5))
                 
-                vals = [line.min(), line.max(), lo, hi]
-                if l_lo > 0: vals.extend([l_lo, l_hi])
-                if not lab.empty: vals.extend([lab.min(), lab.max()])
-                x_min = min(vals) - 2
-                x_max = max(vals) + 2
-                bins = np.linspace(x_min, x_max, 30)
-                
-                range_curve = max(5 * std_line, (x_max - x_min)/2)
-                xs = np.linspace(mean_line - range_curve, mean_line + range_curve, 400)
-                
-                fig2, ax2 = plt.subplots(figsize=(10, 5))
-                ax2.hist(line, bins=bins, density=True, alpha=0.6, color="#ff7f0e", edgecolor="white", label="LINE Hist")
-                if not lab.empty: ax2.hist(lab, bins=bins, density=True, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
-                
-                if std_line > 0:
-                    ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
-                    ax2.plot(xs, ys_line, linewidth=2.5, color="#b25e00", label="LINE Fit")
-                
-                ax2.axvline(lo, linestyle="--", linewidth=2, color="red", label="Control LSL")
-                ax2.axvline(hi, linestyle="--", linewidth=2, color="red", label="Control USL")
+                # 1. Vẽ vùng Target Zone (Đổ bóng Xanh lá nhạt)
                 if l_lo > 0 and l_hi > 0:
-                    ax2.axvline(l_lo, linestyle="-.", linewidth=2, color="purple", label="Lab LSL")
-                    ax2.axvline(l_hi, linestyle="-.", linewidth=2, color="purple", label="Lab USL")
+                    ax.fill_between(x, l_lo, l_hi, color="green", alpha=0.1, label="Target Zone")
+                    ax.axhline(l_lo, linestyle="--", linewidth=2, color="green", label=f"Target LSL={l_lo:.1f}")
+                    ax.axhline(l_hi, linestyle="--", linewidth=2, color="green", label=f"Target USL={l_hi:.1f}")
                 
-                ax2.set_xlim(x_min, x_max)
-                ax2.set_title(f"Hardness Distribution (LINE vs LAB) - {g['Material']}", weight="bold")
-                ax2.legend()
-                ax2.grid(alpha=0.3)
-                st.pyplot(fig2)
-                plt.close(fig2)
+                # 2. Vẽ đường Giới hạn Standard (Vạch Đỏ đứt nét)
+                ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"Std LSL={lo:.1f}")
+                ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"Std USL={hi:.1f}")
+                
+                # 3. Vẽ đường Dữ liệu thực tế
+                ax.plot(x, df_valid["Hardness_LAB"], marker="o", linewidth=2, color="#7fb3d5", markersize=6, label="LAB")
+                ax.plot(x, df_valid["Hardness_LINE"], marker="s", linewidth=2, color="#f5871f", markersize=6, label="LINE") 
+                
+                # Highlight các điểm NG (Out of Control) trên LINE
+                ng_line_mask = (df_valid["Hardness_LINE"] < lo) | (df_valid["Hardness_LINE"] > hi)
+                if ng_line_mask.any():
+                    ax.scatter(x[ng_line_mask], df_valid["Hardness_LINE"][ng_line_mask], color='red', s=100, zorder=5, label="Out of Control")
 
-                st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
-                if spc_line:
-                    mean_val, std_val, cp_val, ca_val, cpk_val = spc_line
-                    eval_msg = "Excellent" if cpk_val >= 1.33 else ("Good" if cpk_val >= 1.0 else "Poor")
-                    color_code = "green" if cpk_val >= 1.33 else ("orange" if cpk_val >= 1.0 else "red")
-                    df_spc = pd.DataFrame([{"N": len(line), "Mean": mean_val, "Std": std_val, "Cp": cp_val, "Ca (%)": ca_val, "Cpk": cpk_val, "Rating": eval_msg}])
+                # 4. Trang trí
+                ax.set_title(f"Hardness Trend by Coil Sequence - {g['Material']}", weight="bold", fontsize=14)
+                ax.grid(False) 
+                
+                ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=5, fontsize=10)
+                
+                plt.tight_layout()
+                st.pyplot(fig)
+                
+                st.download_button("📥 Download Trend Chart", data=fig_to_png(fig), file_name=f"trend_{g['Material']}.png", mime="image/png", key=f"dl_trend_{i}")
+                plt.close(fig) 
+
+            with tab_dist:
+                line = df_valid["Hardness_LINE"].dropna()
+                lab = df_valid["Hardness_LAB"].dropna()
+                
+                if len(line) < 5: 
+                    st.warning("⚠️ Not enough LINE data (N < 5) to plot distribution.")
+                else:
+                    def calc_spc_metrics(data, lsl, usl):
+                        if len(data) < 2: return None
+                        mean = data.mean()
+                        std = data.std(ddof=1)
+                        if std == 0: return None 
+                        cp = (usl - lsl) / (6 * std)
+                        mid = (usl + lsl) / 2
+                        tol = (usl - lsl)
+                        ca = ((mean - mid) / (tol / 2)) * 100 if tol > 0 else 0
+                        cpu = (usl - mean) / (3 * std)
+                        cpl = (mean - lsl) / (3 * std)
+                        return mean, std, cp, ca, min(cpu, cpl)
+
+                    spc_line = calc_spc_metrics(line, lo, hi)
+                    mean_line, std_line = line.mean(), line.std(ddof=1)
                     
-                    def style_rating(val):
-                        return f'color: {color_code}; font-weight: bold'
+                    vals = [line.min(), line.max(), lo, hi]
+                    if l_lo > 0: vals.extend([l_lo, l_hi])
+                    if not lab.empty: vals.extend([lab.min(), lab.max()])
+                    x_min = min(vals) - 2
+                    x_max = max(vals) + 2
+                    bins = np.linspace(x_min, x_max, 30)
                     
-                    styled_spc = df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"])
-                    if hasattr(styled_spc, "map"):
-                        styled_spc = styled_spc.map(style_rating, subset=['Rating'])
-                    else:
-                        styled_spc = styled_spc.applymap(style_rating, subset=['Rating'])
+                    range_curve = max(5 * std_line, (x_max - x_min)/2)
+                    xs = np.linspace(mean_line - range_curve, mean_line + range_curve, 400)
+                    
+                    fig2, ax2 = plt.subplots(figsize=(10, 5))
+                    ax2.hist(line, bins=bins, density=True, alpha=0.6, color="#ff7f0e", edgecolor="white", label="LINE Hist")
+                    if not lab.empty: ax2.hist(lab, bins=bins, density=True, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
+                    
+                    if std_line > 0:
+                        ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
+                        ax2.plot(xs, ys_line, linewidth=2.5, color="#b25e00", label="LINE Fit")
+                    
+                    ax2.axvline(lo, linestyle="--", linewidth=2, color="red", label="Control LSL")
+                    ax2.axvline(hi, linestyle="--", linewidth=2, color="red", label="Control USL")
+                    if l_lo > 0 and l_hi > 0:
+                        ax2.axvline(l_lo, linestyle="-.", linewidth=2, color="purple", label="Lab LSL")
+                        ax2.axvline(l_hi, linestyle="-.", linewidth=2, color="purple", label="Lab USL")
+                    
+                    ax2.set_xlim(x_min, x_max)
+                    ax2.set_title(f"Hardness Distribution (LINE vs LAB) - {g['Material']}", weight="bold")
+                    ax2.legend()
+                    ax2.grid(alpha=0.3)
+                    st.pyplot(fig2)
+                    plt.close(fig2)
+
+                    st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
+                    if spc_line:
+                        mean_val, std_val, cp_val, ca_val, cpk_val = spc_line
+                        eval_msg = "Excellent" if cpk_val >= 1.33 else ("Good" if cpk_val >= 1.0 else "Poor")
+                        color_code = "green" if cpk_val >= 1.33 else ("orange" if cpk_val >= 1.0 else "red")
+                        df_spc = pd.DataFrame([{"N": len(line), "Mean": mean_val, "Std": std_val, "Cp": cp_val, "Ca (%)": ca_val, "Cpk": cpk_val, "Rating": eval_msg}])
                         
-                    st.dataframe(styled_spc, hide_index=True)
-   # ================================
-   # ================================
-    # 3. CORRELATION
-    # ================================
-    elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
-        
-        # --- 1. KHỞI TẠO DANH SÁCH TỔNG HỢP Ở VÒNG LẶP ĐẦU TIÊN ---
-        if i == 0:
-            corr_bin_summary = []
-
-        st.markdown("### 🔗 Correlation: Hardness vs Mechanical Properties")
-        sub_corr = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"])
-        
-        bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
-        labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
-        sub_corr["HRB_bin"] = pd.cut(sub_corr["Hardness_LAB"], bins=bins, labels=labels, right=False)
-        
-        summary = (sub_corr.groupby("HRB_bin", observed=True).agg(
-            N_coils=("COIL_NO","count"),
-            TS_mean=("TS","mean"), TS_min=("TS","min"), TS_max=("TS","max"),
-            YS_mean=("YS","mean"), YS_min=("YS","min"), YS_max=("YS","max"),
-            EL_mean=("EL","mean"), EL_min=("EL","min"), EL_max=("EL","max"),
-            Std_TS_min=("Standard TS min", "max"), Std_TS_max=("Standard TS max", "max"),
-            Std_YS_min=("Standard YS min", "max"), Std_YS_max=("Standard YS max", "max"),
-            Std_EL_min=("Standard EL min", "max")
-        ).reset_index())
-        summary = summary[summary["N_coils"]>0]
-
-        if not summary.empty:
-            x = np.arange(len(summary))
-            fig, ax = plt.subplots(figsize=(15,6))
-            ax2 = ax.twinx() # Tách trục Y thứ 2 cho EL (đơn vị %)
-            
-            def plot_prop(ax_obj, x, y, ymin, ymax, c, lbl, m):
-                ax_obj.plot(x, y, marker=m, color=c, label=lbl, lw=2)
-                ax_obj.fill_between(x, ymin, ymax, color=c, alpha=0.1)
-            
-            plot_prop(ax, x, summary["TS_mean"], summary["TS_min"], summary["TS_max"], "#1f77b4", "TS Actual", "o")
-            plot_prop(ax, x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "#2ca02c", "YS Actual", "s")
-            plot_prop(ax2, x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL Actual", "^")
-
-            # --- VẼ ĐƯỜNG GIỚI HẠN SPEC ---
-            g_ts_min = summary["Std_TS_min"].max()
-            g_ts_max = summary["Std_TS_max"].min()
-            g_ys_min = summary["Std_YS_min"].max()
-            g_ys_max = summary["Std_YS_max"].min()
-            g_el_min = summary["Std_EL_min"].max()
-
-            if pd.notna(g_ts_min) and g_ts_min > 0: ax.axhline(g_ts_min, color="#1f77b4", linestyle="--", lw=1.5, alpha=0.5, label=f"TS LSL ({g_ts_min:.0f})")
-            if pd.notna(g_ts_max) and 0 < g_ts_max < 9000: ax.axhline(g_ts_max, color="#1f77b4", linestyle="--", lw=1.5, alpha=0.5, label=f"TS USL ({g_ts_max:.0f})")
-            if pd.notna(g_ys_min) and g_ys_min > 0: ax.axhline(g_ys_min, color="#2ca02c", linestyle="-.", lw=1.5, alpha=0.5, label=f"YS LSL ({g_ys_min:.0f})")
-            if pd.notna(g_ys_max) and 0 < g_ys_max < 9000: ax.axhline(g_ys_max, color="#2ca02c", linestyle="-.", lw=1.5, alpha=0.5, label=f"YS USL ({g_ys_max:.0f})")
-            if pd.notna(g_el_min) and g_el_min > 0: ax2.axhline(g_el_min, color="#ff7f0e", linestyle=":", lw=2, alpha=0.6, label=f"EL LSL ({g_el_min:.0f})")
-
-            for j, row in enumerate(summary.itertuples()):
-                ts_min, ts_max = row.Std_TS_min, row.Std_TS_max
-                ys_min, ys_max = row.Std_YS_min, row.Std_YS_max
-                el_spec = row.Std_EL_min if pd.notna(row.Std_EL_min) else 0
-                
-                # Đánh giá Đạt/Không Đạt
-                ts_fail = (pd.notna(ts_min) and ts_min > 0 and row.TS_mean < ts_min) or (pd.notna(ts_max) and 0 < ts_max < 9000 and row.TS_mean > ts_max)
-                ys_fail = (pd.notna(ys_min) and ys_min > 0 and row.YS_mean < ys_min) or (pd.notna(ys_max) and 0 < ys_max < 9000 and row.YS_mean > ys_max)
-                el_fail = (el_spec > 0) and (row.EL_mean < el_spec)
-                
-                ax.annotate(f"{row.TS_mean:.0f}" + (" ❌" if ts_fail else ""), (x[j], row.TS_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="red" if ts_fail else "#1f77b4")
-                ax.annotate(f"{row.YS_mean:.0f}" + (" ❌" if ys_fail else ""), (x[j], row.YS_mean), xytext=(0,-15), textcoords="offset points", ha="center", fontsize=9, fontweight='bold', color="red" if ys_fail else "#2ca02c")
-                ax2.annotate(f"{row.EL_mean:.1f}%" + (" ❌" if el_fail else ""), (x[j], row.EL_mean), xytext=(0,10), textcoords="offset points", ha="center", fontsize=9, color="red" if el_fail else "#ff7f0e", fontweight=("bold" if el_fail else "normal"))
-
-            ax.set_xticks(x); ax.set_xticklabels(summary["HRB_bin"])
-            ax.set_ylabel("Strength (MPa)", fontweight="bold")
-            ax2.set_ylabel("Elongation (%)", fontweight="bold", color="#ff7f0e")
-            
-            # Gộp Legend của 2 trục lại
-            lines_1, labels_1 = ax.get_legend_handles_labels()
-            lines_2, labels_2 = ax2.get_legend_handles_labels()
-            ax.legend(lines_1 + lines_2, labels_1 + labels_2, loc="center left", bbox_to_anchor=(1.05, 0.5))
-            
-            ax.grid(True, ls="--", alpha=0.5); fig.tight_layout(); st.pyplot(fig)
-
-            # --- 2. THU THẬP DỮ LIỆU TỔNG HỢP ---
-            col_spec = "Product_Spec"
-            specs_str = f"Specs: {', '.join(str(x) for x in sub[col_spec].dropna().unique())}" if col_spec in sub.columns else "Specs: N/A"
-
-            for row in summary.itertuples():
-                bin_data = sub_corr[sub_corr["HRB_bin"] == row.HRB_bin]
-                
-                corr_bin_summary.append({
-                    "Specification List": specs_str,
-                    "Material": g["Material"],
-                    "Gauge": g["Gauge_Range"],
-                    "Hardness Bin": row.HRB_bin,
-                    "N": row.N_coils,
-                    # TS Data
-                    "TS Spec": f"{row.Std_TS_min:.0f}~{row.Std_TS_max:.0f}" if row.Std_TS_max < 9000 else f"≥{row.Std_TS_min:.0f}",
-                    "TS Actual": f"{row.TS_min:.0f}~{row.TS_max:.0f}",
-                    "TS Mean": f"{row.TS_mean:.1f}",
-                    "TS Std": f"{bin_data['TS'].std():.1f}",
-                    # YS Data
-                    "YS Spec": f"{row.Std_YS_min:.0f}~{row.Std_YS_max:.0f}" if row.Std_YS_max < 9000 else f"≥{row.Std_YS_min:.0f}",
-                    "YS Actual": f"{row.YS_min:.0f}~{row.YS_max:.0f}",
-                    "YS Mean": f"{row.YS_mean:.1f}",
-                    "YS Std": f"{bin_data['YS'].std():.1f}",
-                    # EL Data
-                    "EL Spec": f"≥{row.Std_EL_min:.0f}",
-                    "EL Actual": f"{row.EL_min:.1f}~{row.EL_max:.1f}",
-                    "EL Mean": f"{row.EL_mean:.1f}",
-                    "EL Std": f"{bin_data['EL'].std():.1f}"
-                })
-
-        # --- 3. HIỂN THỊ CÁC BẢNG TỔNG HỢP VÀ XUẤT EXCEL Ở CUỐI TRANG ---
-        if i == len(valid) - 1 and 'corr_bin_summary' in locals() and len(corr_bin_summary) > 0:
-            st.markdown("---")
-            st.markdown(f"## 📊 Hardness Binning Comprehensive Report: {qgroup}")
-            
-            df_full = pd.DataFrame(corr_bin_summary)
-            
-            def display_bin_table(title, cols, color_code):
-                st.markdown(f"#### {title}")
-                base_cols = ["Specification List", "Material", "Gauge", "Hardness Bin", "N"]
-                target_df = df_full[base_cols + cols]
-                
-                std_col = [c for c in target_df.columns if "Std" in c]
-                styled = target_df.style.set_properties(**{'background-color': color_code, 'font-weight': 'bold'}, subset=std_col)
-                st.dataframe(styled, use_container_width=True, hide_index=True)
-
-            display_bin_table("📉 TS Analysis by Hardness Bin", ["TS Spec", "TS Actual", "TS Mean", "TS Std"], "#e6f2ff")
-            display_bin_table("📉 YS Analysis by Hardness Bin", ["YS Spec", "YS Actual", "YS Mean", "YS Std"], "#f2fff2")
-            display_bin_table("📉 EL Analysis by Hardness Bin", ["EL Spec", "EL Actual", "EL Mean", "EL Std"], "#fff5e6")
-            
-            # --- XUẤT FILE EXCEL ĐA SHEET TỐI ƯU ---
-            import datetime
-            from io import BytesIO
-            
-            excel_name = f"Hardness_Bin_Report_{str(qgroup).replace(' ','')}_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx"
-            
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_full.to_excel(writer, sheet_name='All_Data', index=False)
-                df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "TS Spec", "TS Actual", "TS Mean", "TS Std"]].to_excel(writer, sheet_name='TS_Only', index=False)
-                df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "YS Spec", "YS Actual", "YS Mean", "YS Std"]].to_excel(writer, sheet_name='YS_Only', index=False)
-                df_full[["Specification List", "Material", "Gauge", "Hardness Bin", "N", "EL Spec", "EL Actual", "EL Mean", "EL Std"]].to_excel(writer, sheet_name='EL_Only', index=False)
-
-                workbook = writer.book
-                for sheet_name in writer.sheets:
-                    worksheet = writer.sheets[sheet_name]
-                    worksheet.set_column('A:A', 25) 
-                    worksheet.set_column('B:C', 15) 
-                    worksheet.set_column('D:Z', 12) 
-            
-            processed_data = output.getvalue()
-            
-            st.download_button(
-                label="📥 Export Binning Report (Excel)",
-                data=processed_data,
-                file_name=excel_name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
+                        def style_rating(val):
+                            return f'color: {color_code}; font-weight: bold'
+                        
+                        styled_spc = df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"])
+                        if hasattr(styled_spc, "map"):
+                            styled_spc = styled_spc.map(style_rating, subset=['Rating'])
+                        else:
+                            styled_spc = styled_spc.applymap(style_rating, subset=['Rating'])
+                            
+                        st.dataframe(styled_spc, hide_index=True)
     # ================================
   # 4. MECH PROPS ANALYSIS
     # ================================
