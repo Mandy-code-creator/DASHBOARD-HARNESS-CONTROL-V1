@@ -1504,7 +1504,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.download_button("📥 Export Full Mech Report CSV", full_df.to_csv(index=True).encode('utf-8-sig'), f"Full_Mech_Report_{today_str}.csv")
    # ================================
    # ==============================================================================
-    # 5. LOOKUP (FIXED: STABLE INPUT KEYS)
+    # ==============================================================================
+    # 5. LOOKUP (FIXED: STABLE INPUT KEYS & CLEAN DATA)
     # ==============================================================================
     elif view_mode == "🔍 Lookup: Hardness Range → Actual Mech Props":
         
@@ -1512,28 +1513,31 @@ for i, (_, g) in enumerate(valid.iterrows()):
         
         c1, c2 = st.columns(2)
         
-        # Lấy min/max thực tế từ dữ liệu đang hiển thị để làm giá trị mặc định (tránh lỗi out of range)
+        # Nhờ làm sạch toàn App ở Bước 1, min/max ở đây chắc chắn là dữ liệu thực tế
         actual_min = float(sub["Hardness_LINE"].min()) if not sub["Hardness_LINE"].empty else 0.0
         actual_max = float(sub["Hardness_LINE"].max()) if not sub["Hardness_LINE"].empty else 100.0
         
-        # [QUAN TRỌNG] Dùng biến 'i' làm key thay vì uuid để tránh việc widget bị reset khi tương tác
-        mn = c1.number_input("Min HRB", value=actual_min, step=0.5, key=f"lk1_lookup_{i}")
-        mx = c2.number_input("Max HRB", value=actual_max, step=0.5, key=f"lk2_lookup_{i}")
-        
-        # Lọc dữ liệu theo dải độ cứng người dùng vừa nhập
-        filt = sub[(sub["Hardness_LINE"] >= mn) & (sub["Hardness_LINE"] <= mx)].dropna(subset=["TS", "YS", "EL"])
-        
-        # Hiển thị kết quả
-        if not filt.empty: 
-            st.success(f"✅ Found {len(filt)} coils matching HRB from {mn} to {mx}.")
-            
-            # Xuất bảng thống kê mô tả (count, mean, std, min, max...) và làm tròn 1 chữ số thập phân
-            st.dataframe(
-                filt[["TS", "YS", "EL"]].describe().T.style.format("{:.1f}"),
-                use_container_width=True
-            )
+        if actual_min == 0.0 and actual_max == 0.0:
+            st.warning("⚠️ Không có dữ liệu hợp lệ để tra cứu.")
         else:
-            st.error(f"❌ No coils found in the range {mn} ~ {mx} HRB.")
+            # [QUAN TRỌNG] Dùng biến 'i' làm key thay vì uuid để widget không bị reset giật lag
+            mn = c1.number_input("Min HRB", value=actual_min, step=0.5, key=f"lk1_lookup_{i}")
+            mx = c2.number_input("Max HRB", value=actual_max, step=0.5, key=f"lk2_lookup_{i}")
+            
+            # Lọc dữ liệu theo dải độ cứng người dùng vừa nhập
+            filt = sub[(sub["Hardness_LINE"] >= mn) & (sub["Hardness_LINE"] <= mx)].dropna(subset=["TS", "YS", "EL"])
+            
+            # Hiển thị kết quả
+            if not filt.empty: 
+                st.success(f"✅ Found {len(filt)} coils matching HRB from {mn} to {mx}.")
+                
+                # Bảng thống kê mô tả (In đậm các cột quan trọng Mean, Min, Max)
+                styled_describe = filt[["TS", "YS", "EL"]].describe().T.style.format("{:.1f}")\
+                                    .set_properties(**{'background-color': '#f0f8ff', 'font-weight': 'bold', 'color': '#0056b3'}, subset=['mean', 'min', 'max'])
+                
+                st.dataframe(styled_describe, use_container_width=True)
+            else:
+                st.error(f"❌ No coils found in the range {mn} ~ {mx} HRB."))
 
     # ================================
  # ================================
