@@ -1504,7 +1504,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.download_button("📥 Export Full Mech Report CSV", full_df.to_csv(index=True).encode('utf-8-sig'), f"Full_Mech_Report_{today_str}.csv")
    # ================================
    # ==============================================================================
-    # ==============================================================================
+   # ==============================================================================
     # 5. LOOKUP (FIXED: STABLE INPUT KEYS & CLEAN DATA)
     # ==============================================================================
     elif view_mode == "🔍 Lookup: Hardness Range → Actual Mech Props":
@@ -1537,8 +1537,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 
                 st.dataframe(styled_describe, use_container_width=True)
             else:
-                st.error(f"❌ No coils found in the range {mn} ~ {mx} HRB."))
-
+                st.error(f"❌ No coils found in the range {mn} ~ {mx} HRB.")
     # ================================
  # ================================
     # 6. REVERSE LOOKUP
