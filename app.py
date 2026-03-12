@@ -633,49 +633,66 @@ if view_mode == "📊 Executive KPI Dashboard":
             st.dataframe(styled_risk, use_container_width=True, hide_index=True)
             
             # ==========================================
-            # 4. VISUAL DEEP DIVE (HISTOGRAMS) - TOP 3
             # ==========================================
-            st.markdown("#### 🔔 Visual Deep Dive: Top 3 Risk Distributions")
-            st.caption("Visualizing the 'bell curve' of the top 3 most critical specifications.")
-            
-            top_risks = risk_top.head(3).to_dict('records')
-            chart_cols = st.columns(3) 
-            
-            for idx, risk_item in enumerate(top_risks):
-                spec_name = risk_item["Specification"]
-                mat_name = risk_item["Material"]
-                gauge_val = risk_item["Gauge"]
+                # 4. VISUAL DEEP DIVE (HISTOGRAMS) - TOP 5 (ALL PROPS)
+                # ==========================================
+                st.markdown("#### 🔔 Visual Deep Dive: Top 5 Risk Distributions (HRB & Mech Props)")
+                st.caption("Visualizing the 'bell curve' of the top 5 most critical specifications across all properties.")
                 
-                target_data = df_kpi[
-                    (df_kpi[col_spec] == spec_name) & 
-                    (df_kpi["Material"] == mat_name) & 
-                    (df_kpi["Gauge_Range"] == gauge_val)
-                ]
+                top_risks = risk_top.head(5).to_dict('records')
                 
-                if not target_data.empty:
-                    fig, ax = plt.subplots(figsize=(6, 4))
-                    hard_data = target_data["Hardness_LINE"].dropna()
-                    ax.hist(hard_data, bins=15, color="#ff9999", edgecolor="white", density=True, alpha=0.8)
+                for idx, risk_item in enumerate(top_risks):
+                    spec_name = risk_item["Specification"]
+                    mat_name = risk_item["Material"]
+                    gauge_val = risk_item["Gauge"]
                     
-                    mean_val = hard_data.mean()
-                    std_val = hard_data.std()
-                    if std_val > 0:
-                        x_axis = np.linspace(hard_data.min() - 2, hard_data.max() + 2, 100)
-                        y_axis = (1/(std_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_axis - mean_val) / std_val)**2)
-                        ax.plot(x_axis, y_axis, color="#cc0000", lw=2, label="Distribution Fit")
+                    target_data = df_kpi[
+                        (df_kpi[col_spec] == spec_name) & 
+                        (df_kpi["Material"] == mat_name) & 
+                        (df_kpi["Gauge_Range"] == gauge_val)
+                    ]
                     
-                    l_min = target_data["Limit_Min"].iloc[0]
-                    l_max = target_data["Limit_Max"].iloc[0]
-                    
-                    ax.axvline(l_min, color="black", linestyle="--", lw=1.5, label=f"Ctrl LSL ({l_min:.0f})")
-                    if l_max > 0 and l_max < 9000:
-                        ax.axvline(l_max, color="black", linestyle="--", lw=1.5, label=f"Ctrl USL ({l_max:.0f})")
-                    
-                    ax.set_title(f"TOP {idx+1}: {spec_name}\nMaterial: {mat_name} | N={len(hard_data)}", fontsize=10, fontweight="bold")
-                    ax.set_xlabel("Hardness (HRB)", fontsize=9)
-                    ax.legend(fontsize=8, loc="upper right")
-                    ax.grid(alpha=0.3, linestyle=":")
-                    chart_cols[idx % 3].pyplot(fig)
+                    if not target_data.empty:
+                        st.markdown(f"**🚨 Top {idx+1}: {spec_name} | Material: {mat_name} | Gauge: {gauge_val} (N={len(target_data)})**")
+                        chart_cols = st.columns(4)
+                        
+                        def plot_mini(ax_data, col_name, title, color, l_min, l_max):
+                            fig, ax = plt.subplots(figsize=(4, 3))
+                            data = ax_data[col_name].dropna()
+                            if data.empty:
+                                ax.text(0.5, 0.5, "No Data", ha='center', va='center')
+                            else:
+                                ax.hist(data, bins=15, color=color, edgecolor="white", density=True, alpha=0.8)
+                                mean_val, std_val = data.mean(), data.std()
+                                if std_val > 0:
+                                    x_axis = np.linspace(data.min() - 2, data.max() + 2, 100)
+                                    y_axis = (1/(std_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_axis - mean_val) / std_val)**2)
+                                    ax.plot(x_axis, y_axis, color="black", lw=1.5, alpha=0.5)
+                                
+                                if pd.notna(l_min) and l_min > 0:
+                                    ax.axvline(l_min, color="red", linestyle="--", lw=1.5)
+                                if pd.notna(l_max) and 0 < l_max < 9000:
+                                    ax.axvline(l_max, color="red", linestyle="--", lw=1.5)
+                            
+                            ax.set_title(title, fontsize=11, fontweight="bold")
+                            ax.tick_params(axis='both', which='major', labelsize=8)
+                            ax.grid(alpha=0.3, linestyle=":")
+                            return fig
+                        
+                        # Extract Specs for 4 parameters
+                        l_hrb_min = target_data["Limit_Min"].iloc[0] if "Limit_Min" in target_data.columns else 0
+                        l_hrb_max = target_data["Limit_Max"].iloc[0] if "Limit_Max" in target_data.columns else 0
+                        l_ts_min = target_data["Standard TS min"].max() if "Standard TS min" in target_data.columns else 0
+                        l_ts_max = target_data["Standard TS max"].min() if "Standard TS max" in target_data.columns else 0
+                        l_ys_min = target_data["Standard YS min"].max() if "Standard YS min" in target_data.columns else 0
+                        l_ys_max = target_data["Standard YS max"].min() if "Standard YS max" in target_data.columns else 0
+                        l_el_min = target_data["Standard EL min"].max() if "Standard EL min" in target_data.columns else 0
+                        
+                        with chart_cols[0]: st.pyplot(plot_mini(target_data, "Hardness_LINE", "Hardness (HRB)", "#ff9999", l_hrb_min, l_hrb_max))
+                        with chart_cols[1]: st.pyplot(plot_mini(target_data, "TS", "Tensile (TS)", "#6baed6", l_ts_min, l_ts_max))
+                        with chart_cols[2]: st.pyplot(plot_mini(target_data, "YS", "Yield (YS)", "#74c476", l_ys_min, l_ys_max))
+                        with chart_cols[3]: st.pyplot(plot_mini(target_data, "EL", "Elongation (EL)", "#fd8d3c", l_el_min, 0))
+                        st.write("") # Thêm khoảng trắng nhỏ giữa các nhóm rủi ro
             
             # --- 5. REPORT EXPORT ---
             st.markdown("---")
