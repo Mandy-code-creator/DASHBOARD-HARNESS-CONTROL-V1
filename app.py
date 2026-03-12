@@ -1099,6 +1099,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             use_container_width=True
         )
         # ================================
+    # ================================
     # 2. HARDNESS ANALYSIS
     # ================================
     elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
@@ -1108,32 +1109,54 @@ for i, (_, g) in enumerate(valid.iterrows()):
         with tab_trend:
             x = np.arange(1, len(sub)+1)
             fig, ax = plt.subplots(figsize=(10, 4.5))
+            
+            # Vẽ đường Line và Lab
             ax.plot(x, sub["Hardness_LAB"], marker="o", linewidth=2, label="LAB", alpha=0.5)
             ax.plot(x, sub["Hardness_LINE"], marker="s", linewidth=2, label="LINE", alpha=0.9) 
-            ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"Control LSL={lo}")
-            ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"Control USL={hi}")
-            if l_lo > 0 and l_hi > 0:
-                ax.axhline(l_lo, linestyle="-.", linewidth=1.5, color="purple", label=f"Lab LSL={l_lo}", alpha=0.7)
-                ax.axhline(l_hi, linestyle="-.", linewidth=1.5, color="purple", label=f"Lab USL={l_hi}", alpha=0.7)
-            ax.set_title("Hardness Trend by Coil Sequence", weight="bold")
-            ax.set_xlabel("Coil Sequence"); ax.set_ylabel("Hardness (HRB)")
-            ax.grid(alpha=0.25, linestyle="--"); ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=4)
-            plt.tight_layout(); st.pyplot(fig)
             
-            # --- [FIX] GỌI HÀM fig_to_png ĐÃ KHAI BÁO ---
-            st.download_button("📥 Download Trend Chart", data=fig_to_png(fig), file_name=f"trend_{g['Material']}.png", mime="image/png", key=f"dl_tr_{uuid.uuid4()}")
+            # Highlight các điểm NG (Out of Control) trên LINE
+            ng_line_mask = (sub["Hardness_LINE"] < lo) | (sub["Hardness_LINE"] > hi)
+            if ng_line_mask.any():
+                ax.scatter(x[ng_line_mask], sub["Hardness_LINE"][ng_line_mask], color='red', s=100, zorder=5, label="Out of Control")
+
+            # Vẽ vạch giới hạn
+            ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"Control LSL={lo:.1f}")
+            ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"Control USL={hi:.1f}")
+            if l_lo > 0 and l_hi > 0:
+                ax.axhline(l_lo, linestyle="-.", linewidth=1.5, color="purple", label=f"Lab LSL={l_lo:.1f}", alpha=0.7)
+                ax.axhline(l_hi, linestyle="-.", linewidth=1.5, color="purple", label=f"Lab USL={l_hi:.1f}", alpha=0.7)
+            
+            ax.set_title(f"Hardness Trend by Coil Sequence - {g['Material']}", weight="bold")
+            ax.set_xlabel("Coil Sequence")
+            ax.set_ylabel("Hardness (HRB)")
+            ax.grid(alpha=0.25, linestyle="--")
+            ax.legend(loc="upper center", bbox_to_anchor=(0.5, -0.15), frameon=False, ncol=5)
+            plt.tight_layout()
+            
+            st.pyplot(fig)
+            
+            # [FIX] Dùng biến i làm key thay vì uuid để nút bấm không bị giật/reset UI
+            st.download_button("📥 Download Trend Chart", data=fig_to_png(fig), file_name=f"trend_{g['Material']}.png", mime="image/png", key=f"dl_trend_{i}")
+            plt.close(fig) # Chống tràn bộ nhớ
 
         with tab_dist:
-            line = sub["Hardness_LINE"].dropna(); lab = sub["Hardness_LAB"].dropna()
-            if len(line) < 5: st.warning("⚠️ Not enough LINE data (N < 5).")
+            line = sub["Hardness_LINE"].dropna()
+            lab = sub["Hardness_LAB"].dropna()
+            
+            if len(line) < 5: 
+                st.warning("⚠️ Not enough LINE data (N < 5) to plot distribution.")
             else:
                 def calc_spc_metrics(data, lsl, usl):
                     if len(data) < 2: return None
-                    mean = data.mean(); std = data.std(ddof=1)
+                    mean = data.mean()
+                    std = data.std(ddof=1)
                     if std == 0: return None 
                     cp = (usl - lsl) / (6 * std)
-                    mid = (usl + lsl) / 2; tol = (usl - lsl); ca = ((mean - mid) / (tol / 2)) * 100
-                    cpu = (usl - mean) / (3 * std); cpl = (mean - lsl) / (3 * std)
+                    mid = (usl + lsl) / 2
+                    tol = (usl - lsl)
+                    ca = ((mean - mid) / (tol / 2)) * 100 if tol > 0 else 0
+                    cpu = (usl - mean) / (3 * std)
+                    cpl = (mean - lsl) / (3 * std)
                     return mean, std, cp, ca, min(cpu, cpl)
 
                 spc_line = calc_spc_metrics(line, lo, hi)
@@ -1142,28 +1165,33 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 vals = [line.min(), line.max(), lo, hi]
                 if l_lo > 0: vals.extend([l_lo, l_hi])
                 if not lab.empty: vals.extend([lab.min(), lab.max()])
-                x_min = min(vals) - 2; x_max = max(vals) + 2
+                x_min = min(vals) - 2
+                x_max = max(vals) + 2
                 bins = np.linspace(x_min, x_max, 30)
                 
                 range_curve = max(5 * std_line, (x_max - x_min)/2)
                 xs = np.linspace(mean_line - range_curve, mean_line + range_curve, 400)
                 
-                fig, ax = plt.subplots(figsize=(10, 5))
-                ax.hist(line, bins=bins, density=True, alpha=0.6, color="#ff7f0e", edgecolor="white", label="LINE Hist")
-                if not lab.empty: ax.hist(lab, bins=bins, density=True, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
+                fig2, ax2 = plt.subplots(figsize=(10, 5))
+                ax2.hist(line, bins=bins, density=True, alpha=0.6, color="#ff7f0e", edgecolor="white", label="LINE Hist")
+                if not lab.empty: ax2.hist(lab, bins=bins, density=True, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
                 
                 if std_line > 0:
                     ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
-                    ax.plot(xs, ys_line, linewidth=2.5, color="#b25e00", label="LINE Fit")
+                    ax2.plot(xs, ys_line, linewidth=2.5, color="#b25e00", label="LINE Fit")
                 
-                ax.axvline(lo, linestyle="--", linewidth=2, color="red", label="Control LSL")
-                ax.axvline(hi, linestyle="--", linewidth=2, color="red", label="Control USL")
+                ax2.axvline(lo, linestyle="--", linewidth=2, color="red", label="Control LSL")
+                ax2.axvline(hi, linestyle="--", linewidth=2, color="red", label="Control USL")
                 if l_lo > 0 and l_hi > 0:
-                    ax.axvline(l_lo, linestyle="-.", linewidth=2, color="purple", label="Lab LSL")
-                    ax.axvline(l_hi, linestyle="-.", linewidth=2, color="purple", label="Lab USL")
+                    ax2.axvline(l_lo, linestyle="-.", linewidth=2, color="purple", label="Lab LSL")
+                    ax2.axvline(l_hi, linestyle="-.", linewidth=2, color="purple", label="Lab USL")
                 
-                ax.set_xlim(x_min, x_max); ax.set_title(f"Hardness Distribution (LINE vs LAB)", weight="bold")
-                ax.legend(); ax.grid(alpha=0.3); st.pyplot(fig)
+                ax2.set_xlim(x_min, x_max)
+                ax2.set_title(f"Hardness Distribution (LINE vs LAB) - {g['Material']}", weight="bold")
+                ax2.legend()
+                ax2.grid(alpha=0.3)
+                st.pyplot(fig2)
+                plt.close(fig2) # Chống tràn bộ nhớ
 
                 st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
                 if spc_line:
@@ -1171,8 +1199,17 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     eval_msg = "Excellent" if cpk_val >= 1.33 else ("Good" if cpk_val >= 1.0 else "Poor")
                     color_code = "green" if cpk_val >= 1.33 else ("orange" if cpk_val >= 1.0 else "red")
                     df_spc = pd.DataFrame([{"N": len(line), "Mean": mean_val, "Std": std_val, "Cp": cp_val, "Ca (%)": ca_val, "Cpk": cpk_val, "Rating": eval_msg}])
-                    st.dataframe(df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"]).applymap(lambda v: f'color: {color_code}; font-weight: bold', subset=['Rating']), hide_index=True)
-
+                    
+                    def style_rating(val):
+                        return f'color: {color_code}; font-weight: bold'
+                    
+                    styled_spc = df_spc.style.format("{:.2f}", subset=["Mean", "Std", "Cp", "Ca (%)", "Cpk"])
+                    if hasattr(styled_spc, "map"):
+                        styled_spc = styled_spc.map(style_rating, subset=['Rating'])
+                    else:
+                        styled_spc = styled_spc.applymap(style_rating, subset=['Rating'])
+                        
+                    st.dataframe(styled_spc, hide_index=True)
     # ================================
    # ================================
    # ================================
