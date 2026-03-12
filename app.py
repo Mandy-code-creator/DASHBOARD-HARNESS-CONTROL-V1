@@ -633,66 +633,94 @@ if view_mode == "📊 Executive KPI Dashboard":
             st.dataframe(styled_risk, use_container_width=True, hide_index=True)
             
             # ==========================================
+            # 4. VISUAL DEEP DIVE (HISTOGRAMS) - TOP 5 (ALL PROPS)
             # ==========================================
-                # 4. VISUAL DEEP DIVE (HISTOGRAMS) - TOP 5 (ALL PROPS)
-                # ==========================================
-                st.markdown("#### 🔔 Visual Deep Dive: Top 5 Risk Distributions (HRB & Mech Props)")
-                st.caption("Visualizing the 'bell curve' of the top 5 most critical specifications across all properties.")
+            st.markdown("#### 🔔 Visual Deep Dive: Top 5 Risk Distributions (HRB & Mech Props)")
+            st.caption("Visualizing the 'bell curve' of the top 5 most critical specifications across all properties.")
+            
+            # ĐÃ ĐỔI THÀNH TOP 5 NHƯ BẠN YÊU CẦU
+            top_risks = risk_top.head(5).to_dict('records')
+            
+            for idx, risk_item in enumerate(top_risks):
+                spec_name = risk_item["Specification"]
+                mat_name = risk_item["Material"]
+                gauge_val = risk_item["Gauge"]
                 
-                top_risks = risk_top.head(5).to_dict('records')
+                target_data = df_kpi[
+                    (df_kpi[col_spec] == spec_name) & 
+                    (df_kpi["Material"] == mat_name) & 
+                    (df_kpi["Gauge_Range"] == gauge_val)
+                ]
                 
-                for idx, risk_item in enumerate(top_risks):
-                    spec_name = risk_item["Specification"]
-                    mat_name = risk_item["Material"]
-                    gauge_val = risk_item["Gauge"]
+                if not target_data.empty:
+                    st.markdown(f"**🚨 Top {idx+1}: {spec_name} | Material: {mat_name} | Gauge: {gauge_val} (N={len(target_data)})**")
+                    chart_cols = st.columns(4)
                     
-                    target_data = df_kpi[
-                        (df_kpi[col_spec] == spec_name) & 
-                        (df_kpi["Material"] == mat_name) & 
-                        (df_kpi["Gauge_Range"] == gauge_val)
-                    ]
-                    
-                    if not target_data.empty:
-                        st.markdown(f"**🚨 Top {idx+1}: {spec_name} | Material: {mat_name} | Gauge: {gauge_val} (N={len(target_data)})**")
-                        chart_cols = st.columns(4)
+                    def plot_mini(ax_data, col_name, title, color, l_min, l_max):
+                        # Tối ưu kích thước nhỏ gọn hơn (4, 2.5) để vừa màn hình
+                        fig, ax = plt.subplots(figsize=(4, 2.5))
                         
-                        def plot_mini(ax_data, col_name, title, color, l_min, l_max):
-                            fig, ax = plt.subplots(figsize=(4, 3))
-                            data = ax_data[col_name].dropna()
-                            if data.empty:
-                                ax.text(0.5, 0.5, "No Data", ha='center', va='center')
-                            else:
-                                ax.hist(data, bins=15, color=color, edgecolor="white", density=True, alpha=0.8)
-                                mean_val, std_val = data.mean(), data.std()
-                                if std_val > 0:
-                                    x_axis = np.linspace(data.min() - 2, data.max() + 2, 100)
-                                    y_axis = (1/(std_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_axis - mean_val) / std_val)**2)
-                                    ax.plot(x_axis, y_axis, color="black", lw=1.5, alpha=0.5)
-                                
-                                if pd.notna(l_min) and l_min > 0:
-                                    ax.axvline(l_min, color="red", linestyle="--", lw=1.5)
-                                if pd.notna(l_max) and 0 < l_max < 9000:
-                                    ax.axvline(l_max, color="red", linestyle="--", lw=1.5)
+                        # Đảm bảo cột tồn tại và lấy dữ liệu hợp lệ
+                        if col_name not in ax_data.columns:
+                            data = pd.Series(dtype=float)
+                        else:
+                            data = pd.to_numeric(ax_data[col_name], errors='coerce').dropna()
                             
-                            ax.set_title(title, fontsize=11, fontweight="bold")
-                            ax.tick_params(axis='both', which='major', labelsize=8)
-                            ax.grid(alpha=0.3, linestyle=":")
-                            return fig
+                        if data.empty or len(data) < 2:
+                            ax.text(0.5, 0.5, "No Data / Insufficient", ha='center', va='center', color='gray')
+                            ax.axis('off') # Tắt trục tọa độ nếu không có dữ liệu
+                        else:
+                            ax.hist(data, bins=15, color=color, edgecolor="white", density=True, alpha=0.8)
+                            mean_val, std_val = data.mean(), data.std()
+                            if std_val > 0:
+                                x_axis = np.linspace(data.min() - 2*std_val, data.max() + 2*std_val, 100)
+                                y_axis = (1/(std_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_axis - mean_val) / std_val)**2)
+                                ax.plot(x_axis, y_axis, color="black", lw=1.5, alpha=0.5)
+                            
+                            # Xử lý an toàn cho l_min, l_max
+                            safe_l_min = float(l_min) if pd.notna(l_min) else 0.0
+                            safe_l_max = float(l_max) if pd.notna(l_max) else 0.0
+                            
+                            if safe_l_min > 0:
+                                ax.axvline(safe_l_min, color="red", linestyle="--", lw=1.5)
+                            if 0 < safe_l_max < 9000:
+                                ax.axvline(safe_l_max, color="red", linestyle="--", lw=1.5)
                         
-                        # Extract Specs for 4 parameters
-                        l_hrb_min = target_data["Limit_Min"].iloc[0] if "Limit_Min" in target_data.columns else 0
-                        l_hrb_max = target_data["Limit_Max"].iloc[0] if "Limit_Max" in target_data.columns else 0
-                        l_ts_min = target_data["Standard TS min"].max() if "Standard TS min" in target_data.columns else 0
-                        l_ts_max = target_data["Standard TS max"].min() if "Standard TS max" in target_data.columns else 0
-                        l_ys_min = target_data["Standard YS min"].max() if "Standard YS min" in target_data.columns else 0
-                        l_ys_max = target_data["Standard YS max"].min() if "Standard YS max" in target_data.columns else 0
-                        l_el_min = target_data["Standard EL min"].max() if "Standard EL min" in target_data.columns else 0
-                        
-                        with chart_cols[0]: st.pyplot(plot_mini(target_data, "Hardness_LINE", "Hardness (HRB)", "#ff9999", l_hrb_min, l_hrb_max))
-                        with chart_cols[1]: st.pyplot(plot_mini(target_data, "TS", "Tensile (TS)", "#6baed6", l_ts_min, l_ts_max))
-                        with chart_cols[2]: st.pyplot(plot_mini(target_data, "YS", "Yield (YS)", "#74c476", l_ys_min, l_ys_max))
-                        with chart_cols[3]: st.pyplot(plot_mini(target_data, "EL", "Elongation (EL)", "#fd8d3c", l_el_min, 0))
-                        st.write("") # Thêm khoảng trắng nhỏ giữa các nhóm rủi ro
+                        ax.set_title(title, fontsize=11, fontweight="bold")
+                        ax.tick_params(axis='both', which='major', labelsize=8)
+                        ax.grid(alpha=0.3, linestyle=":")
+                        return fig
+                    
+                    # Xử lý lấy Spec an toàn hơn, tránh lỗi max() của cột rỗng
+                    def safe_max(series): return series.max() if not series.empty and not pd.isna(series.max()) else 0
+                    def safe_min(series): return series.min() if not series.empty and not pd.isna(series.min()) else 0
+
+                    l_hrb_min = target_data["Limit_Min"].iloc[0] if "Limit_Min" in target_data.columns and not target_data.empty else 0
+                    l_hrb_max = target_data["Limit_Max"].iloc[0] if "Limit_Max" in target_data.columns and not target_data.empty else 0
+                    l_ts_min = safe_max(target_data["Standard TS min"]) if "Standard TS min" in target_data.columns else 0
+                    l_ts_max = safe_min(target_data["Standard TS max"]) if "Standard TS max" in target_data.columns else 0
+                    l_ys_min = safe_max(target_data["Standard YS min"]) if "Standard YS min" in target_data.columns else 0
+                    l_ys_max = safe_min(target_data["Standard YS max"]) if "Standard YS max" in target_data.columns else 0
+                    l_el_min = safe_max(target_data["Standard EL min"]) if "Standard EL min" in target_data.columns else 0
+                    
+                    with chart_cols[0]: 
+                        fig1 = plot_mini(target_data, "Hardness_LINE", "Hardness (HRB)", "#ff9999", l_hrb_min, l_hrb_max)
+                        st.pyplot(fig1)
+                        plt.close(fig1) # Chống tràn bộ nhớ Matplotlib
+                    with chart_cols[1]: 
+                        fig2 = plot_mini(target_data, "TS", "Tensile (TS)", "#6baed6", l_ts_min, l_ts_max)
+                        st.pyplot(fig2)
+                        plt.close(fig2)
+                    with chart_cols[2]: 
+                        fig3 = plot_mini(target_data, "YS", "Yield (YS)", "#74c476", l_ys_min, l_ys_max)
+                        st.pyplot(fig3)
+                        plt.close(fig3)
+                    with chart_cols[3]: 
+                        fig4 = plot_mini(target_data, "EL", "Elongation (EL)", "#fd8d3c", l_el_min, 0)
+                        st.pyplot(fig4)
+                        plt.close(fig4)
+                    
+                    st.write("") # Thêm khoảng trắng nhỏ giữa các nhóm rủi ro
             
             # --- 5. REPORT EXPORT ---
             st.markdown("---")
