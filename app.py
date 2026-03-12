@@ -1384,7 +1384,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             )                   
     # ================================
  # ================================
-  # ================================
     # 4. MECH PROPS ANALYSIS
     # ================================
     elif view_mode == "⚙️ Mech Props Analysis":
@@ -1397,11 +1396,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
         lab_str = f" | Target Zone: {l_lo:.1f} ~ {l_hi:.1f}" if l_lo > 0 else ""
         st.markdown(f"### ⚙️ Mechanical Properties Analysis: {g['Material']} | {g['Gauge_Range']} 🎯 (Control: {lo:.1f} ~ {hi:.1f}{lab_str})")
         
-        # Lấy dữ liệu cơ tính và giữ lại Hardness_LINE để tính dải độ cứng
-        sub_mech = sub.dropna(subset=["TS","YS","EL"])
+        # [CẬP NHẬT QUAN TRỌNG]: LỌC BỎ NGAY LẬP TỨC CÁC CUỘN CÓ ĐỘ CỨNG = 0 VÀ NaN
+        sub_mech = sub.dropna(subset=["TS", "YS", "EL", "Hardness_LINE"]).copy()
+        sub_mech = sub_mech[sub_mech["Hardness_LINE"] > 0]
         
         if sub_mech.empty: 
-            st.warning("⚠️ No Mech Data.")
+            st.warning("⚠️ No valid Mech Data (hoặc các cuộn đều bị rỗng / bằng 0 độ cứng).")
         else:
             props_config = [
                 {"col": "TS", "name": "Tensile Strength (TS)", "color": "#1f77b4", "min_c": "Standard TS min", "max_c": "Standard TS max"},
@@ -1412,14 +1412,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             # Xử lý trích xuất Specs từ cột Product_Spec
             col_spec = "Product_Spec"
-            specs_str = f"Specs: {', '.join(str(x) for x in sub[col_spec].dropna().unique())}" if col_spec in sub.columns else "Specs: N/A"
+            specs_str = f"Specs: {', '.join(str(x) for x in sub_mech[col_spec].dropna().unique())}" if col_spec in sub_mech.columns else "Specs: N/A"
 
-            # --- TÍNH TOÁN DẢI ĐỘ CỨNG THỰC TẾ ---
-            if "Hardness_LINE" in sub_mech.columns:
-                h_data = sub_mech["Hardness_LINE"].dropna()
-                hardness_range_str = f"{h_data.min():.1f} ~ {h_data.max():.1f}" if not h_data.empty else "N/A"
-            else:
-                hardness_range_str = "N/A"
+            # --- TÍNH TOÁN DẢI ĐỘ CỨNG THỰC TẾ (ĐÃ SẠCH BÓNG SỐ 0) ---
+            h_data = sub_mech["Hardness_LINE"]
+            hardness_range_str = f"{h_data.min():.1f} ~ {h_data.max():.1f}"
 
             for j, cfg in enumerate(props_config):
                 col = cfg["col"]; data = sub_mech[col]; mean, std = data.mean(), data.std()
@@ -1456,7 +1453,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     "Gauge": g["Gauge_Range"],
                     "N": len(sub_mech),
                     "Control Limit (HRB)": f"{lo:.1f} ~ {hi:.1f}",
-                    "Target Zone (HRB)": f"{l_lo:.1f} ~ {l_hi:.1f}" if (l_lo > 0 and l_hi > 0) else "N/A", # Bổ sung Lab Limit
+                    "Target Zone (HRB)": f"{l_lo:.1f} ~ {l_hi:.1f}" if (l_lo > 0 and l_hi > 0) else "N/A", 
                     "Actual Range (HRB)": hardness_range_str,
                     "Limit (Spec)": f"{spec_min:.0f}~{spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else (f"≥ {spec_min:.0f}" if spec_min > 0 else "-"),
                     "Actual Range": f"{data.min():.1f}~{data.max():.1f}",
@@ -1483,7 +1480,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     st.markdown(f"#### {title}")
                     df = pd.DataFrame(data_list)
                     
-                    # Bôi vàng cho CẢ 2 cột Giới hạn (Control và Target)
                     styled_df = df.style.set_properties(**{'font-weight': 'bold'}, subset=['Mean']) \
                                         .set_properties(**{'background-color': '#FFF2CC', 'font-weight': 'bold', 'color': '#856404'}, subset=['Control Limit (HRB)', 'Target Zone (HRB)']) \
                                         .set_properties(**{'background-color': '#f0f8ff', 'font-weight': 'bold', 'color': '#0056b3'}, subset=['Actual Range (HRB)']) \
