@@ -541,10 +541,20 @@ if view_mode == "📊 Executive KPI Dashboard":
             ys_yield = df_kpi['YS_Pass'].mean() * 100
             el_yield = df_kpi['EL_Pass'].mean() * 100
             
+            # Đánh giá khối lượng Scrap/NG
+            scrap_col = next((c for c in df_kpi.columns if 'SCRAP' in str(c).upper() or 'CUT' in str(c).upper()), None)
+            if scrap_col:
+                total_scrap = df_kpi[scrap_col].sum()
+                scrap_label = "Total Cut Scrap"
+            else:
+                total_scrap = total_coils - df_kpi['All_Pass'].sum()
+                scrap_label = "Total Scrap / NG Coils"
+
             # --- BIG METRICS DISPLAY ---
             st.markdown("### 🏆 Overall Quality Metrics")
-            col1, col2, col3, col4, col5, col6 = st.columns(6)
             
+            # Tầng 1: Chỉ số cốt lõi
+            col1, col2, col3, col4 = st.columns(4)
             col1.metric("📦 Total Coils Tested", f"{total_coils:,}")
             
             delta_mech = clean_num(yield_rate - 100, True) if yield_rate < 100 else "Perfect"
@@ -553,9 +563,15 @@ if view_mode == "📊 Executive KPI Dashboard":
             delta_hrb = clean_num(hrb_yield - 100, True) if hrb_yield < 100 else "In Control"
             col3.metric("🎯 HRB Yield Rate", clean_num(hrb_yield, True), delta_hrb, delta_color="normal" if hrb_yield == 100 else "inverse")
             
-            col4.metric("TS Pass", clean_num(ts_yield, True))
-            col5.metric("YS Pass", clean_num(ys_yield, True))
-            col6.metric("EL Pass", clean_num(el_yield, True))
+            col4.metric(f"✂️ {scrap_label}", f"{total_scrap:,.0f}")
+            
+            st.markdown("<br>", unsafe_allow_html=True)
+            
+            # Tầng 2: Chi tiết cơ tính
+            col5, col6, col7 = st.columns(3)
+            col5.metric("🔹 TS Pass Rate", clean_num(ts_yield, True))
+            col6.metric("🔸 YS Pass Rate", clean_num(ys_yield, True))
+            col7.metric("🔻 EL Pass Rate", clean_num(el_yield, True))
             
             st.markdown("---")
             
@@ -581,30 +597,6 @@ if view_mode == "📊 Executive KPI Dashboard":
             risk_summary['Mech Yield (%)'] = (risk_summary['Mech_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
             risk_summary['HRB Yield (%)'] = (risk_summary['HRB_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
             
-            # (Logic tính toán Root Cause & Action Plan vẫn được giữ nguyên trong data nhưng không hiển thị)
-            def diagnose_cause(row):
-                if row['HRB Yield (%)'] >= 100: return "-"
-                cause = []
-                if pd.notna(row['Hardness_Std']) and row['Hardness_Std'] > 3.0: 
-                    cause.append("High Volatility")
-                if row['Hardness_Mean'] <= row['LSL'] + 1.5: 
-                    cause.append("Mean Too Low")
-                if row['USL'] < 9000 and row['Hardness_Mean'] >= row['USL'] - 1.5: 
-                    cause.append("Mean Too High")
-                if not cause: cause.append("Narrow Spec Limit")
-                return " + ".join(cause)
-
-            def recommend_action(row):
-                if row['HRB Yield (%)'] >= 100: return "✅ Maintain Process"
-                cause = row['Root Cause']
-                if "High Volatility" in cause: return "🔍 Check Furnace/Skin-pass"
-                if "Mean Too Low" in cause: return "⚙️ Dec. Skin-pass / Inc. Temp"
-                if "Mean Too High" in cause: return "⚙️ Inc. Skin-pass / Dec. Temp"
-                return "📋 Review Spec Feasibility"
-
-            risk_summary['Root Cause'] = risk_summary.apply(diagnose_cause, axis=1)
-            risk_summary['Action Plan'] = risk_summary.apply(recommend_action, axis=1)
-            
             risk_top = risk_summary[risk_summary['Total_Coils'] >= 3].sort_values(['Mech Yield (%)', 'HRB Yield (%)']).head(10)
             
             if not risk_top.empty:
@@ -619,13 +611,12 @@ if view_mode == "📊 Executive KPI Dashboard":
                 }
                 risk_top = risk_top.rename(columns=rename_dict)
                 
-                # --- CHỈNH SỬA: LOẠI BỎ Root Cause VÀ Action Plan KHỎI HIỂN THỊ ---
                 cols_order = ["Specification", "Quality", "Material", "Gauge", "Tested Coils", "Mech Yield (%)", "HRB Yield (%)", "Avg Hardness", "Hardness Std Dev"]
                 cols_order = [c for c in cols_order if c in risk_top.columns]
                 risk_top_display = risk_top[cols_order].copy()
                 
                 risk_top_display['Mech Yield (%)'] = risk_top_display['Mech Yield (%)'].apply(lambda x: clean_num(x, True))
-                risk_top_display['HRB Yield (%)'] = risk_top_display['HRB_Yield (%)'].apply(lambda x: clean_num(x, True)) if 'HRB_Yield (%)' in risk_top_display else risk_top_display['HRB Yield (%)'].apply(lambda x: clean_num(x, True))
+                risk_top_display['HRB Yield (%)'] = risk_top_display['HRB Yield (%)'].apply(lambda x: clean_num(x, True))
                 risk_top_display['Avg Hardness'] = risk_top_display['Avg Hardness'].apply(lambda x: clean_num(x))
                 risk_top_display['Hardness Std Dev'] = risk_top_display['Hardness Std Dev'].apply(lambda x: clean_num(x))
                 
@@ -657,15 +648,15 @@ if view_mode == "📊 Executive KPI Dashboard":
                 st.dataframe(styled_risk, use_container_width=True, hide_index=True)
                 
                 # ==========================================
-                # 4. VISUAL DEEP DIVE (HISTOGRAMS) - TOP 5
+                # 4. VISUAL DEEP DIVE (HISTOGRAMS) - TOP 3
                 # ==========================================
-                st.markdown("#### 🔔 Visual Deep Dive: Top 5 Risk Distributions")
-                st.caption("Visualizing the 'bell curve' of the top 5 most critical specifications to expose control limit breaches.")
+                st.markdown("#### 🔔 Visual Deep Dive: Top 3 Risk Distributions")
+                st.caption("Visualizing the 'bell curve' of the top 3 most critical specifications.")
                 
-                top_5_risks = risk_top.head(5).to_dict('records')
+                top_risks = risk_top.head(3).to_dict('records')
                 chart_cols = st.columns(3) 
                 
-                for idx, risk_item in enumerate(top_5_risks):
+                for idx, risk_item in enumerate(top_risks):
                     spec_name = risk_item["Specification"]
                     mat_name = risk_item["Material"]
                     gauge_val = risk_item["Gauge"]
@@ -690,17 +681,10 @@ if view_mode == "📊 Executive KPI Dashboard":
                         
                         l_min = target_data["Limit_Min"].iloc[0]
                         l_max = target_data["Limit_Max"].iloc[0]
-                        lb_min = target_data["Lab_Min"].iloc[0] if "Lab_Min" in target_data.columns else 0
-                        lb_max = target_data["Lab_Max"].iloc[0] if "Lab_Max" in target_data.columns else 0
                         
                         ax.axvline(l_min, color="black", linestyle="--", lw=1.5, label=f"Ctrl LSL ({l_min:.0f})")
                         if l_max > 0 and l_max < 9000:
                             ax.axvline(l_max, color="black", linestyle="--", lw=1.5, label=f"Ctrl USL ({l_max:.0f})")
-                        
-                        if pd.notna(lb_min) and lb_min > 0:
-                            ax.axvline(lb_min, color="purple", linestyle=":", lw=1.5, label=f"Lab LSL ({lb_min:.0f})")
-                        if pd.notna(lb_max) and 0 < lb_max < 9000:
-                            ax.axvline(lb_max, color="purple", linestyle=":", lw=1.5, label=f"Lab USL ({lb_max:.0f})")
                         
                         ax.set_title(f"TOP {idx+1}: {spec_name}\nMaterial: {mat_name} | N={len(hard_data)}", fontsize=10, fontweight="bold")
                         ax.set_xlabel("Hardness (HRB)", fontsize=9)
@@ -708,7 +692,7 @@ if view_mode == "📊 Executive KPI Dashboard":
                         ax.grid(alpha=0.3, linestyle=":")
                         chart_cols[idx % 3].pyplot(fig)
                 
-                # --- 5. REPORT EXPORT (Sử dụng risk_top gốc để chứa đủ data cho sếp) ---
+                # --- 5. REPORT EXPORT ---
                 st.markdown("---")
                 st.markdown("#### 📑 Export Actionable Report")
                 import streamlit.components.v1 as components
