@@ -1080,6 +1080,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             if "Rule" in rule_used: st.success(f"✅ Applied: **{rule_used}** (Control: {lo:.0f} - {hi:.0f} | Lab: {l_lo:.0f} - {l_hi:.0f})")
             else: st.caption(f"ℹ️ Applied: **Standard Excel Spec**")
 
+    
     # ================================
     # 1. DATA INSPECTION (CLEAN - INTEGERS ONLY)
     # ================================
