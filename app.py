@@ -1706,20 +1706,26 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 styled_df_total = styled_df_total.applymap(style_recommendation, subset=['🚧 Control Limit Rec.'])\
                                                  .set_properties(**{'background-color': '#e6f4ea', 'font-weight': 'bold', 'color': '#0d5302'}, subset=['🎯 Core Target (±1.0σ)'])
             
-# 1. HIỂN THỊ BẢNG
+# --- 1. HIỂN THỊ BẢNG TRÊN APP ---
                 st.dataframe(styled_summary, use_container_width=True, hide_index=True)
 
-                # 2. CHUẨN BỊ DỮ LIỆU EXCEL (ĐƠN GIẢN HÓA TỐI ĐA)
-                import io
-                excel_data = io.BytesIO()
-                with pd.ExcelWriter(excel_data, engine='xlsxwriter') as writer:
-                    df_summary.to_excel(writer, index=False, sheet_name='Comparison')
-                
-                # 3. NÚT TẢI (ĐẶT Ở MỨC NGOÀI CÙNG CỦA NHÁNH HIỂN THỊ)
-                st.download_button(
-                    label=f"📥 Tải Excel: {g['Material']}",
-                    data=excel_data.getvalue(),
-                    file_name=f"So_sanh_{g['Material']}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"dl_btn_{i}_{datetime.now().timestamp()}" # Dùng timestamp để tránh trùng key
-                )
+                # --- 2. TẠO DỮ LIỆU EXCEL (DÙNG TRY-EXCEPT ĐỂ TRÁNH TREO APP) ---
+                try:
+                    import io
+                    # Tạo file Excel trong bộ nhớ tạm
+                    excel_buffer = io.BytesIO()
+                    with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                        df_summary.to_excel(writer, index=False, sheet_name='Comparison')
+                        
+                    # --- 3. NÚT TẢI PHẢI ĐẶT Ở ĐÂY ---
+                    st.download_button(
+                        label=f"📥 Tải file Excel: {g['Material']}",
+                        data=excel_buffer.getvalue(),
+                        file_name=f"Comparison_{g['Material']}.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        key=f"dl_key_{g['Material']}_{i}" 
+                    )
+                except Exception as e:
+                    st.warning(f"⚠️ Chức năng tải Excel đang gặp lỗi nhỏ: {e}")
+
+                st.markdown("---") # Đường kẻ ngăn cách giữa các mác thép
