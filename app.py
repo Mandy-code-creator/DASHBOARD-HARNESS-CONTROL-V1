@@ -1825,7 +1825,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
   # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-    # 8. CONTROL LIMIT CALCULATOR (COMPARE METHODS) - COMBINED CHART & AI TABLE
+  # ==============================================================================
+    # 8. CONTROL LIMIT CALCULATOR (COMPARE METHODS) - AUTO RECOMMENDATION
     # ==============================================================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
@@ -1857,8 +1858,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
         else:
             with st.expander("⚙️ Parameter Settings", expanded=False):
                 c1, c2 = st.columns(2)
-                sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 2.0, 0.5, key=f"sig_v3_{i}")
-                iqr_k = c2.number_input("2. IQR Sensitivity", 0.1, 3.0, 0.5, 0.1, key=f"iqr_v3_{i}")
+                sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 2.0, 0.5, key=f"sig_v4_{i}")
+                iqr_k = c2.number_input("2. IQR Sensitivity", 0.1, 3.0, 0.5, 0.1, key=f"iqr_v4_{i}")
 
             spec_min = sub_clean["Limit_Min"].max() if "Limit_Min" in sub_clean.columns else 0
             spec_max = sub_clean["Limit_Max"].min() if "Limit_Max" in sub_clean.columns else 0
@@ -1893,27 +1894,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
             sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_dev
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
-            spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}" if display_max > 0 else f"Ctrl: ≥{spec_min:.0f}"
-            col_spec = "Product_Spec"
-            unique_specs = sub_clean[col_spec].dropna().unique() if col_spec in sub_clean.columns else []
-            specs_val = f"Specs: {', '.join(str(x) for x in unique_specs)}" if len(unique_specs) > 0 else "Specs: N/A"
-
-            all_groups_summary.append({
-                "Specification List": specs_val,
-                "Material": g["Material"],
-                "Gauge": g["Gauge_Range"],
-                "N": len(data),
-                "Rule Applied": rule_name,
-                "Current Spec": spec_str,
-                "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
-                "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
-                "M3: Smart Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
-                "M4: I-MR (Optimal)": f"{m4_min:.1f} ~ {m4_max:.1f}",
-                "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Evaluate"
-            })
+            # Tính New Core Target
+            target_k = 1.0 
+            new_target_min = mu - target_k * sigma_imr
+            new_target_max = mu + target_k * sigma_imr
             
             # ==================================================================
-            # BIỂU ĐỒ TỔNG HỢP: LIMITS + NORMAL CURVE (ALL-IN-ONE)
+            # BIỂU ĐỒ TỔNG HỢP: LIMITS + NORMAL CURVE 
             # ==================================================================
             from scipy.stats import norm
             fig, ax = plt.subplots(figsize=(12, 4.5))
@@ -1952,38 +1939,31 @@ for i, (_, g) in enumerate(valid.iterrows()):
             plt.close(fig)
 
             # ==================================================================
-            # BẢNG TỔNG HỢP CƠ TÍNH BẰNG AI
+            # BẢNG TỔNG HỢP CƠ TÍNH BẰNG AI & TÌM PHƯƠNG ÁN TỐI ƯU
             # ==================================================================
             st.write("")
-            
             sub_mech = sub_clean.dropna(subset=['TS', 'YS', 'EL']).copy()
             
-            # Lấy Spec Cơ tính
             s_ts_min = sub_mech["Standard TS min"].max() if "Standard TS min" in sub_mech.columns else 0
             s_ts_max = sub_mech["Standard TS max"].min() if "Standard TS max" in sub_mech.columns else 0
             s_ys_min = sub_mech["Standard YS min"].max() if "Standard YS min" in sub_mech.columns else 0
             s_ys_max = sub_mech["Standard YS max"].min() if "Standard YS max" in sub_mech.columns else 0
             s_el_min = sub_mech["Standard EL min"].max() if "Standard EL min" in sub_mech.columns else 0
 
-            # Hiển thị Banner Spec y hệt ảnh
             ts_spec_str = f"{s_ts_min:.0f}~{s_ts_max:.0f}" if (0 < s_ts_max < 9000) else f"≥{s_ts_min:.0f}"
             ys_spec_str = f"{s_ys_min:.0f}~{s_ys_max:.0f}" if (0 < s_ys_max < 9000) else f"≥{s_ys_min:.0f}"
             el_spec_str = f"≥ {s_el_min:.0f}"
             
             st.info(f"🎯 **Mechanical Specs Target:** TS: **{ts_spec_str}** | YS: **{ys_spec_str}** | EL: **{el_spec_str}**")
 
-            # HUẤN LUYỆN MÔ HÌNH AI (LINEAR REGRESSION)
+            best_recommendation = "⚠️ Manual Review" # Biến lưu kết quả đề xuất tối ưu
+
             if len(sub_mech) >= 5:
                 X_train = sub_mech[['Hardness_LINE']].values
                 model_ts = LinearRegression().fit(X_train, sub_mech['TS'].values)
                 model_ys = LinearRegression().fit(X_train, sub_mech['YS'].values)
                 model_el = LinearRegression().fit(X_train, sub_mech['EL'].values)
 
-                target_k = 1.0 
-                new_target_min = mu - target_k * sigma_imr
-                new_target_max = mu + target_k * sigma_imr
-
-                # --- ĐỊNH DẠNG RIÊNG CHO DÒNG OLD TARGET GOAL ĐỂ HIỂN THỊ CẢ LAB VÀ CTRL ---
                 def fmt_lim(vmin, vmax, prefix=""):
                     if vmax > 0: return f"{prefix}{vmin:.1f}~{vmax:.1f}"
                     if vmin > 0: return f"{prefix}≥{vmin:.1f}"
@@ -1994,7 +1974,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 old_target_str = f"{ctrl_str} | {lab_str}" if lab_str else ctrl_str
 
                 rows = []
-                # Đưa chuỗi hiển thị 'disp_lim' vào làm phần tử thứ 5 của mảng
                 configs = [
                     ("🎯 Old Target Goal", spec_min, display_max, "-", old_target_str),
                     ("🔴 M1: Standard (Historical)", m1_min, m1_max, f"σ={std_dev:.2f}", f"{m1_min:.1f} ~ {m1_max:.1f}"),
@@ -2004,15 +1983,15 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     (f"🌟 New Core Target (±{target_k}σ)", new_target_min, new_target_max, "-", f"{new_target_min:.1f} ~ {new_target_max:.1f}")
                 ]
 
-                # Hàm đánh giá Pass/Fail
                 def eval_prop(preds, spec_min, spec_max):
                     p_min, p_max = preds
                     if pd.notna(spec_min) and spec_min > 0 and p_min < spec_min: return "❌ Fail"
                     if pd.notna(spec_max) and 0 < spec_max < 9000 and p_max > spec_max: return "❌ Fail"
                     return "✅ Pass"
 
+                passed_methods = [] # Danh sách các phương pháp Pass 100% cơ tính
+
                 for cat, l_min, l_max, sig, disp_lim in configs:
-                    # AI vẫn dùng Control Limit để dự báo chính xác rủi ro
                     calc_max = l_max if l_max > 0 else sub_mech['Hardness_LINE'].max()
                     
                     ts_preds = sorted([model_ts.predict([[l_min]])[0], model_ts.predict([[calc_max]])[0]])
@@ -2027,10 +2006,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         overall = "⚠️ Warning"
                     else:
                         overall = "✅ Optimal"
+                        passed_methods.append(cat) # Ghi nhận phương pháp này là An toàn
 
                     rows.append({
                         "Limit Type": cat,
-                        "Hardness Limits": disp_lim, # <--- Dùng chuỗi hiển thị đã gộp cả Lab và Ctrl
+                        "Hardness Limits": disp_lim,
                         "Variation": sig,
                         "Est. TS": f"{ts_preds[0]:.0f} ~ {ts_preds[1]:.0f}",
                         "TS Eval": ts_eval,
@@ -2041,9 +2021,24 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         "Overall Proposal": overall
                     })
 
+                # -- LOGIC TÌM PHƯƠNG ÁN TỐI ƯU NHẤT CHO FACTORY SUMMARY --
+                if any("New Core Target" in m for m in passed_methods):
+                    best_recommendation = "🌟 New Core Target"
+                elif any("M4: I-MR" in m for m in passed_methods):
+                    best_recommendation = "🟣 M4: I-MR"
+                elif any("M3: Smart Hybrid" in m for m in passed_methods):
+                    best_recommendation = "🟢 M3: Smart Hybrid"
+                elif any("M2: IQR" in m for m in passed_methods):
+                    best_recommendation = "🔵 M2: IQR"
+                elif any("M1: Standard" in m for m in passed_methods):
+                    best_recommendation = "🔴 M1: Standard"
+                elif any("Old Target" in m for m in passed_methods):
+                    best_recommendation = "🎯 Keep Current Spec"
+                else:
+                    best_recommendation = "❌ High Risk (All Failed)"
+
                 df_summary = pd.DataFrame(rows)
                 
-                # --- ĐỊNH DẠNG BẢNG (CSS STYLING) ---
                 def style_table(df):
                     styles = pd.DataFrame('', index=df.index, columns=df.columns)
                     for idx, row in df.iterrows():
@@ -2066,52 +2061,61 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 styled_summary = df_summary.style.apply(style_table, axis=None)
                 st.dataframe(styled_summary, use_container_width=True, hide_index=True)
                 st.caption("*(**) Estimated values are generated by AI Linear Regression using actual group data. A ✅ Pass status indicates the estimated variation remains within the Mechanical Spec Target.*")
-
-                # --- EXCEL EXPORT ---
-                import io
-                buffer = io.BytesIO()
-                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                    df_summary.to_excel(writer, sheet_name='Summary', index=False)
-                    workbook = writer.book
-                    worksheet = writer.sheets['Summary']
-                    for idx, col in enumerate(df_summary.columns):
-                        max_len = max(df_summary[col].astype(str).map(len).max(), len(col)) + 2
-                        worksheet.set_column(idx, idx, max_len)
-
-                st.download_button(
-                    label="📥 Download AI Estimation Report (Excel)",
-                    data=buffer.getvalue(),
-                    file_name=f"AI_Mechanical_Estimation_{rule_name.replace(' ', '_')}.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"download_summary_excel_{i}_{rule_name}"
-                )
             else:
                 st.warning("Không đủ dữ liệu cơ tính sạch (N<5) để chạy AI Linear Regression.")
+
+            # ==================================================================
+            # LƯU VÀO DANH SÁCH FACTORY SUMMARY (CÓ CỘT ĐỀ XUẤT)
+            # ==================================================================
+            spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}" if display_max > 0 else f"Ctrl: ≥{spec_min:.0f}"
+            col_spec = "Product_Spec"
+            unique_specs = sub_clean[col_spec].dropna().unique() if col_spec in sub_clean.columns else []
+            specs_val = f"Specs: {', '.join(str(x) for x in unique_specs)}" if len(unique_specs) > 0 else "Specs: N/A"
+
+            all_groups_summary.append({
+                "Specification List": specs_val,
+                "Material": g["Material"],
+                "Gauge": g["Gauge_Range"],
+                "N Coils": len(data),
+                "Current Spec": spec_str,
+                "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
+                "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
+                "M3: Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
+                "M4: I-MR (Opt)": f"{m4_min:.1f} ~ {m4_max:.1f}",
+                "New Target": f"{new_target_min:.1f} ~ {new_target_max:.1f}",
+                "🏆 AI Recommendation": best_recommendation
+            })
 
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
-            st.markdown(f"## 📊 Factory-wide Control Limits Summary: {qgroup}")
+            st.markdown(f"## 📊 Factory-wide Control Limits & AI Recommendations: {qgroup}")
             df_total = pd.DataFrame(all_groups_summary)
             
-            def style_status(val):
-                if 'Stable' in str(val): return 'color: green; font-weight: bold'
-                return 'color: #d32f2f; font-weight: bold'
+            # Định dạng màu cho cột Đề xuất
+            def style_recommendation(val):
+                if 'New Core' in val or 'M4' in val or 'M3' in val or 'M2' in val: 
+                    return 'color: #155724; background-color: #d4edda; font-weight: bold'
+                elif 'Keep' in val:
+                    return 'color: #856404; background-color: #fff3cd; font-weight: bold'
+                else:
+                    return 'color: #721c24; background-color: #f8d7da; font-weight: bold'
 
             styled_df_total = df_total.style
             if hasattr(styled_df_total, "map"):
-                styled_df_total = styled_df_total.map(style_status, subset=['Status']).set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold', 'border': '2px solid #0056b3'}, subset=['M4: I-MR (Optimal)'])
+                styled_df_total = styled_df_total.map(style_recommendation, subset=['🏆 AI Recommendation'])
             else:
-                styled_df_total = styled_df_total.applymap(style_status, subset=['Status']).set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold', 'border': '2px solid #0056b3'}, subset=['M4: I-MR (Optimal)'])
+                styled_df_total = styled_df_total.applymap(style_recommendation, subset=['🏆 AI Recommendation'])
             
             st.dataframe(styled_df_total, use_container_width=True, hide_index=True)
             
             import datetime
+            import io
             today_str = datetime.datetime.now().strftime("%Y%m%d")
             out_total = io.BytesIO()
             with pd.ExcelWriter(out_total, engine='xlsxwriter') as writer2:
-                df_total.to_excel(writer2, sheet_name='All_Limits', index=False)
-                ws = writer2.sheets['All_Limits']
-                ws.set_column('A:A', 25); ws.set_column('B:E', 12); ws.set_column('F:J', 18)
+                df_total.to_excel(writer2, sheet_name='Recommendations', index=False)
+                ws = writer2.sheets['Recommendations']
+                ws.set_column('A:A', 25); ws.set_column('B:E', 12); ws.set_column('F:J', 16); ws.set_column('K:K', 25)
             
-            st.download_button("📥 Export Master Summary (Excel)", out_total.getvalue(), f"SPC_Limits_Summary_{today_str}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+            st.download_button("📥 Export Master Summary (Excel)", out_total.getvalue(), f"Factory_Recommendations_{today_str}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
