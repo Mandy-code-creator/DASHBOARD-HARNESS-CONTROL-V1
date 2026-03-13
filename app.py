@@ -89,8 +89,6 @@ rename_mapping = {
     "QUALITY_CODE": "Quality_Code",
     "Standard Hardness": "Std_Text",
     "HARDNESS 冶金": "Hardness_LAB",
-    "HARDNESS 鍍鋅線 N": "Hardness_LINE", # Lấy dây N làm chuẩn
-    "HARDNESS 鍍鋅線 C": "Hardness_LINE", # Fallback nếu dùng dây C
     "TENSILE_YIELD": "YS",
     "TENSILE_TENSILE": "TS",
     "TENSILE_ELONG": "EL",
@@ -102,6 +100,17 @@ rename_mapping = {
     "Standard EL max": "Standard EL max"
 }
 df = raw.rename(columns=rename_mapping)
+
+# Xử lý riêng độ cứng LINE: Ưu tiên N -> C -> S để tránh bị trùng lặp cột (Duplicate columns)
+if "HARDNESS 鍍鋅線 N" in df.columns:
+    df["Hardness_LINE"] = df["HARDNESS 鍍鋅線 N"]
+elif "HARDNESS 鍍鋅線 C" in df.columns:
+    df["Hardness_LINE"] = df["HARDNESS 鍍鋅線 C"]
+elif "HARDNESS 鍍鋅線 S" in df.columns:
+    df["Hardness_LINE"] = df["HARDNESS 鍍鋅線 S"]
+
+# Loại bỏ các cột trùng tên (nếu file Excel gốc lỡ có cột bị trùng) để không bị lỗi TypeError
+df = df.loc[:, ~df.columns.duplicated()]
 
 # 3. Standard Hardness Split
 def split_std(x):
