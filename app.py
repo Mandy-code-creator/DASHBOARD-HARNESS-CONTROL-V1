@@ -254,7 +254,7 @@ valid = cnt[cnt["N_Coils"] >= 30]
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (FULL DUAL-LIMIT VERSION)
+# 9. MASTER DICTIONARY EXPORT (CORRECTED DUAL-LIMIT NAMES)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     
@@ -266,7 +266,7 @@ if view_mode == "👑 Master Dictionary Export":
 
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary")
-    st.info("💡 **Dual-Limit Standard:** Comparison between Current (Target/Control) and Proposed (AI Optimized) limits.")
+    st.info("💡 **Dual-Limit Standard:** Target (Narrow) for operations | Control (Wide) for safety boundaries.")
     
     col_sig1, col_sig2, col_sig3 = st.columns(3)
     with col_sig1:
@@ -326,33 +326,26 @@ if view_mode == "👑 Master Dictionary Export":
                 sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else hrb.std()
                 if pd.isna(sigma_imr) or sigma_imr == 0: sigma_imr = 1.0
                 
-                # Tính Proposed (Mới)
+                # Proposed (Tính mới)
                 c_min_p, c_max_p = mu - control_k * sigma_imr, mu + control_k * sigma_imr
                 t_min_p, t_max_p = mu - target_k * sigma_imr, mu + target_k * sigma_imr
                 
-                # AI Model
                 X = group[["Hardness_LINE"]].values
                 m_ts = LinearRegression().fit(X, group["TS"].values)
                 m_ys = LinearRegression().fit(X, group["YS"].values)
                 m_el = LinearRegression().fit(X, group["EL"].values)
-                
-                def fmt_s(mi, ma):
-                    if mi > 0 and 0 < ma < 9000: return f"{mi:.0f}~{ma:.0f}"
-                    elif mi > 0: return f"≥ {mi:.0f}"
-                    return "-"
 
-                # --- LẤY 2 LOẠI GIỚI HẠN HIỆN TẠI ---
-                # 1. Control Limit (Rộng)
-                cur_c_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
-                cur_c_max = group['Limit_Max'].max() if 'Limit_Max' in group.columns else 0
-                cur_control = f"{cur_c_min:.1f}~{cur_c_max:.1f}" if cur_c_max > 0 else f"≥{cur_c_min:.1f}"
-
-                # 2. Target Zone (Hẹp - Lấy từ Lab Spec)
-                cur_t_min = group['Lab_Min'].max() if 'Lab_Min' in group.columns else 0
-                cur_t_max = group['Lab_Max'].max() if 'Lab_Max' in group.columns else 0
+                # --- ĐỔI TÊN & GÁN LẠI GIÁ TRỊ (FIXED) ---
+                # 1. Current Target Spec (Dải hẹp - lấy từ Limit_Min/Max gốc)
+                cur_t_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
+                cur_t_max = group['Limit_Max'].max() if 'Limit_Max' in group.columns else 0
                 cur_target = f"{cur_t_min:.1f}~{cur_t_max:.1f}" if cur_t_max > 0 else f"≥{cur_t_min:.1f}"
 
-                # Dự báo tại Proposed Target
+                # 2. Current Control Spec (Dải rộng - lấy từ Lab_Min/Max gốc)
+                cur_c_min = group['Lab_Min'].max() if 'Lab_Min' in group.columns else 0
+                cur_c_max = group['Lab_Max'].max() if 'Lab_Max' in group.columns else 0
+                cur_control = f"{cur_c_min:.1f}~{cur_c_max:.1f}" if cur_c_max > 0 else f"≥{cur_c_min:.1f}"
+
                 ts_p = sorted([m_ts.predict([[t_min_p]])[0], m_ts.predict([[t_max_p]])[0]])
                 ys_p = sorted([m_ys.predict([[t_min_p]])[0], m_ys.predict([[t_max_p]])[0]])
                 el_p = sorted([m_el.predict([[t_min_p]])[0], m_el.predict([[t_max_p]])[0]])
@@ -360,8 +353,8 @@ if view_mode == "👑 Master Dictionary Export":
                 row = {col: (keys[idx] if isinstance(keys, tuple) else keys) for idx, col in enumerate(group_cols)}
                 row.update({
                     "N Coils": len(group),
-                    "Current Control Spec": cur_control,
-                    "Current Target Spec": cur_target,
+                    "Current Target Spec": cur_target,   # ĐÃ ĐỔI TÊN
+                    "Current Control Spec": cur_control, # ĐÃ ĐỔI TÊN
                     f"Proposed Control Limit ({control_k}σ)": f"{c_min_p:.1f} ~ {c_max_p:.1f}",
                     f"🎯 Proposed Target Zone ({target_k}σ)": f"{t_min_p:.1f} ~ {t_max_p:.1f}",
                     "Exp. TS": f"{int(ts_p[0])}~{int(ts_p[1])}",
@@ -375,8 +368,8 @@ if view_mode == "👑 Master Dictionary Export":
             df_out.insert(0, "No.", range(1, len(df_out) + 1))
             
             st.markdown("### 👁️ Preview Master Dictionary")
-            # Styling bảng: Vàng (Hiện tại), Xanh dương (Kiểm soát mới), Xanh lá (Mục tiêu mới)
-            styled = df_out.style.set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Control Spec", "Current Target Spec"]) \
+            # Cập nhật style cho tên cột mới
+            styled = df_out.style.set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Target Spec", "Current Control Spec"]) \
                                  .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[f"Proposed Control Limit ({control_k}σ)"]) \
                                  .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[f"🎯 Proposed Target Zone ({target_k}σ)", "Exp. TS", "Exp. YS", "Exp. EL"]) \
                                  .set_properties(**{'text-align': 'center', 'font-weight': 'bold'}, subset=["No."])
@@ -393,8 +386,8 @@ if view_mode == "👑 Master Dictionary Export":
                     worksheet.write(0, col_num, value, header_fmt)
                     worksheet.set_column(col_num, col_num, 18)
             
-            st.success(f"✅ Dictionary generated for {len(master_data)} groups.")
-            st.download_button("📥 Download Master Excel", output.getvalue(), f"Master_Dictionary_DualLimit_{dt.datetime.now().strftime('%Y%m%d')}.xlsx")
+            st.success(f"✅ Dictionary generated with corrected column names!")
+            st.download_button("📥 Download Master Excel", output.getvalue(), f"Master_Dictionary_Final_{dt.datetime.now().strftime('%Y%m%d')}.xlsx")
         else:
             st.error("❌ Không có dữ liệu hợp lệ.")
             
