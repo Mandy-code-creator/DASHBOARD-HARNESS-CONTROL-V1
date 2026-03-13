@@ -254,7 +254,8 @@ valid = cnt[cnt["N_Coils"] >= 30]
 
 # ==============================================================================
 # ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (FINAL VERSION - WITH SPEC CODE & NO %)
+# ==============================================================================
+# 9. MASTER DICTIONARY EXPORT (FINAL STYLED VERSION)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
@@ -286,7 +287,6 @@ if view_mode == "👑 Master Dictionary Export":
         source_df = raw_source.loc[:, ~raw_source.columns.duplicated()].copy()
         source_df.rename(columns={"TENSILE_TENSILE": "TS", "TENSILE_YIELD": "YS", "TENSILE_ELONG": "EL"}, inplace=True)
 
-        # Ensure Hardness column exists
         if "Hardness_LINE" not in source_df.columns:
             for c in ["HARDNESS 鍍鋅線 N", "HARDNESS 鍍鋅線 C", "HARDNESS 鍍鋅線 S"]:
                 if c in source_df.columns:
@@ -304,26 +304,23 @@ if view_mode == "👑 Master Dictionary Export":
         master_data = []
         group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
         
-        with st.spinner("Processing data..."):
+        with st.spinner("Applying colors and processing identifiers..."):
             for keys, group in clean_master_df.groupby(group_cols, observed=True):
                 if len(group) < min_coils_req: continue 
                 
                 hrb = group["Hardness_LINE"]
                 mu = hrb.mean()
-                mrs = np.abs(np.diff(hrb.values))
-                sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else hrb.std()
+                sigma_imr = np.mean(np.abs(np.diff(hrb.values))) / 1.128 if len(hrb) > 1 else 1.0
                 if pd.isna(sigma_imr) or sigma_imr <= 0: sigma_imr = 1.0
                 
                 t_min, t_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
                 c_min, c_max = mu - control_k * sigma_imr, mu + control_k * sigma_imr
                 
-                # Regressions
                 X = group[["Hardness_LINE"]].values
                 m_ts = LinearRegression().fit(X, group["TS"].values)
                 m_ys = LinearRegression().fit(X, group["YS"].values)
                 m_el = LinearRegression().fit(X, group["EL"].values)
 
-                # Predictions & Actuals (No % suffix)
                 ts_p = sorted([m_ts.predict([[t_min]])[0], m_ts.predict([[t_max]])[0]])
                 ys_p = sorted([m_ys.predict([[t_min]])[0], m_ys.predict([[t_max]])[0]])
                 el_p = sorted([m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]])
@@ -333,21 +330,16 @@ if view_mode == "👑 Master Dictionary Export":
                 act_ys = f"{actual_in['YS'].min():.0f}~{actual_in['YS'].max():.0f}" if not actual_in.empty else "N/A"
                 act_el = f"{actual_in['EL'].min():.1f}~{actual_in['EL'].max():.1f}" if not actual_in.empty else "N/A"
 
-                # Standard Specs
                 s_ts_min = group["Standard TS min"].max() if "Standard TS min" in group.columns else 0
-                s_ts_max = group["Standard TS max"].min() if "Standard TS max" in group.columns else 0
                 s_ys_min = group["Standard YS min"].max() if "Standard YS min" in group.columns else 0
                 s_el_min = group["Standard EL min"].max() if "Standard EL min" in group.columns else 0
                 
-                # Product Specification Code (from group data)
-                spec_code = group["PRODUCT SPECIFICATION CODE"].iloc[0] if "PRODUCT SPECIFICATION CODE" in group.columns else "N/A"
+                spec_code = group["PRODUCT SPECIFICATION CODE"].dropna().iloc[0] if "PRODUCT SPECIFICATION CODE" in group.columns and not group["PRODUCT SPECIFICATION CODE"].dropna().empty else "N/A"
 
                 row = {
-                    "PRODUCT SPECIFICATION CODE": spec_code,
-                    "Material": keys[3], # Direct access from keys for clarity
-                    "Gauge Range": keys[4]
-                }
-                row.update({
+                    "SPEC CODE": spec_code,
+                    "Material": keys[3],
+                    "Gauge Range": keys[4],
                     "N Coils": len(group),
                     f"🎯 Proposed Target ({target_k}σ)": f"{t_min:.1f}~{t_max:.1f}",
                     "TS Spec": f"≥{s_ts_min:.0f}",
@@ -359,17 +351,28 @@ if view_mode == "👑 Master Dictionary Export":
                     "EL Spec": f"≥{s_el_min:.0f}",
                     "Exp. EL": f"{el_p[0]:.1f}~{el_p[1]:.1f}",
                     "Actual EL": act_el
-                })
+                }
                 master_data.append(row)
 
         if master_data:
             df_out = pd.DataFrame(master_data)
-            st.dataframe(df_out, use_container_width=True, hide_index=True)
+            
+            # --- COLOR STYLING ENGINE ---
+            target_col = f"🎯 Proposed Target ({target_k}σ)"
+            
+            styled_df = df_out.style.set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, 
+                                                   subset=[target_col, "Exp. TS", "Exp. YS", "Exp. EL"]) \
+                                     .set_properties(**{'background-color': '#f8f9fa', 'color': '#6c757d'}, 
+                                                   subset=["TS Spec", "YS Spec", "EL Spec"]) \
+                                     .set_properties(**{'background-color': '#e8f0fe', 'color': '#1a73e8', 'font-weight': 'bold'}, 
+                                                   subset=["Actual TS", "Actual YS", "Actual EL"])
+            
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_out.to_excel(writer, index=False, sheet_name='Master_Dictionary')
-            st.download_button("📥 Download Master Excel", output.getvalue(), "Master_Dictionary.xlsx")
+            st.download_button("📥 Download Styled Excel", output.getvalue(), "Master_Dictionary.xlsx")
     
     st.stop()
 # ==============================================================================
