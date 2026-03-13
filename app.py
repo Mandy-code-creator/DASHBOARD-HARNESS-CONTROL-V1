@@ -1823,7 +1823,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c3.caption(f"🎯 **R² Score:** {model_metrics['EL']['r2']:.2f} | **RMSE:** ±{model_metrics['EL']['rmse']:.1f}")
 
   # ==============================================================================
-    # 8. CONTROL LIMIT CALCULATOR (COMPARE 4 METHODS) - FINAL OPTIMIZED
+# ==============================================================================
+    # 8. CONTROL LIMIT CALCULATOR (COMPARE METHODS) - FINAL OPTIMIZED
     # ==============================================================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
@@ -1831,39 +1832,44 @@ for i, (_, g) in enumerate(valid.iterrows()):
         if i == 0:
             all_groups_summary = [] # Khởi tạo danh sách tổng hợp cho toàn bộ báo cáo
             
-            st.markdown("### 📘 管制界限計算方法說明 (Method Explanation)")
-            with st.expander("🔍 點擊查看方法差異 (Click to view method details)", expanded=True):
+            st.markdown("### 📘 Control Limit Calculation Methods")
+            with st.expander("🔍 Click to view method details", expanded=True):
                 st.markdown("""
-                | 方法 (Method) | 名稱 (Name) | 運作原理 (Description) |
+                | Method | Name | Description |
                 | :--- | :--- | :--- |
-                | **M1: Standard** | **標準統計法** | 基於全體數據計算。若存在極端異常值，界限容易被過度拉伸。 |
-                | **M2: IQR Robust** | **四分位距穩健統計法** | 自動剔除因操作失誤產生的「極端值」，使管制界限更符合實際規律。 |
-                | **M3: Smart Hybrid** | **智能混合法** | 結合統計趨勢與客戶規範 (Spec)，確保管制區間始終在安全範圍內。 |
-                | **M4: I-MR (SPC)** | **專業製程管制** | **最佳化方案：** 觀測相鄰鋼捲間的波動，是判斷製程是否「穩定」最科學的方法。 |
+                | **M1: Standard** | Standard Stat | Based on global mean & std dev. Vulnerable to extreme outliers. |
+                | **M2: IQR Robust** | Interquartile Range | Removes extreme outliers before calculating limits. More robust. |
+                | **M3: Hybrid** | Smart Hybrid | Bounds the statistical limits within the actual Customer Specs. |
+                | **M4: I-MR** | Individual Moving Range | **Optimal for Steel Coils:** Analyzes coil-to-coil variation to define true process stability. |
                 """)
 
         # --- 2. PHÂN TÍCH CHI TIẾT CHO TỪNG NHÓM (MATERIAL | GAUGE) ---
         st.markdown(f"### 🎛️ Control Limits Analysis: {g['Material']} | {g['Gauge_Range']}")
+        
+        # Dữ liệu đã được làm sạch 0 và NaN từ đầu App
         data = sub["Hardness_LINE"].dropna()
-        data_lab = sub["Hardness_LAB"].dropna()
+        data_lab = sub["Hardness_LAB"].dropna() if "Hardness_LAB" in sub.columns else pd.Series(dtype=float)
         
         if len(data) < 10: 
-            st.warning(f"⚠️ {g['Material']}: 數據不足 (N={len(data)})")
+            st.warning(f"⚠️ {g['Material']}: Not enough data (N={len(data)}). Minimum 10 coils required.")
         else:
-            with st.expander("⚙️ 設定參數 (Settings)", expanded=False):
+            with st.expander("⚙️ Parameter Settings", expanded=False):
                 c1, c2 = st.columns(2)
                 sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 3.0, 0.5, key=f"sig_{i}")
-                iqr_k = c2.number_input("2. IQR Sensitivity", 0.5, 3.0, 0.7, 0.1, key=f"iqr_{i}")
+                iqr_k = c2.number_input("2. IQR Sensitivity", 0.5, 3.0, 1.5, 0.1, key=f"iqr_{i}")
 
             # --- LẤY GIỚI HẠN HIỆN TẠI (CONTROL & LAB) ---
-            spec_min = sub["Limit_Min"].max(); spec_max = sub["Limit_Max"].min()
-            lab_min = sub["Lab_Min"].max(); lab_max = sub["Lab_Max"].min()
-            rule_name = sub["Rule_Name"].iloc[0] 
+            spec_min = sub["Limit_Min"].max() if "Limit_Min" in sub.columns else 0
+            spec_max = sub["Limit_Max"].min() if "Limit_Max" in sub.columns else 0
+            lab_min = sub["Lab_Min"].max() if "Lab_Min" in sub.columns else 0
+            lab_max = sub["Lab_Max"].min() if "Lab_Max" in sub.columns else 0
+            rule_name = sub["Rule_Name"].iloc[0] if "Rule_Name" in sub.columns else "Standard Spec"
             
             display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
             display_lab_max = lab_max if (lab_max > 0 and lab_max < 9000) else 0
             
-            mu = data.mean(); std_dev = data.std()
+            mu = data.mean()
+            std_dev = data.std() if len(data) > 1 else 1.0
             
             # M1: Standard
             m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
@@ -1871,7 +1877,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             # M2: IQR Robust
             Q1 = data.quantile(0.25); Q3 = data.quantile(0.75); IQR = Q3 - Q1
             clean_data = data[~((data < (Q1 - iqr_k * IQR)) | (data > (Q3 + iqr_k * IQR)))]
-            if clean_data.empty: clean_data = data
+            if clean_data.empty or len(clean_data) < 2: clean_data = data
             mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
             
@@ -1881,11 +1887,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
             
             # M4: I-MR (SPC) - PHƯƠNG PHÁP TỐI ƯU CHO THÉP CUỘN
-            mrs = np.abs(np.diff(data)); mr_bar = np.mean(mrs); sigma_imr = mr_bar / 1.128
+            mrs = np.abs(np.diff(data))
+            mr_bar = np.mean(mrs) if len(mrs) > 0 else 0
+            sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_dev
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
             # --- CHUẨN BỊ DỮ LIỆU HIỂN THỊ ---
-            spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}"
+            spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}" if display_max > 0 else f"Ctrl: ≥{spec_min:.0f}"
             if display_lab_max > 0: spec_str += f" | Lab: {lab_min:.0f}~{display_lab_max:.0f}"
 
             col_spec = "Product_Spec"
@@ -1904,13 +1912,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
                 "M3: Smart Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
                 "M4: I-MR (Optimal)": f"{m4_min:.1f} ~ {m4_max:.1f}",
-                "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec"
+                "Status": "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Evaluate"
             })
             
             # ==================================================================
             # BIỂU ĐỒ 1: LIMITS COMPARISON (FULL WIDTH)
             # ==================================================================
-            fig, ax = plt.subplots(figsize=(12, 5)) # Mở rộng chiều ngang biểu đồ ra 12
+            fig, ax = plt.subplots(figsize=(12, 5)) 
             ax.hist(data, bins=30, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
             if not data_lab.empty: 
                 ax.hist(data_lab, bins=30, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
@@ -1929,6 +1937,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax.set_title(f"Limits Comparison (σ={sigma_n})", fontsize=11, fontweight="bold")
             ax.legend(loc="upper right", fontsize="small")
             st.pyplot(fig)
+            plt.close(fig) # Chống tràn RAM
 
             # ==================================================================
             # BIỂU ĐỒ 2: CHI TIẾT M1 VS M4 VS SPECS (FULL WIDTH)
@@ -1950,8 +1959,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
             x_max_val = max([m1_max, m4_max, display_max, display_lab_max, data.max() if not data.empty else 100]) + 5
             x_axis = np.linspace(x_min_val, x_max_val, 500)
             
-            ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="red", lw=2, label=f"M1 Curve (σ={std_dev:.2f})")
-            ax2.plot(x_axis, norm.pdf(x_axis, mu, sigma_imr), color="purple", lw=2, ls="--", label=f"M4 Curve (σ={sigma_imr:.2f})")
+            if std_dev > 0:
+                ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="red", lw=2, label=f"M1 Curve (σ={std_dev:.2f})")
+            if sigma_imr > 0:
+                ax2.plot(x_axis, norm.pdf(x_axis, mu, sigma_imr), color="purple", lw=2, ls="--", label=f"M4 Curve (σ={sigma_imr:.2f})")
 
             ax2.axvline(m1_min, color="red", ls=":", lw=1.5); ax2.axvline(m1_max, color="red", ls=":", lw=1.5)
             ax2.axvline(m4_min, color="purple", ls="-.", lw=2); ax2.axvline(m4_max, color="purple", ls="-.", lw=2)
@@ -1969,9 +1980,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax2.set_title(f"Detailed Analysis (Sturges k={bins_sturges})", fontsize=11, fontweight="bold")
             ax2.legend(loc="upper right", fontsize="small")
             st.pyplot(fig2)
+            plt.close(fig2) # Chống tràn RAM
 
             # ==================================================================
-            # 3. SUMMARY TABLE & EXCEL EXPORT (FULL WIDTH CHUẨN)
+            # 3. SUMMARY TABLE & EXCEL EXPORT
             # ==================================================================
             st.write("---") 
             st.markdown(f"#### 📌 Limit Summary & Mechanical Estimation: {rule_name}")
@@ -1993,8 +2005,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             rows = []
             configs = [
-                ("🎯 Old Target Goal", spec_min, display_max, "-"),
-                ("🧪 Lab Spec", lab_min, display_lab_max, "-"),
+                ("🎯 Current Control Spec", spec_min, display_max, "-"),
+                ("🧪 Lab Spec (Ref)", lab_min, display_lab_max, "-"),
                 ("🔴 M1: Standard (Historical)", m1_min, m1_max, std_dev),
                 ("🟣 M4: I-MR (Control Limits)", m4_min, m4_max, sigma_imr),
                 (f"🌟 New Core Target (±{target_k}σ)", new_target_min, new_target_max, "-")
@@ -2019,7 +2031,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                 rows.append({
                     "Limit Type": cat,
-                    "Hardness Limits": f"{l_min:.1f} ~ {l_max:.1f}",
+                    "Hardness Limits": f"{l_min:.1f} ~ {l_max:.1f}" if l_max > 0 else f"≥ {l_min:.1f}",
                     "Variation": f"σ={sig:.2f}" if isinstance(sig, float) else sig,
                     "Theoretical TS": f"{ts_lmin:.0f} ~ {ts_lmax:.0f}",
                     "Actual TS": act_ts,
@@ -2032,15 +2044,18 @@ for i, (_, g) in enumerate(valid.iterrows()):
             df_summary = pd.DataFrame(rows)
             
             def highlight_new_target(s):
-                if "🌟 New Core Target" in s['Limit Type']:
+                if "🌟 New Core Target" in str(s['Limit Type']):
                     return ['background-color: #d4edda; font-weight: bold; color: #155724'] * len(s)
                 return [''] * len(s)
 
-            st.dataframe(
-                df_summary.style.apply(highlight_new_target, axis=1), 
-                use_container_width=True, 
-                hide_index=True
-            )
+            # Tương thích với cả bản Pandas/Streamlit cũ và mới
+            styled_summary = df_summary.style
+            if hasattr(styled_summary, "map"):
+                styled_summary = styled_summary.apply(highlight_new_target, axis=1)
+            else:
+                styled_summary = styled_summary.applymap(highlight_new_target, axis=1)
+
+            st.dataframe(styled_summary, use_container_width=True, hide_index=True)
             st.caption("*(**) TS: Tensile Strength (MPa) | YS: Yield Strength (MPa) | EL: Elongation (%)*")
 
             # --- EXCEL EXPORT BUTTON ---
@@ -2048,7 +2063,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
             buffer = io.BytesIO()
             with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
                 df_summary.to_excel(writer, sheet_name='Summary', index=False)
+                workbook = writer.book
                 worksheet = writer.sheets['Summary']
+                # Tự động căn chỉnh độ rộng cột
                 for idx, col in enumerate(df_summary.columns):
                     max_len = max(df_summary[col].astype(str).map(len).max(), len(col)) + 2
                     worksheet.set_column(idx, idx, max_len)
@@ -2060,21 +2077,34 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key=f"download_summary_excel_{i}_{rule_name}"
             )
+
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
-            st.markdown(f"## 📊 Summary of Control Limits for {qgroup}")
+            st.markdown(f"## 📊 Factory-wide Control Limits Summary: {qgroup}")
             df_total = pd.DataFrame(all_groups_summary)
             
             def style_status(val):
-                return 'color: red; font-weight: bold' if 'Narrow' in val else 'color: green; font-weight: bold'
+                if 'Stable' in str(val): return 'color: green; font-weight: bold'
+                return 'color: #d32f2f; font-weight: bold'
 
-            styled_df = (
-                df_total.style
-                .applymap(style_status, subset=['Status'])
-                .set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold', 'border': '2px solid #0056b3'}, subset=['M4: I-MR (Optimal)'])
-            )
-            st.dataframe(styled_df, use_container_width=True, hide_index=True)
-            st.download_button("📥 Export Summary CSV", df_total.to_csv(index=False).encode('utf-8-sig'), f"SPC_Summary_{str(qgroup).replace(' ','')}.csv")
+            styled_df_total = df_total.style
+            if hasattr(styled_df_total, "map"):
+                styled_df_total = styled_df_total.map(style_status, subset=['Status']).set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold', 'border': '2px solid #0056b3'}, subset=['M4: I-MR (Optimal)'])
+            else:
+                styled_df_total = styled_df_total.applymap(style_status, subset=['Status']).set_properties(**{'background-color': '#e6f2ff', 'color': '#004085', 'font-weight': 'bold', 'border': '2px solid #0056b3'}, subset=['M4: I-MR (Optimal)'])
+            
+            st.dataframe(styled_df_total, use_container_width=True, hide_index=True)
+            
+            # Xuất file Excel thay vì CSV để tránh lỗi Font chữ
+            import datetime
+            today_str = datetime.datetime.now().strftime("%Y%m%d")
+            out_total = io.BytesIO()
+            with pd.ExcelWriter(out_total, engine='xlsxwriter') as writer2:
+                df_total.to_excel(writer2, sheet_name='All_Limits', index=False)
+                ws = writer2.sheets['All_Limits']
+                ws.set_column('A:A', 25); ws.set_column('B:E', 12); ws.set_column('F:J', 18)
+            
+            st.download_button("📥 Export Master Summary (Excel)", out_total.getvalue(), f"SPC_Limits_Summary_{today_str}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 # ==============================================================================
 # ==============================================================================
