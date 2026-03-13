@@ -1824,8 +1824,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
   # ==============================================================================
 # ==============================================================================
-  # ==============================================================================
-    # 8. CONTROL LIMIT CALCULATOR (COMPARE METHODS) - COMBINED CHART & 2.0 SIGMA
+# ==============================================================================
+    # 8. CONTROL LIMIT CALCULATOR (COMPARE METHODS) - COMBINED CHART & AI TABLE
     # ==============================================================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
@@ -1846,23 +1846,26 @@ for i, (_, g) in enumerate(valid.iterrows()):
         # --- 2. PHÂN TÍCH CHI TIẾT ---
         st.markdown(f"### 🎛️ Control Limits Analysis: {g['Material']} | {g['Gauge_Range']}")
         
-        data = sub["Hardness_LINE"].dropna()
-        data_lab = sub["Hardness_LAB"].dropna() if "Hardness_LAB" in sub.columns else pd.Series(dtype=float)
+        # [CHỐT CHẶN BẢO MẬT DỮ LIỆU]: Loại bỏ tuyệt đối 0 và NA
+        sub_clean = sub[(sub["Hardness_LINE"].notna()) & (sub["Hardness_LINE"] > 0)].copy()
+        
+        data = sub_clean["Hardness_LINE"]
+        data_lab = sub_clean["Hardness_LAB"].dropna() if "Hardness_LAB" in sub_clean.columns else pd.Series(dtype=float)
         
         if len(data) < 10: 
             st.warning(f"⚠️ Not enough data for analysis (N={len(data)}). Minimum 10 coils required.")
         else:
             with st.expander("⚙️ Parameter Settings", expanded=False):
                 c1, c2 = st.columns(2)
-                # Đổi mặc định từ 3.0 thành 2.0 theo yêu cầu
-                sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 2.0, 0.5, key=f"sig_{i}")
-                iqr_k = c2.number_input("2. IQR Sensitivity", 0.1, 3.0, 1.5, 0.1, key=f"iqr_{i}")
+                # Đã chuyển mặc định về 2.0 Sigma và 0.5 IQR theo đúng thiết kế
+                sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 2.0, 0.5, key=f"sig_v3_{i}")
+                iqr_k = c2.number_input("2. IQR Sensitivity", 0.1, 3.0, 0.5, 0.1, key=f"iqr_v3_{i}")
 
-            spec_min = sub["Limit_Min"].max() if "Limit_Min" in sub.columns else 0
-            spec_max = sub["Limit_Max"].min() if "Limit_Max" in sub.columns else 0
-            lab_min = sub["Lab_Min"].max() if "Lab_Min" in sub.columns else 0
-            lab_max = sub["Lab_Max"].min() if "Lab_Max" in sub.columns else 0
-            rule_name = sub["Rule_Name"].iloc[0] if "Rule_Name" in sub.columns else "Standard Spec"
+            spec_min = sub_clean["Limit_Min"].max() if "Limit_Min" in sub_clean.columns else 0
+            spec_max = sub_clean["Limit_Max"].min() if "Limit_Max" in sub_clean.columns else 0
+            lab_min = sub_clean["Lab_Min"].max() if "Lab_Min" in sub_clean.columns else 0
+            lab_max = sub_clean["Lab_Max"].min() if "Lab_Max" in sub_clean.columns else 0
+            rule_name = sub_clean["Rule_Name"].iloc[0] if "Rule_Name" in sub_clean.columns else "Standard Spec"
             
             display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
             display_lab_max = lab_max if (lab_max > 0 and lab_max < 9000) else 0
@@ -1893,7 +1896,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}" if display_max > 0 else f"Ctrl: ≥{spec_min:.0f}"
             col_spec = "Product_Spec"
-            unique_specs = sub[col_spec].dropna().unique() if col_spec in sub.columns else []
+            unique_specs = sub_clean[col_spec].dropna().unique() if col_spec in sub_clean.columns else []
             specs_val = f"Specs: {', '.join(str(x) for x in unique_specs)}" if len(unique_specs) > 0 else "Specs: N/A"
 
             all_groups_summary.append({
@@ -1914,13 +1917,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
             # BIỂU ĐỒ TỔNG HỢP: LIMITS + NORMAL CURVE (ALL-IN-ONE)
             # ==================================================================
             from scipy.stats import norm
-            fig, ax = plt.subplots(figsize=(12, 5))
+            fig, ax = plt.subplots(figsize=(12, 4.5))
             
             ax.hist(data, bins=15, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
             if not data_lab.empty: 
                 ax.hist(data_lab, bins=15, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
             
-            # Tính toán trục X cho mượt mà
             min_cands = [m1_min, m4_min, spec_min, data.min()]
             max_cands = [m1_max, m4_max, display_max, data.max()]
             if not data_lab.empty:
@@ -1931,7 +1933,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             x_max_val = max(max_cands) + 5
             x_axis = np.linspace(x_min_val, x_max_val, 500)
             
-            # Vẽ đường cong chuẩn (Normal Curve)
             ax.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="#333333", lw=2, alpha=0.8, label=f"Normal Curve (σ={std_dev:.2f})")
             
             ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="M1: Standard")
@@ -1952,106 +1953,133 @@ for i, (_, g) in enumerate(valid.iterrows()):
             plt.close(fig)
 
             # ==================================================================
-            # BẢNG TỔNG HỢP CƠ TÍNH (SỬ DỤNG DỮ LIỆU THỰC TẾ)
+            # BẢNG TỔNG HỢP CƠ TÍNH BẰNG AI (GIỐNG HỆT ẢNH THIẾT KẾ)
             # ==================================================================
-            st.write("---") 
-            st.markdown(f"#### 📌 Limit Summary & Mechanical Estimation: {rule_name}")
+            st.write("")
             
-            sub_mech = sub.dropna(subset=['Hardness_LINE', 'TS', 'YS', 'EL']).copy()
-            sub_mech = sub_mech[sub_mech['Hardness_LINE'] > 0]
+            sub_mech = sub_clean.dropna(subset=['TS', 'YS', 'EL']).copy()
+            
+            # --- 1. LẤY SPEC CƠ TÍNH ---
+            s_ts_min = sub_mech["Standard TS min"].max() if "Standard TS min" in sub_mech.columns else 0
+            s_ts_max = sub_mech["Standard TS max"].min() if "Standard TS max" in sub_mech.columns else 0
+            s_ys_min = sub_mech["Standard YS min"].max() if "Standard YS min" in sub_mech.columns else 0
+            s_ys_max = sub_mech["Standard YS max"].min() if "Standard YS max" in sub_mech.columns else 0
+            s_el_min = sub_mech["Standard EL min"].max() if "Standard EL min" in sub_mech.columns else 0
 
-            target_k = 1.0 
-            new_target_min = mu - target_k * sigma_imr
-            new_target_max = mu + target_k * sigma_imr
+            # Hiển thị Banner Spec y hệt ảnh
+            ts_spec_str = f"{s_ts_min:.0f}~{s_ts_max:.0f}" if (0 < s_ts_max < 9000) else f"≥{s_ts_min:.0f}"
+            ys_spec_str = f"{s_ys_min:.0f}~{s_ys_max:.0f}" if (0 < s_ys_max < 9000) else f"≥{s_ys_min:.0f}"
+            el_spec_str = f"≥ {s_el_min:.0f}"
+            
+            st.info(f"🎯 **Mechanical Specs Target:** TS: **{ts_spec_str}** | YS: **{ys_spec_str}** | EL: **{el_spec_str}**")
 
-            rows = []
-            configs = [
-                ("🎯 Current Control Spec", spec_min, display_max, "-"),
-                ("🧪 Lab Spec (Ref)", lab_min, display_lab_max, "-"),
-                ("🔴 M1: Standard (Historical)", m1_min, m1_max, std_dev),
-                ("🟣 M4: I-MR (Control Limits)", m4_min, m4_max, sigma_imr),
-                (f"🌟 New Core Target (±{target_k}σ)", new_target_min, new_target_max, "-")
-            ]
+            # --- 2. HUẤN LUYỆN MÔ HÌNH AI (LINEAR REGRESSION) ---
+            if len(sub_mech) >= 5:
+                X_train = sub_mech[['Hardness_LINE']].values
+                model_ts = LinearRegression().fit(X_train, sub_mech['TS'].values)
+                model_ys = LinearRegression().fit(X_train, sub_mech['YS'].values)
+                model_el = LinearRegression().fit(X_train, sub_mech['EL'].values)
 
-            for cat, l_min, l_max, sig in configs:
-                if l_max > 0 and l_max < 9000:
-                    target_group = sub_mech[(sub_mech['Hardness_LINE'] >= l_min) & (sub_mech['Hardness_LINE'] <= l_max)]
-                else:
-                    target_group = sub_mech[sub_mech['Hardness_LINE'] >= l_min]
+                target_k = 1.0 
+                new_target_min = mu - target_k * sigma_imr
+                new_target_max = mu + target_k * sigma_imr
+
+                rows = []
+                configs = [
+                    ("🎯 Old Target Goal", spec_min, display_max, "-"),
+                    ("🔴 M1: Standard (Historical)", m1_min, m1_max, f"σ={std_dev:.2f}"),
+                    ("🔵 M2: IQR (Robust)", m2_min, m2_max, f"σ={sigma_clean:.2f}"),
+                    ("🟢 M3: Smart Hybrid", m3_min, m3_max, "-"),
+                    ("🟣 M4: I-MR (Control Limits)", m4_min, m4_max, f"σ={sigma_imr:.2f}"),
+                    (f"🌟 New Core Target (±{target_k}σ)", new_target_min, new_target_max, "-")
+                ]
+
+                # Hàm đánh giá Pass/Fail
+                def eval_prop(preds, spec_min, spec_max):
+                    p_min, p_max = preds
+                    if pd.notna(spec_min) and spec_min > 0 and p_min < spec_min: return "❌ Fail"
+                    if pd.notna(spec_max) and 0 < spec_max < 9000 and p_max > spec_max: return "❌ Fail"
+                    return "✅ Pass"
+
+                for cat, l_min, l_max, sig in configs:
+                    # Tính toán dải dự báo bằng AI
+                    calc_max = l_max if l_max > 0 else sub_mech['Hardness_LINE'].max()
+                    
+                    ts_preds = sorted([model_ts.predict([[l_min]])[0], model_ts.predict([[calc_max]])[0]])
+                    ys_preds = sorted([model_ys.predict([[l_min]])[0], model_ys.predict([[calc_max]])[0]])
+                    el_preds = sorted([model_el.predict([[l_min]])[0], model_el.predict([[calc_max]])[0]])
+                    
+                    ts_eval = eval_prop(ts_preds, s_ts_min, s_ts_max)
+                    ys_eval = eval_prop(ys_preds, s_ys_min, s_ys_max)
+                    el_eval = eval_prop(el_preds, s_el_min, 9999) # EL thường chỉ có min
+
+                    if "Fail" in ts_eval or "Fail" in ys_eval or "Fail" in el_eval:
+                        overall = "⚠️ Warning"
+                    else:
+                        overall = "✅ Optimal"
+
+                    rows.append({
+                        "Limit Type": cat,
+                        "Hardness Limits": f"{l_min:.1f} ~ {l_max:.1f}" if l_max > 0 else f"≥ {l_min:.1f}",
+                        "Variation": sig,
+                        "Est. TS": f"{ts_preds[0]:.0f} ~ {ts_preds[1]:.0f}",
+                        "TS Eval": ts_eval,
+                        "Est. YS": f"{ys_preds[0]:.0f} ~ {ys_preds[1]:.0f}",
+                        "YS Eval": ys_eval,
+                        "Est. EL (%)": f"{el_preds[0]:.1f} ~ {el_preds[1]:.1f}",
+                        "EL Eval": el_eval,
+                        "Overall Proposal": overall
+                    })
+
+                df_summary = pd.DataFrame(rows)
                 
-                if len(target_group) > 0:
-                    ts_mu = target_group['TS'].mean()
-                    ts_sig = target_group['TS'].std() if len(target_group) > 1 else 0
-                    exp_ts_min, exp_ts_max = ts_mu - (3 * ts_sig), ts_mu + (3 * ts_sig)
-                    
-                    ys_mu = target_group['YS'].mean()
-                    ys_sig = target_group['YS'].std() if len(target_group) > 1 else 0
-                    exp_ys_min, exp_ys_max = ys_mu - (3 * ys_sig), ys_mu + (3 * ys_sig)
-                    
-                    el_mu = target_group['EL'].mean()
-                    el_sig = target_group['EL'].std() if len(target_group) > 1 else 0
-                    exp_el_min, exp_el_max = max(0, el_mu - (3 * el_sig)), el_mu + (3 * el_sig)
-                    
-                    act_ts = f"{target_group['TS'].min():.0f} ~ {target_group['TS'].max():.0f}"
-                    exp_ts = f"{exp_ts_min:.0f} ~ {exp_ts_max:.0f}"
-                    
-                    act_ys = f"{target_group['YS'].min():.0f} ~ {target_group['YS'].max():.0f}"
-                    exp_ys = f"{exp_ys_min:.0f} ~ {exp_ys_max:.0f}"
-                    
-                    act_el = f"{target_group['EL'].min():.1f} ~ {target_group['EL'].max():.1f}"
-                    exp_el = f"{exp_el_min:.1f} ~ {exp_el_max:.1f}"
-                    
-                    n_coils = len(target_group)
-                else:
-                    act_ts = exp_ts = act_ys = exp_ys = act_el = exp_el = "N/A"
-                    n_coils = 0
+                # --- 3. ĐỊNH DẠNG BẢNG (CSS STYLING) GIỐNG HỆT ẢNH ---
+                def style_table(df):
+                    styles = pd.DataFrame('', index=df.index, columns=df.columns)
+                    for idx, row in df.iterrows():
+                        # Đổi màu nền cho dòng New Core Target
+                        if "New Core Target" in str(row['Limit Type']):
+                            styles.iloc[idx, :] = 'background-color: #e6f4ea;'
+                        
+                        # Đổi màu nền đỏ và chữ đậm cho ô Fail, chữ xanh đậm cho Pass
+                        for col in ['TS Eval', 'YS Eval', 'EL Eval']:
+                            if "Fail" in str(row[col]):
+                                styles.at[idx, col] = 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+                            elif "Pass" in str(row[col]):
+                                styles.at[idx, col] = 'color: #155724; font-weight: bold;'
+                                
+                        # Đổi màu chữ cho Overall Proposal
+                        if "Warning" in str(row['Overall Proposal']):
+                            styles.at[idx, 'Overall Proposal'] = 'color: #856404; font-weight: bold;'
+                        elif "Optimal" in str(row['Overall Proposal']):
+                            styles.at[idx, 'Overall Proposal'] = 'color: #155724; font-weight: bold;'
+                            
+                    return styles
 
-                rows.append({
-                    "Limit Type": cat,
-                    "Hardness Limits": f"{l_min:.1f} ~ {l_max:.1f}" if (l_max > 0 and l_max < 9000) else (f"≥ {l_min:.1f}" if l_min > 0 else "N/A"),
-                    "Matched Coils": n_coils,
-                    "Expected TS (±3σ)": exp_ts,
-                    "Actual TS": act_ts,
-                    "Expected YS (±3σ)": exp_ys,
-                    "Actual YS": act_ys,
-                    "Expected EL (±3σ)": exp_el,
-                    "Actual EL": act_el
-                })
+                styled_summary = df_summary.style.apply(style_table, axis=None)
+                st.dataframe(styled_summary, use_container_width=True, hide_index=True)
+                st.caption("*(**) Estimated values are generated by AI Linear Regression using actual group data. A ✅ Pass status indicates the estimated variation remains within the Mechanical Spec Target.*")
 
-            df_summary = pd.DataFrame(rows)
-            
-            def highlight_new_target(s):
-                if "🌟 New Core Target" in str(s['Limit Type']):
-                    return ['background-color: #d4edda; font-weight: bold; color: #155724'] * len(s)
-                return [''] * len(s)
+                # --- EXCEL EXPORT ---
+                import io
+                buffer = io.BytesIO()
+                with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
+                    df_summary.to_excel(writer, sheet_name='Summary', index=False)
+                    workbook = writer.book
+                    worksheet = writer.sheets['Summary']
+                    for idx, col in enumerate(df_summary.columns):
+                        max_len = max(df_summary[col].astype(str).map(len).max(), len(col)) + 2
+                        worksheet.set_column(idx, idx, max_len)
 
-            styled_summary = df_summary.style
-            if hasattr(styled_summary, "map"):
-                styled_summary = styled_summary.apply(highlight_new_target, axis=1)
+                st.download_button(
+                    label="📥 Download AI Estimation Report (Excel)",
+                    data=buffer.getvalue(),
+                    file_name=f"AI_Mechanical_Estimation_{rule_name.replace(' ', '_')}.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"download_summary_excel_{i}_{rule_name}"
+                )
             else:
-                styled_summary = styled_summary.applymap(highlight_new_target, axis=1)
-
-            st.dataframe(styled_summary, use_container_width=True, hide_index=True)
-            st.caption("*(**) Expected Properties are calculated using Actual Mean ± 3σ from matched coils.*")
-
-            # --- EXCEL EXPORT ---
-            import io
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                df_summary.to_excel(writer, sheet_name='Summary', index=False)
-                workbook = writer.book
-                worksheet = writer.sheets['Summary']
-                for idx, col in enumerate(df_summary.columns):
-                    max_len = max(df_summary[col].astype(str).map(len).max(), len(col)) + 2
-                    worksheet.set_column(idx, idx, max_len)
-
-            st.download_button(
-                label="📥 Download Summary as Excel",
-                data=buffer.getvalue(),
-                file_name=f"Mechanical_Estimation_{rule_name.replace(' ', '_')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"download_summary_excel_{i}_{rule_name}"
-            )
+                st.warning("Không đủ dữ liệu cơ tính sạch (N<5) để chạy AI Linear Regression.")
 
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
@@ -2080,4 +2108,3 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ws.set_column('A:A', 25); ws.set_column('B:E', 12); ws.set_column('F:J', 18)
             
             st.download_button("📥 Export Master Summary (Excel)", out_total.getvalue(), f"SPC_Limits_Summary_{today_str}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-# ==============================================================================
