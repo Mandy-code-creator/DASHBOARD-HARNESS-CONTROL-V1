@@ -1742,28 +1742,29 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     ax2.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab), color='#d62728', lw=2.5, linestyle='-.', label=f'Normal Curve (LAB)')
 
                 # Vẽ dải M1 (Đỏ)
-                ax2.axvline(m1_min, color='#d62728', linestyle='
-            else:
-                st.warning("Không đủ dữ liệu cơ tính sạch (N<5) để chạy AI Linear Regression.")
+                ax2.axvline(m1_min, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Min ({m1_min:.1f})')
+                ax2.axvline(m1_max, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Max ({m1_max:.1f})')
+                ax2.axvspan(m1_min, m1_max, color='#d62728', alpha=0.05)
 
-            spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}" if display_max > 0 else f"Ctrl: ≥{spec_min:.0f}"
-            col_spec = "Product_Spec"
-            unique_specs = sub_clean[col_spec].dropna().unique() if col_spec in sub_clean.columns else []
-            specs_val = f"Specs: {', '.join(str(x) for x in unique_specs)}" if len(unique_specs) > 0 else "Specs: N/A"
+                # Vẽ dải M4 (Tím)
+                ax2.axvline(m4_min, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Min ({m4_min:.1f})')
+                ax2.axvline(m4_max, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Max ({m4_max:.1f})')
+                ax2.axvspan(m4_min, m4_max, color='#9467bd', alpha=0.15)
+                
+                # Khóa giới hạn trục X
+                ax2.set_xlim(min_limit, max_limit)
 
-            all_groups_summary.append({
-                "Specification List": specs_val, "Material": mat_name, "Gauge": gauge_name,
-                "N Coils": len(data), "Current Spec": spec_str,
-                "🎯 Core Target (±1.0σ)": f"{new_target_min:.1f} ~ {new_target_max:.1f}", 
-                "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
-                "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
-                "M3: Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
-                "M4: I-MR (Opt)": f"{m4_min:.1f} ~ {m4_max:.1f}",
-                "🚧 Control Limit Rec.": best_control_limit 
-            })
-            
-            st.markdown("---") # Kẻ ngang giữa các mác thép
+                # Làm đẹp biểu đồ
+                ax2.set_title(f"M1 vs M4 - {mat_name} {gauge_name}", fontsize=12, fontweight='bold', color='#333333')
+                ax2.set_xlabel("Độ cứng (HRB)", fontweight='bold')
+                ax2.set_ylabel("Mật độ phân phối (Density)", fontweight='bold')
+                
+                # Đưa chú thích ra góc ngoài
+                ax2.legend(loc='center left', bbox_to_anchor=(1, 0.5))
+                ax2.grid(axis='y', linestyle=':', alpha=0.5)
 
+                st.pyplot(fig2)
+                plt.close(fig2)
         # ==============================================================================
         # HIỂN THỊ BẢNG TỔNG HỢP TOÀN NHÀ MÁY (NẰM NGOÀI VÒNG LẶP CỦA TỪNG MÁC THÉP)
         # ==============================================================================
