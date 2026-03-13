@@ -1706,29 +1706,20 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 styled_df_total = styled_df_total.applymap(style_recommendation, subset=['🚧 Control Limit Rec.'])\
                                                  .set_properties(**{'background-color': '#e6f4ea', 'font-weight': 'bold', 'color': '#0d5302'}, subset=['🎯 Core Target (±1.0σ)'])
             
-# --- 1. HIỂN THỊ BẢNG TRÊN APP ---
+# 1. HIỂN THỊ BẢNG
                 st.dataframe(styled_summary, use_container_width=True, hide_index=True)
 
-                # --- 2. TẠO DỮ LIỆU EXCEL ---
+                # 2. CHUẨN BỊ DỮ LIỆU EXCEL (ĐƠN GIẢN HÓA TỐI ĐA)
                 import io
-                output_xlsx = io.BytesIO()
-                with pd.ExcelWriter(output_xlsx, engine='xlsxwriter') as writer:
-                    df_summary.to_excel(writer, sheet_name='Comparison', index=False)
-                    workbook = writer.book
-                    worksheet = writer.sheets['Comparison']
-                    
-                    # Định dạng Header
-                    header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1})
-                    for col_num, value in enumerate(df_summary.columns.values):
-                        worksheet.write(0, col_num, value, header_fmt)
-                        worksheet.set_column(col_num, col_num, 18)
-
-                # --- 3. NÚT TẢI XUẤT HIỆN RIÊNG BIỆT ---
+                excel_data = io.BytesIO()
+                with pd.ExcelWriter(excel_data, engine='xlsxwriter') as writer:
+                    df_summary.to_excel(writer, index=False, sheet_name='Comparison')
+                
+                # 3. NÚT TẢI (ĐẶT Ở MỨC NGOÀI CÙNG CỦA NHÁNH HIỂN THỊ)
                 st.download_button(
-                    label=f"📥 Download Excel: {g['Material']}",
-                    data=output_xlsx.getvalue(),
-                    file_name=f"Methods_Comparison_{g['Material']}.xlsx",
+                    label=f"📥 Tải Excel: {g['Material']}",
+                    data=excel_data.getvalue(),
+                    file_name=f"So_sanh_{g['Material']}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"btn_dl_{i}_{uuid.uuid4().hex[:4]}" # Tạo key ngẫu nhiên để không bị kẹt nút
+                    key=f"dl_btn_{i}_{datetime.now().timestamp()}" # Dùng timestamp để tránh trùng key
                 )
-                st.markdown("<br>", unsafe_allow_html=True) # Khoảng cách cho thoáng
