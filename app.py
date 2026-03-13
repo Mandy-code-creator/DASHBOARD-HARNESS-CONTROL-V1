@@ -270,7 +270,7 @@ if view_mode == "👑 Master Dictionary Export":
     with col_sig3:
         min_coils_req = st.number_input("📦 Min Coils Required", value=30, step=1, key="min_coils")
 
-    if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
+        if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
         
         source_df = df_master_full.copy()
         
@@ -353,7 +353,7 @@ if view_mode == "👑 Master Dictionary Export":
                 })
                 master_data.append(master_dict)
         
-       if master_data:
+         if master_data:
             df_out = pd.DataFrame(master_data)
             
             # --- THÊM CỘT SỐ THỨ TỰ (STT) ---
