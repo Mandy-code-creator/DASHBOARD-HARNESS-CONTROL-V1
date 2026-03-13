@@ -254,7 +254,8 @@ valid = cnt[cnt["N_Coils"] >= 30]
 
 # ==============================================================================
 # ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (RESTORED 'NO.' COLUMN & GROUPED SPECS)
+# ==============================================================================
+# 9. MASTER DICTIONARY EXPORT (RESTORED ALL HARDNESS CONTROL LIMITS)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
@@ -286,7 +287,6 @@ if view_mode == "👑 Master Dictionary Export":
         source_df = raw_source.loc[:, ~raw_source.columns.duplicated()].copy()
         source_df.columns = source_df.columns.astype(str).str.strip()
         
-        # --- BẮT CỘT SPECS VÀ ĐỔI TÊN ---
         candidates = ["Product_Spec", "PRODUCT SPECIFICATION CODE", "PRODUCT_SPEC", "SPEC CODE", "SPECIFICATION CODE"]
         found_spec_col = None
         for col in source_df.columns:
@@ -317,10 +317,9 @@ if view_mode == "👑 Master Dictionary Export":
         clean_master_df["SPEC_CODE_INTERNAL"] = clean_master_df["SPEC_CODE_INTERNAL"].astype(str).replace(['nan', 'None', ''], 'N/A')
         
         master_data = []
-        # Group by Material và các thuộc tính lõi (Không đưa Specs vào group key nữa để gom được nhiều Specs vào 1 dòng)
         group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
         
-        with st.spinner("Processing Data..."):
+        with st.spinner("Processing Data with Control Limits..."):
             for keys, group in clean_master_df.groupby(group_cols, observed=True):
                 if len(group) < min_coils_req: continue 
                 
@@ -329,6 +328,7 @@ if view_mode == "👑 Master Dictionary Export":
                 sigma_imr = np.mean(np.abs(np.diff(hrb.values))) / 1.128 if len(hrb) > 1 else 1.0
                 if pd.isna(sigma_imr) or sigma_imr <= 0: sigma_imr = 1.0
                 
+                c_min_p, c_max_p = mu - control_k * sigma_imr, mu + control_k * sigma_imr
                 t_min, t_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
                 
                 X = group[["Hardness_LINE"]].values
@@ -349,16 +349,31 @@ if view_mode == "👑 Master Dictionary Export":
                 s_ys_min = group["Standard YS min"].max() if "Standard YS min" in group.columns else 0
                 s_el_min = group["Standard EL min"].max() if "Standard EL min" in group.columns else 0
                 
-                # --- GOM CÁC MÃ SPECS NHƯ TRONG ẢNH ---
                 unique_specs = group["SPEC_CODE_INTERNAL"].dropna().unique()
                 valid_specs = [s for s in unique_specs if s != 'N/A' and s != 'Unknown']
                 specs_str = ", ".join(valid_specs) if valid_specs else "N/A"
                 
+                # --- PHỤC HỒI: LẤY GIỚI HẠN ĐỘ CỨNG HIỆN TẠI TỪ DATA GỐC ---
+                cur_t_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
+                cur_t_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
+                cur_target = f"{cur_t_min:.1f}~{cur_t_max:.1f}" if cur_t_max > 0 else f"≥{cur_t_min:.1f}" if cur_t_min > 0 else "N/A"
+
+                cur_c_min = group['Lab_Min'].max() if 'Lab_Min' in group.columns else 0
+                cur_c_max = group['Lab_Max'].min() if 'Lab_Max' in group.columns else 0
+                cur_control = f"{cur_c_min:.1f}~{cur_c_max:.1f}" if cur_c_max > 0 else f"≥{cur_c_min:.1f}" if cur_c_min > 0 else "N/A"
+
                 row = {
                     "Specs": specs_str, 
+                    "Rolling Type": keys[0],
+                    "Metallic Type": keys[1],
+                    "Quality Group": keys[2],
                     "Material": keys[3],
                     "Gauge Range": keys[4],
                     "N Coils": len(group),
+                    # Đã thêm lại 2 cột Current Limits ở đây!
+                    "Current Target Spec": cur_target,
+                    "Current Control Spec": cur_control,
+                    f"🚧 Proposed Control Limit ({control_k}σ)": f"{c_min_p:.1f}~{c_max_p:.1f}",
                     f"🎯 Target ({target_k}σ)": f"{t_min:.1f}~{t_max:.1f}",
                     "TS Spec": f"≥{s_ts_min:.0f}",
                     "Exp. TS": f"{int(ts_p[0])}~{int(ts_p[1])}",
@@ -374,12 +389,14 @@ if view_mode == "👑 Master Dictionary Export":
 
         if master_data:
             df_out = pd.DataFrame(master_data)
-            
-            # --- KHÔI PHỤC CỘT SỐ THỨ TỰ (NO.) ---
             df_out.insert(0, "No.", range(1, len(df_out) + 1))
             
             target_col = f"🎯 Target ({target_k}σ)"
+            control_col = f"🚧 Proposed Control Limit ({control_k}σ)"
+            
             styled_df = df_out.style.set_properties(**{'background-color': '#fff2cc', 'color': '#000', 'font-weight': 'bold'}, subset=["Specs"]) \
+                                     .set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Target Spec", "Current Control Spec"]) \
+                                     .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[control_col]) \
                                      .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, 
                                                    subset=[target_col, "Exp. TS", "Exp. YS", "Exp. EL"]) \
                                      .set_properties(**{'background-color': '#e8f0fe', 'color': '#1a73e8', 'font-weight': 'bold'}, 
