@@ -1857,7 +1857,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
         else:
             with st.expander("⚙️ Parameter Settings", expanded=False):
                 c1, c2 = st.columns(2)
-                # Đã chuyển mặc định về 2.0 Sigma và 0.5 IQR theo đúng thiết kế
                 sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 2.0, 0.5, key=f"sig_v3_{i}")
                 iqr_k = c2.number_input("2. IQR Sensitivity", 0.1, 3.0, 0.5, 0.1, key=f"iqr_v3_{i}")
 
@@ -1953,13 +1952,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
             plt.close(fig)
 
             # ==================================================================
-            # BẢNG TỔNG HỢP CƠ TÍNH BẰNG AI (GIỐNG HỆT ẢNH THIẾT KẾ)
+            # BẢNG TỔNG HỢP CƠ TÍNH BẰNG AI
             # ==================================================================
             st.write("")
             
             sub_mech = sub_clean.dropna(subset=['TS', 'YS', 'EL']).copy()
             
-            # --- 1. LẤY SPEC CƠ TÍNH ---
+            # Lấy Spec Cơ tính
             s_ts_min = sub_mech["Standard TS min"].max() if "Standard TS min" in sub_mech.columns else 0
             s_ts_max = sub_mech["Standard TS max"].min() if "Standard TS max" in sub_mech.columns else 0
             s_ys_min = sub_mech["Standard YS min"].max() if "Standard YS min" in sub_mech.columns else 0
@@ -1973,7 +1972,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             st.info(f"🎯 **Mechanical Specs Target:** TS: **{ts_spec_str}** | YS: **{ys_spec_str}** | EL: **{el_spec_str}**")
 
-            # --- 2. HUẤN LUYỆN MÔ HÌNH AI (LINEAR REGRESSION) ---
+            # HUẤN LUYỆN MÔ HÌNH AI (LINEAR REGRESSION)
             if len(sub_mech) >= 5:
                 X_train = sub_mech[['Hardness_LINE']].values
                 model_ts = LinearRegression().fit(X_train, sub_mech['TS'].values)
@@ -1984,14 +1983,25 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 new_target_min = mu - target_k * sigma_imr
                 new_target_max = mu + target_k * sigma_imr
 
+                # --- ĐỊNH DẠNG RIÊNG CHO DÒNG OLD TARGET GOAL ĐỂ HIỂN THỊ CẢ LAB VÀ CTRL ---
+                def fmt_lim(vmin, vmax, prefix=""):
+                    if vmax > 0: return f"{prefix}{vmin:.1f}~{vmax:.1f}"
+                    if vmin > 0: return f"{prefix}≥{vmin:.1f}"
+                    return ""
+
+                ctrl_str = fmt_lim(spec_min, display_max, "Ctrl: ")
+                lab_str = fmt_lim(lab_min, display_lab_max, "Lab: ")
+                old_target_str = f"{ctrl_str} | {lab_str}" if lab_str else ctrl_str
+
                 rows = []
+                # Đưa chuỗi hiển thị 'disp_lim' vào làm phần tử thứ 5 của mảng
                 configs = [
-                    ("🎯 Old Target Goal", spec_min, display_max, "-"),
-                    ("🔴 M1: Standard (Historical)", m1_min, m1_max, f"σ={std_dev:.2f}"),
-                    ("🔵 M2: IQR (Robust)", m2_min, m2_max, f"σ={sigma_clean:.2f}"),
-                    ("🟢 M3: Smart Hybrid", m3_min, m3_max, "-"),
-                    ("🟣 M4: I-MR (Control Limits)", m4_min, m4_max, f"σ={sigma_imr:.2f}"),
-                    (f"🌟 New Core Target (±{target_k}σ)", new_target_min, new_target_max, "-")
+                    ("🎯 Old Target Goal", spec_min, display_max, "-", old_target_str),
+                    ("🔴 M1: Standard (Historical)", m1_min, m1_max, f"σ={std_dev:.2f}", f"{m1_min:.1f} ~ {m1_max:.1f}"),
+                    ("🔵 M2: IQR (Robust)", m2_min, m2_max, f"σ={sigma_clean:.2f}", f"{m2_min:.1f} ~ {m2_max:.1f}"),
+                    ("🟢 M3: Smart Hybrid", m3_min, m3_max, "-", f"{m3_min:.1f} ~ {m3_max:.1f}"),
+                    ("🟣 M4: I-MR (Control Limits)", m4_min, m4_max, f"σ={sigma_imr:.2f}", f"{m4_min:.1f} ~ {m4_max:.1f}"),
+                    (f"🌟 New Core Target (±{target_k}σ)", new_target_min, new_target_max, "-", f"{new_target_min:.1f} ~ {new_target_max:.1f}")
                 ]
 
                 # Hàm đánh giá Pass/Fail
@@ -2001,8 +2011,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     if pd.notna(spec_max) and 0 < spec_max < 9000 and p_max > spec_max: return "❌ Fail"
                     return "✅ Pass"
 
-                for cat, l_min, l_max, sig in configs:
-                    # Tính toán dải dự báo bằng AI
+                for cat, l_min, l_max, sig, disp_lim in configs:
+                    # AI vẫn dùng Control Limit để dự báo chính xác rủi ro
                     calc_max = l_max if l_max > 0 else sub_mech['Hardness_LINE'].max()
                     
                     ts_preds = sorted([model_ts.predict([[l_min]])[0], model_ts.predict([[calc_max]])[0]])
@@ -2011,7 +2021,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     
                     ts_eval = eval_prop(ts_preds, s_ts_min, s_ts_max)
                     ys_eval = eval_prop(ys_preds, s_ys_min, s_ys_max)
-                    el_eval = eval_prop(el_preds, s_el_min, 9999) # EL thường chỉ có min
+                    el_eval = eval_prop(el_preds, s_el_min, 9999) 
 
                     if "Fail" in ts_eval or "Fail" in ys_eval or "Fail" in el_eval:
                         overall = "⚠️ Warning"
@@ -2020,7 +2030,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                     rows.append({
                         "Limit Type": cat,
-                        "Hardness Limits": f"{l_min:.1f} ~ {l_max:.1f}" if l_max > 0 else f"≥ {l_min:.1f}",
+                        "Hardness Limits": disp_lim, # <--- Dùng chuỗi hiển thị đã gộp cả Lab và Ctrl
                         "Variation": sig,
                         "Est. TS": f"{ts_preds[0]:.0f} ~ {ts_preds[1]:.0f}",
                         "TS Eval": ts_eval,
@@ -2033,22 +2043,19 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                 df_summary = pd.DataFrame(rows)
                 
-                # --- 3. ĐỊNH DẠNG BẢNG (CSS STYLING) GIỐNG HỆT ẢNH ---
+                # --- ĐỊNH DẠNG BẢNG (CSS STYLING) ---
                 def style_table(df):
                     styles = pd.DataFrame('', index=df.index, columns=df.columns)
                     for idx, row in df.iterrows():
-                        # Đổi màu nền cho dòng New Core Target
                         if "New Core Target" in str(row['Limit Type']):
                             styles.iloc[idx, :] = 'background-color: #e6f4ea;'
                         
-                        # Đổi màu nền đỏ và chữ đậm cho ô Fail, chữ xanh đậm cho Pass
                         for col in ['TS Eval', 'YS Eval', 'EL Eval']:
                             if "Fail" in str(row[col]):
                                 styles.at[idx, col] = 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
                             elif "Pass" in str(row[col]):
                                 styles.at[idx, col] = 'color: #155724; font-weight: bold;'
                                 
-                        # Đổi màu chữ cho Overall Proposal
                         if "Warning" in str(row['Overall Proposal']):
                             styles.at[idx, 'Overall Proposal'] = 'color: #856404; font-weight: bold;'
                         elif "Optimal" in str(row['Overall Proposal']):
