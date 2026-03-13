@@ -1705,50 +1705,46 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 styled_df_total = styled_df_total.applymap(style_recommendation, subset=['🚧 Control Limit Rec.'])\
                                                  .set_properties(**{'background-color': '#e6f4ea', 'font-weight': 'bold', 'color': '#0d5302'}, subset=['🎯 Core Target (±1.0σ)'])
             
-# --- HIỂN THỊ BẢNG TRÊN APP ---
+# --- 1. HIỂN THỊ BẢNG TRÊN MÀN HÌNH ---
                 st.dataframe(styled_summary, use_container_width=True, hide_index=True)
 
-                # --- CODE XUẤT EXCEL CHO BẢNG SO SÁNH PHƯƠNG PHÁP ---
+                # --- 2. XỬ LÝ DỮ LIỆU EXCEL (FIXED) ---
                 import io
+                excel_buffer = io.BytesIO()
                 
-                # Tạo buffer để lưu file Excel ngầm
-                comp_out = io.BytesIO()
-                
-                with pd.ExcelWriter(comp_out, engine='xlsxwriter') as writer:
-                    df_summary.to_excel(writer, sheet_name='Methods_Comparison', index=False)
+                # Tạo file Excel với định dạng chuyên nghiệp
+                with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
+                    df_summary.to_excel(writer, sheet_name='Comparison_Report', index=False)
+                    workbook  = writer.book
+                    worksheet = writer.sheets['Comparison_Report']
                     
-                    workbook = writer.book
-                    ws = writer.sheets['Methods_Comparison']
-                    
-                    # Thiết lập các định dạng màu sắc cho Excel
-                    header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center'})
-                    pass_fmt   = workbook.add_format({'bg_color': '#D4EDDA', 'font_color': '#155724', 'bold': True, 'border': 1, 'align': 'center'})
-                    fail_fmt   = workbook.add_format({'bg_color': '#F8D7DA', 'font_color': '#721C24', 'bold': True, 'border': 1, 'align': 'center'})
-                    optimal_fmt = workbook.add_format({'bg_color': '#E6F4EA', 'bold': True, 'border': 1, 'align': 'center'})
+                    # Định dạng màu sắc
+                    fmt_header = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center'})
+                    fmt_pass   = workbook.add_format({'bg_color': '#D4EDDA', 'font_color': '#155724', 'bold': True, 'border': 1})
+                    fmt_fail   = workbook.add_format({'bg_color': '#F8D7DA', 'font_color': '#721C24', 'bold': True, 'border': 1})
+                    fmt_opt    = workbook.add_format({'bg_color': '#E6F4EA', 'bold': True, 'border': 1})
 
-                    # Ghi Header
+                    # Ghi Header và chỉnh độ rộng cột
                     for col_num, value in enumerate(df_summary.columns.values):
-                        ws.write(0, col_num, value, header_fmt)
-                        ws.set_column(col_num, col_num, 20) # Chỉnh độ rộng cột
+                        worksheet.write(0, col_num, value, fmt_header)
+                        worksheet.set_column(col_num, col_num, 18)
 
-                    # Tô màu các ô Pass/Fail và Optimal trong Excel dựa trên nội dung
-                    for row_num in range(len(df_summary)):
-                        for col_num in range(len(df_summary.columns)):
-                            cell_val = str(df_summary.iloc[row_num, col_num])
-                            current_fmt = None
-                            
-                            if "Pass" in cell_val: current_fmt = pass_fmt
-                            elif "Fail" in cell_val: current_fmt = fail_fmt
-                            elif "Optimal" in cell_val: current_fmt = optimal_fmt
-                            
-                            if current_fmt:
-                                ws.write(row_num + 1, col_num, cell_val, current_fmt)
+                    # Quét dữ liệu để tô màu các ô Eval và Proposal
+                    for r_idx in range(len(df_summary)):
+                        for c_idx in range(len(df_summary.columns)):
+                            val = str(df_summary.iloc[r_idx, c_idx])
+                            if "Pass" in val:
+                                worksheet.write(r_idx + 1, c_idx, val, fmt_pass)
+                            elif "Fail" in val:
+                                worksheet.write(r_idx + 1, c_idx, val, fmt_fail)
+                            elif "Optimal" in val:
+                                worksheet.write(r_idx + 1, c_idx, val, fmt_opt)
 
-                # Nút tải file Excel cho nhóm hiện tại
+                # --- 3. NÚT TẢI FILE (SỬ DỤNG KEY DUY NHẤT ĐỂ TRÁNH LỖI) ---
                 st.download_button(
-                    label=f"📥 Export Methods Comparison (Excel) - {g['Material']}",
-                    data=comp_out.getvalue(),
-                    file_name=f"Comparison_{g['Material']}_{g['Gauge_Range']}_{datetime.now().strftime('%Y%m%d')}.xlsx",
+                    label=f"📥 Download Excel Comparison ({g['Material']})",
+                    data=excel_buffer.getvalue(),
+                    file_name=f"Comparison_{g['Material']}_{g['Gauge_Range']}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"btn_dl_comp_{i}_{g['Material']}"
+                    key=f"dl_btn_final_{i}_{g['Material']}_{uuid.uuid4().hex[:4]}" # Key động để tránh trùng lặp
                 )
