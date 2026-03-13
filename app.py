@@ -1625,23 +1625,29 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                 def eval_prop(preds, spec_min, spec_max):
                     p_min, p_max = preds
-                    if pd.notna(spec_min) and spec_min > 0 and p_min < spec_min: return "❌ Fail"
-                    if pd.notna(spec_max) and 0 < spec_max < 9000 and p_max > spec_max: return "❌ Fail"
-                    return "✅ Pass"
+                    if pd.notna(spec_min) and spec_min > 0 and p_min < spec_min: return "Fail"
+                    if pd.notna(spec_max) and 0 < spec_max < 9000 and p_max > spec_max: return "Fail"
+                    return "Pass"
 
                 passed_control_methods = [] 
 
                 for cat, l_min, l_max, sig, disp_lim in configs:
+                    # 1. Theoretical Prediction (AI)
                     calc_max = l_max if l_max > 0 else sub_mech['Hardness_LINE'].max()
                     
                     ts_preds = sorted([model_ts.predict([[l_min]])[0], model_ts.predict([[calc_max]])[0]])
                     ys_preds = sorted([model_ys.predict([[l_min]])[0], model_ys.predict([[calc_max]])[0]])
                     el_preds = sorted([model_el.predict([[l_min]])[0], model_el.predict([[calc_max]])[0]])
                     
+                    theo_ts = f"{ts_preds[0]:.0f} ~ {ts_preds[1]:.0f}"
+                    theo_ys = f"{ys_preds[0]:.0f} ~ {ys_preds[1]:.0f}"
+                    theo_el = f"{el_preds[0]:.1f} ~ {el_preds[1]:.1f}"
+
+                    # Evaluation for Overall Proposal
                     ts_eval = eval_prop(ts_preds, s_ts_min, s_ts_max)
                     ys_eval = eval_prop(ys_preds, s_ys_min, s_ys_max)
                     el_eval = eval_prop(el_preds, s_el_min, 9999) 
-
+                    
                     if "Fail" in ts_eval or "Fail" in ys_eval or "Fail" in el_eval:
                         overall = "⚠️ Warning"
                     else:
@@ -1649,11 +1655,31 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         if "M" in cat: passed_control_methods.append(cat)
                         elif "Old Target" in cat: passed_control_methods.append("Old Target")
 
+                    # 2. Actual Data Extraction (Lọc các cuộn thép thực tế lọt vào dải Hardness này)
+                    # Xử lý trường hợp l_max = 0 (vô cực)
+                    actual_mask = (sub_mech['Hardness_LINE'] >= l_min)
+                    if l_max > 0:
+                        actual_mask = actual_mask & (sub_mech['Hardness_LINE'] <= l_max)
+                        
+                    actual_coils = sub_mech[actual_mask]
+                    
+                    if not actual_coils.empty:
+                        act_ts = f"{actual_coils['TS'].min():.0f} ~ {actual_coils['TS'].max():.0f}"
+                        act_ys = f"{actual_coils['YS'].min():.0f} ~ {actual_coils['YS'].max():.0f}"
+                        act_el = f"{actual_coils['EL'].min():.1f} ~ {actual_coils['EL'].max():.1f}"
+                    else:
+                        act_ts, act_ys, act_el = "No Data", "No Data", "No Data"
+
                     rows.append({
-                        "Limit Type": cat, "Hardness Limits": disp_lim, "Variation": sig,
-                        "Est. TS": f"{ts_preds[0]:.0f} ~ {ts_preds[1]:.0f}", "TS Eval": ts_eval,
-                        "Est. YS": f"{ys_preds[0]:.0f} ~ {ys_preds[1]:.0f}", "YS Eval": ys_eval,
-                        "Est. EL (%)": f"{el_preds[0]:.1f} ~ {el_preds[1]:.1f}", "EL Eval": el_eval,
+                        "Limit Type": cat, 
+                        "Hardness Limits": disp_lim, 
+                        "Variation (σ)": sig,
+                        "Theoretical TS": theo_ts, 
+                        "Actual TS": act_ts,
+                        "Theoretical YS": theo_ys, 
+                        "Actual YS": act_ys,
+                        "Theoretical EL (%)": theo_el, 
+                        "Actual EL (%)": act_el,
                         "Overall Proposal": overall
                     })
 
@@ -1671,21 +1697,21 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     for idx, row in df.iterrows():
                         if "New Core Target" in str(row['Limit Type']):
                             styles.iloc[idx, :] = 'background-color: #e6f4ea;'
-                        
-                        for col in ['TS Eval', 'YS Eval', 'EL Eval']:
-                            if "Fail" in str(row[col]): styles.at[idx, col] = 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
-                            elif "Pass" in str(row[col]): styles.at[idx, col] = 'color: #155724; font-weight: bold;'
                                 
                         if "Warning" in str(row['Overall Proposal']): styles.at[idx, 'Overall Proposal'] = 'color: #856404; font-weight: bold;'
                         elif "Optimal" in str(row['Overall Proposal']): styles.at[idx, 'Overall Proposal'] = 'color: #155724; font-weight: bold;'
+                        
+                        # Làm nổi bật các cột Actual để sếp dễ so sánh
+                        styles.at[idx, 'Actual TS'] = 'background-color: #f8f9fa;'
+                        styles.at[idx, 'Actual YS'] = 'background-color: #f8f9fa;'
+                        styles.at[idx, 'Actual EL (%)'] = 'background-color: #f8f9fa;'
                     return styles
 
                 styled_summary = df_summary.style.apply(style_table, axis=None)
                 
                 # --- DISPLAY COMPARISON TABLE ON APP ---
                 st.dataframe(styled_summary, use_container_width=True, hide_index=True)
-                st.caption("*(**) Estimated values are generated by AI Linear Regression using actual group data. A ✅ Pass status indicates the estimated variation remains within the Mechanical Spec Target.*")
-                
+                st.caption("*(**) Theoretical values are generated by AI Linear Regression. Actual values are the observed min/max of historical coils falling within the specified Hardness limits.*")
                 # --- EXCEL DOWNLOAD BUTTON FOR COMPARISON ---
                 indiv_buffer = io.BytesIO()
                 with pd.ExcelWriter(indiv_buffer, engine='xlsxwriter') as writer:
