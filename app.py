@@ -993,8 +993,19 @@ for i, (_, g) in enumerate(valid.iterrows()):
         st.markdown("### 🔗 Correlation: Hardness vs Mechanical Properties")
         sub_corr = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
         
-        bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
-        labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
+        # Tìm giá trị nhỏ nhất và lớn nhất thực tế trong dữ liệu để đặt mốc
+        h_min_act = sub_corr["Hardness_LAB"].min()
+        h_max_act = sub_corr["Hardness_LAB"].max()
+        
+        # Tạo danh sách các mốc dải độ cứng
+        # Chúng ta giữ các mốc tiêu chuẩn nhưng chèn giá trị Min thực tế vào đầu
+        standard_thresholds = [56, 58, 60, 62, 65, 70, 75, 80, 85, 88, 92, 97]
+        bins = sorted(list(set([h_min_act] + standard_thresholds + [h_max_act + 0.1])))
+        
+        # Tự động tạo nhãn (Labels) chính xác theo từng dải
+        labels = [f"{bins[j]:.1f}-{bins[j+1]:.1f}" for j in range(len(bins)-1)]
+        
+        sub_corr["HRB_bin"] = pd.cut(sub_corr["Hardness_LAB"], bins=bins, labels=labels, right=False)
         sub_corr["HRB_bin"] = pd.cut(sub_corr["Hardness_LAB"], bins=bins, labels=labels, right=False)
         
         summary = (sub_corr.groupby("HRB_bin", observed=True).agg(
