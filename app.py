@@ -1713,13 +1713,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     key=f"dl_indiv_{i}_{uuid.uuid4().hex[:4]}" 
                 )
                 
-                # --- BIỂU ĐỒ PHÂN PHỐI (VẼ ĐƯỜNG NORMAL CURVE HOÀN HẢO) ---
+                # --- BIỂU ĐỒ PHÂN PHỐI (VẼ 2 ĐƯỜNG NORMAL CURVE CHO CẢ LINE VÀ LAB) ---
                 st.markdown(f"**📈 Phân phối Thực tế vs M1 & M4 (Kèm Normal Curve)**")
                 fig2, ax2 = plt.subplots(figsize=(10, 4))
                 fig2.patch.set_facecolor('white')
                 ax2.set_facecolor('white')
 
-                from scipy.stats import norm # Đảm bảo đã import thư viện này
+                from scipy.stats import norm
 
                 # 1. Vẽ Histogram (Chuyển stat='density' để khớp với Normal Curve)
                 sns.histplot(data, stat='density', bins=15, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax2)
@@ -1727,38 +1727,22 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 if not data_lab.empty:
                     sns.histplot(data_lab, stat='density', bins=15, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax2)
 
-                # 2. Tự tay vẽ ĐƯỜNG NORMAL CURVE LÝ THUYẾT (Quả chuông chuẩn)
+                # 2. Mở rộng khung trục X để vuốt đuôi cho đẹp
                 min_limit = min(m1_min, m4_min, data.min()) - 4
                 max_limit = max(m1_max, m4_max, data.max()) + 4
                 x_axis = np.linspace(min_limit, max_limit, 500)
                 
-                # Tính và vẽ đường chuông của LINE
+                # 3. Vẽ đường Normal Curve cho LINE (Màu xanh dương đậm)
                 ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color='#1f77b4', lw=2.5, label=f'Normal Curve (LINE)')
 
+                # 4. Vẽ đường Normal Curve cho LAB (Màu cam, nét đứt) - CHỈ VẼ KHI CÓ DỮ LIỆU
+                if not data_lab.empty and len(data_lab) > 1:
+                    mu_lab = data_lab.mean()
+                    std_lab = data_lab.std()
+                    ax2.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab), color='#d62728', lw=2.5, linestyle='-.', label=f'Normal Curve (LAB)')
+
                 # Vẽ dải M1 (Đỏ)
-                ax2.axvline(m1_min, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Min ({m1_min:.1f})')
-                ax2.axvline(m1_max, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Max ({m1_max:.1f})')
-                ax2.axvspan(m1_min, m1_max, color='#d62728', alpha=0.05)
-
-                # Vẽ dải M4 (Tím)
-                ax2.axvline(m4_min, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Min ({m4_min:.1f})')
-                ax2.axvline(m4_max, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Max ({m4_max:.1f})')
-                ax2.axvspan(m4_min, m4_max, color='#9467bd', alpha=0.15)
-                
-                # Khóa giới hạn trục X để biểu đồ cân đối
-                ax2.set_xlim(min_limit, max_limit)
-
-                # Làm đẹp biểu đồ
-                ax2.set_title(f"M1 vs M4 - {mat_name} {gauge_name}", fontsize=12, fontweight='bold', color='#333333')
-                ax2.set_xlabel("Độ cứng (HRB)", fontweight='bold')
-                ax2.set_ylabel("Mật độ phân phối (Density)", fontweight='bold')
-                
-                # Đưa chú thích ra góc ngoài
-                ax2.legend(loc='center left', bbox_to_anchor=(1, 0.5))
-                ax2.grid(axis='y', linestyle=':', alpha=0.5)
-
-                st.pyplot(fig2)
-                plt.close(fig2)
+                ax2.axvline(m1_min, color='#d62728', linestyle='
             else:
                 st.warning("Không đủ dữ liệu cơ tính sạch (N<5) để chạy AI Linear Regression.")
 
