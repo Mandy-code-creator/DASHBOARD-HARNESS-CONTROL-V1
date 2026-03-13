@@ -255,7 +255,7 @@ valid = cnt[cnt["N_Coils"] >= 30]
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (WITH MECHANICAL SPECS COLUMNS)
+# 9. MASTER DICTIONARY EXPORT (ORIGINAL DESIGN + SPECS COLUMNS)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
@@ -267,7 +267,7 @@ if view_mode == "👑 Master Dictionary Export":
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary")
     st.info("💡 **Dual-Limit Standard:** Target (Narrow) for operations | Control (Wide) for safety boundaries.")
-
+    
     col_sig1, col_sig2, col_sig3 = st.columns(3)
     with col_sig1:
         target_k = st.number_input("🎯 Proposed Target Zone (σ)", value=1.0, step=0.1, key="k_target")
@@ -277,6 +277,7 @@ if view_mode == "👑 Master Dictionary Export":
         min_coils_req = st.number_input("📦 Min Coils Required", value=30, step=1, key="min_coils")
 
     if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
+        
         if 'df_master_full' in locals() and not df_master_full.empty:
             raw_source = df_master_full.copy()
         elif 'df' in locals() and not df.empty:
@@ -301,28 +302,43 @@ if view_mode == "👑 Master Dictionary Export":
 
         clean_master_df = source_df.dropna(subset=req_cols).copy()
         clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
-
+        
         master_data = []
         group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
-
-        with st.spinner("Analyzing Specs vs Actuals..."):
+        
+        with st.spinner("Generating Dictionary with Specs validation..."):
             for keys, group in clean_master_df.groupby(group_cols, observed=True):
                 if len(group) < min_coils_req: continue 
-
-                hrb = group["Hardness_LINE"]
-                mu, sigma_imr = hrb.mean(), (np.mean(np.abs(np.diff(hrb.values))) / 1.128 if len(hrb)>1 else 1.0)
-                t_min, t_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
                 
-                # AI Predictions
-                X_reg = group[["Hardness_LINE"]].values
-                m_ts = LinearRegression().fit(X_reg, group["TS"].values)
-                m_ys = LinearRegression().fit(X_reg, group["YS"].values)
-                m_el = LinearRegression().fit(X_reg, group["EL"].values)
-                ts_p = sorted([m_ts.predict([[t_min]])[0], m_ts.predict([[t_max]])[0]])
-                ys_p = sorted([m_ys.predict([[t_min]])[0], m_ys.predict([[t_max]])[0]])
-                el_p = sorted([m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]])
+                hrb = group["Hardness_LINE"]
+                mu = hrb.mean()
+                mrs = np.abs(np.diff(hrb.values))
+                sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else hrb.std()
+                if pd.isna(sigma_imr) or sigma_imr <= 0: sigma_imr = 1.0
+                
+                c_min_p, c_max_p = mu - control_k * sigma_imr, mu + control_k * sigma_imr
+                t_min_p, t_max_p = mu - target_k * sigma_imr, mu + target_k * sigma_imr
+                
+                X = group[["Hardness_LINE"]].values
+                m_ts = LinearRegression().fit(X, group["TS"].values)
+                m_ys = LinearRegression().fit(X, group["YS"].values)
+                m_el = LinearRegression().fit(X, group["EL"].values)
 
-                # 1. GET STANDARD SPECS FROM DATA
+                # Current Specs (From existing design)
+                cur_t_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
+                cur_t_max = group['Limit_Max'].max() if 'Limit_Max' in group.columns else 0
+                cur_target = f"{cur_t_min:.1f}~{cur_t_max:.1f}" if cur_t_max > 0 else f"≥{cur_t_min:.1f}"
+
+                cur_c_min = group['Lab_Min'].max() if 'Lab_Min' in group.columns else 0
+                cur_c_max = group['Lab_Max'].max() if 'Lab_Max' in group.columns else 0
+                cur_control = f"{cur_c_min:.1f}~{cur_c_max:.1f}" if cur_c_max > 0 else f"≥{cur_c_min:.1f}"
+
+                # AI Predictions
+                ts_p = sorted([m_ts.predict([[t_min_p]])[0], m_ts.predict([[t_max_p]])[0]])
+                ys_p = sorted([m_ys.predict([[t_min_p]])[0], m_ys.predict([[t_max_p]])[0]])
+                el_p = sorted([m_el.predict([[t_min_p]])[0], m_el.predict([[t_max_p]])[0]])
+
+                # --- NEW COLUMNS: MECHANICAL SPECS TARGETS ---
                 s_ts_min = group["Standard TS min"].max() if "Standard TS min" in group.columns else 0
                 s_ts_max = group["Standard TS max"].min() if "Standard TS max" in group.columns else 0
                 s_ys_min = group["Standard YS min"].max() if "Standard YS min" in group.columns else 0
@@ -331,44 +347,51 @@ if view_mode == "👑 Master Dictionary Export":
 
                 ts_spec = f"{s_ts_min:.0f}~{s_ts_max:.0f}" if (0 < s_ts_max < 9000) else f"≥{s_ts_min:.0f}"
                 ys_spec = f"{s_ys_min:.0f}~{s_ys_max:.0f}" if (0 < s_ys_max < 9000) else f"≥{s_ys_min:.0f}"
-                el_spec = f"≥{s_el_min:.0f}"
+                el_spec = f"≥ {s_el_min:.0f}"
 
-                # 2. ACTUAL DATA IN TARGET ZONE
-                actual_in = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
-                if not actual_in.empty:
-                    act_ts = f"{actual_in['TS'].min():.0f}~{actual_in['TS'].max():.0f}"
-                    act_ys = f"{actual_in['YS'].min():.0f}~{actual_in['YS'].max():.0f}"
-                    act_el = f"{actual_in['EL'].min():.1f}~{actual_in['EL'].max():.1f}%"
-                    
-                    # TS Validation
-                    ts_val = "✅ Pass" if actual_in['TS'].min() >= s_ts_min else "❌ Fail"
-                else:
-                    act_ts, act_ys, act_el, ts_val = "No Data", "No Data", "No Data", "-"
+                # Actual Data Extraction
+                actual_in = group[(group['Hardness_LINE'] >= t_min_p) & (group['Hardness_LINE'] <= t_max_p)]
+                act_ts = f"{actual_in['TS'].min():.0f}~{actual_in['TS'].max():.0f}" if not actual_in.empty else "N/A"
+                act_ys = f"{actual_in['YS'].min():.0f}~{actual_in['YS'].max():.0f}" if not actual_in.empty else "N/A"
+                act_el = f"{actual_in['EL'].min():.1f}~{actual_in['EL'].max():.1f}%" if not actual_in.empty else "N/A"
 
                 row = {col: (keys[idx] if isinstance(keys, tuple) else keys) for idx, col in enumerate(group_cols)}
                 row.update({
-                    "Target Zone": f"{t_min:.1f}~{t_max:.1f}",
-                    "TS Spec": ts_spec,
+                    "N Coils": len(group),
+                    "Current Target Spec": cur_target,
+                    "Current Control Spec": cur_control,
+                    f"Proposed Control Limit ({control_k}σ)": f"{c_min_p:.1f} ~ {c_max_p:.1f}",
+                    f"🎯 Proposed Target Zone ({target_k}σ)": f"{t_min_p:.1f} ~ {t_max_p:.1f}",
+                    "TS Spec": ts_spec, # Added
                     "Exp. TS": f"{int(ts_p[0])}~{int(ts_p[1])}",
-                    "Actual TS": act_ts,
-                    "TS Status": ts_val,
-                    "YS Spec": ys_spec,
+                    "Actual TS": act_ts, # Added
+                    "YS Spec": ys_spec, # Added
                     "Exp. YS": f"{int(ys_p[0])}~{int(ys_p[1])}",
-                    "Actual YS": act_ys,
-                    "EL Spec": el_spec,
-                    "Exp. EL": f"{el_p[0]:.1f}~{el_p[1]:.1f}%",
-                    "Actual EL": act_el
+                    "Actual YS": act_ys, # Added
+                    "EL Spec": el_spec, # Added
+                    "Exp. EL": f"{el_p[0]:.1f}% ~ {el_p[1]:.1f}%",
+                    "Actual EL": act_el # Added
                 })
                 master_data.append(row)
 
         if master_data:
             df_out = pd.DataFrame(master_data)
-            st.dataframe(df_out, use_container_width=True, hide_index=True)
+            df_out.insert(0, "No.", range(1, len(df_out) + 1))
+            
+            st.markdown("### 👁️ Preview Master Dictionary")
+            
+            # Keep your original styling but add new columns
+            styled = df_out.style.set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Target Spec", "Current Control Spec"]) \
+                                 .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[f"Proposed Control Limit ({control_k}σ)"]) \
+                                 .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[f"🎯 Proposed Target Zone ({target_k}σ)", "Exp. TS", "Exp. YS", "Exp. EL"]) \
+                                 .set_properties(**{'background-color': '#f8f9fa', 'border': '1px solid #dee2e6'}, subset=["TS Spec", "YS Spec", "EL Spec", "Actual TS", "Actual YS", "Actual EL"])
+            
+            st.dataframe(styled, use_container_width=True, hide_index=True)
             
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_out.to_excel(writer, index=False, sheet_name='Master_Dictionary')
-            st.download_button("📥 Download Master Excel", output.getvalue(), "Master_Dictionary.xlsx")
+            st.download_button("📥 Download Master Excel", output.getvalue(), f"Master_Dictionary_{dt.datetime.now().strftime('%Y%m%d')}.xlsx")
 
     st.stop()
 # ==============================================================================
