@@ -1,9 +1,7 @@
-# ================================
-# FULL STREAMLIT APP – FINAL STABLE VERSION
-# FIXED: NameError (fig_to_png), High Contrast Charts, Real Date Range
-# ================================
-
-
+# ==============================================================================
+# FULL STREAMLIT APP – ULTIMATE FINAL VERSION
+# INCLUDES: All Views, Master Dictionary, Auto-Mapping, Zero/NaN Filter
+# ==============================================================================
 
 import streamlit as st
 import pandas as pd
@@ -11,7 +9,6 @@ import numpy as np
 import requests, re
 from io import StringIO, BytesIO
 import matplotlib.pyplot as plt
-import uuid
 from datetime import datetime
 from sklearn.linear_model import LinearRegression
 from sklearn.metrics import r2_score, mean_squared_error
@@ -19,63 +16,36 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # ================================
-# PAGE CONFIG
+# PAGE CONFIG & CSS
 # ================================
 st.set_page_config(page_title="SPC Hardness Dashboard", layout="wide")
 st.title("📊 Hardness – Visual Analytics Dashboard")
-# ================================
+
 def add_custom_css():
     st.markdown("""
         <style>
-        /* 1. Nền tổng thể: Xám nhạt hiện đại */
-        .stApp {
-            background-color: #f8f9fa;
-        }
-        
-        /* 2. Sidebar: Trắng tinh + Đổ bóng nhẹ tách biệt */
-        [data-testid="stSidebar"] {
-            background-color: #ffffff;
-            box-shadow: 2px 0 5px rgba(0,0,0,0.05);
-            border-right: none;
-        }
-
-        /* 3. Tiêu đề: Màu xanh đen doanh nghiệp (Corporate Blue) */
-        h1, h2, h3 {
-            color: #2c3e50 !important;
-            font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
-            font-weight: 600;
-        }
-
-        /* 4. Các khối dữ liệu (Metric Cards): Trắng + Bo góc + Đổ bóng */
-        [data-testid="stMetricValue"] {
-            background-color: white;
-            padding: 10px;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
-            color: #007bff; /* Số màu xanh dương */
-        }
-
-        /* 5. Bảng dữ liệu: Header màu xám đậm */
+        .stApp { background-color: #f8f9fa; }
+        [data-testid="stSidebar"] { background-color: #ffffff; box-shadow: 2px 0 5px rgba(0,0,0,0.05); border-right: none; }
+        h1, h2, h3 { color: #2c3e50 !important; font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-weight: 600; }
+        [data-testid="stMetricValue"] { background-color: white; padding: 10px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); color: #007bff; }
         thead tr th:first-child {display:none}
         tbody th {display:none}
-        .stDataFrame {
-            border: 1px solid #e0e0e0;
-            border-radius: 5px;
-        }
+        .stDataFrame { border: 1px solid #e0e0e0; border-radius: 5px; }
         </style>
     """, unsafe_allow_html=True)
+add_custom_css()
+
 # ================================
-# UTILS (QUAN TRỌNG: KHÔNG ĐƯỢC XÓA)
+# UTILS
 # ================================
 def fig_to_png(fig):
-    """Chuyển đổi biểu đồ Matplotlib thành ảnh PNG để download"""
     buf = BytesIO()
     fig.savefig(buf, format="png", dpi=200, bbox_inches="tight")
     buf.seek(0)
     return buf
 
 # ================================
-# LOAD MAIN DATA
+# LOAD DATA & PRE-PROCESSING
 # ================================
 DATA_URL = "https://docs.google.com/spreadsheets/d/1GdnY09hJ2qVHuEBAIJ-eU6B5z8ZdgcGf4P7ZjlAt4JI/export?format=csv"
 
@@ -87,10 +57,7 @@ def load_main():
 
 raw = load_main()
 
-# ================================
-# PRE-PROCESSING & DATE HANDLING
-# ================================
-# 1. Calculate Data Period
+# 1. Date Handling
 data_period_str = "N/A"
 if "PRODUCTION DATE" in raw.columns:
     raw["PRODUCTION DATE"] = pd.to_datetime(raw["PRODUCTION DATE"], errors='coerce')
@@ -99,7 +66,6 @@ if "PRODUCTION DATE" in raw.columns:
     if pd.notna(min_date) and pd.notna(max_date):
         data_period_str = f"{min_date.strftime('%d/%m/%Y')} - {max_date.strftime('%d/%m/%Y')}"
 
-# --- DISPLAY HEADER WITH DATE ---
 current_time = datetime.now().strftime("%d/%m/%Y %H:%M")
 st.markdown(f"""
 <div style='background-color: #f0f2f6; padding: 10px; border-radius: 5px; margin-bottom: 20px;'>
@@ -108,12 +74,12 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
-# 2. Metallic Type
-metal_col = next(c for c in raw.columns if "METALLIC" in c.upper())
-raw["Metallic_Type"] = raw[metal_col]
+# 2. Rename & Auto-Mapping (Xử lý tên cột tiếng Hoa/tiếng Anh dài)
+if any("METALLIC" in str(c).upper() for c in raw.columns):
+    metal_col = next(c for c in raw.columns if "METALLIC" in str(c).upper())
+    raw["Metallic_Type"] = raw[metal_col]
 
-# 3. Rename Columns
-df = raw.rename(columns={
+rename_mapping = {
     "PRODUCT SPECIFICATION CODE": "Product_Spec",
     "HR STEEL GRADE": "Material",
     "Claasify material": "Rolling_Type",
@@ -123,7 +89,8 @@ df = raw.rename(columns={
     "QUALITY_CODE": "Quality_Code",
     "Standard Hardness": "Std_Text",
     "HARDNESS 冶金": "Hardness_LAB",
-    "HARDNESS 鍍鋅線 C": "Hardness_LINE",
+    "HARDNESS 鍍鋅線 N": "Hardness_LINE", # Lấy dây N làm chuẩn
+    "HARDNESS 鍍鋅線 C": "Hardness_LINE", # Fallback nếu dùng dây C
     "TENSILE_YIELD": "YS",
     "TENSILE_TENSILE": "TS",
     "TENSILE_ELONG": "EL",
@@ -133,18 +100,20 @@ df = raw.rename(columns={
     "Standard YS max": "Standard YS max",
     "Standard EL min": "Standard EL min",
     "Standard EL max": "Standard EL max"
-})
+}
+df = raw.rename(columns=rename_mapping)
 
-# 4. Standard Hardness Split
+# 3. Standard Hardness Split
 def split_std(x):
     if isinstance(x, str) and "~" in x:
         lo, hi = x.split("~")
         return float(lo), float(hi)
     return np.nan, np.nan
 
-df[["Std_Min","Std_Max"]] = df["Std_Text"].apply(lambda x: pd.Series(split_std(x)))
+if "Std_Text" in df.columns:
+    df[["Std_Min","Std_Max"]] = df["Std_Text"].apply(lambda x: pd.Series(split_std(x)))
 
-# 5. Force Numeric
+# 4. Force Numeric
 numeric_cols = [
     "Hardness_LAB", "Hardness_LINE", "YS", "TS", "EL", "Order_Gauge",
     "Standard TS min", "Standard TS max",
@@ -155,41 +124,37 @@ for c in numeric_cols:
     if c in df.columns:
         df[c] = pd.to_numeric(df[c], errors="coerce")
 
-# 6. Quality Group Merge
-df["Quality_Group"] = df["Quality_Code"].replace({
-    "CQ00": "CQ00 / CQ06",
-    "CQ06": "CQ00 / CQ06"
-})
-
-# 7. Filter GE* < 88
+# 5. Quality Group Merge
 if "Quality_Code" in df.columns:
+    df["Quality_Group"] = df["Quality_Code"].replace({
+        "CQ00": "CQ00 / CQ06",
+        "CQ06": "CQ00 / CQ06"
+    })
+
+# 6. Filter GE* < 88
+if "Quality_Code" in df.columns and "Hardness_LAB" in df.columns and "Hardness_LINE" in df.columns:
     df = df[~(
         df["Quality_Code"].astype(str).str.startswith("GE") &
         ((df["Hardness_LAB"] < 88) | (df["Hardness_LINE"] < 88))
     )]
 
-# =========================================================
-# 8. APPLY GLOBAL COMPANY RULES (COLD ROLLING LOGIC)
-# =========================================================
+# 7. Apply Company Rules
 def apply_company_rules(row):
-    std_min = row["Std_Min"] if pd.notna(row["Std_Min"]) else 0
-    std_max = row["Std_Max"] if pd.notna(row["Std_Max"]) else 0
+    std_min = row["Std_Min"] if "Std_Min" in row and pd.notna(row["Std_Min"]) else 0
+    std_max = row["Std_Max"] if "Std_Max" in row and pd.notna(row["Std_Max"]) else 0
     lab_min, lab_max = 0, 0
     rule_name = "Standard (Excel)"
 
-    is_cold = "COLD" in str(row["Rolling_Type"]).upper()
-    q_grp = str(row["Quality_Group"])
+    is_cold = "COLD" in str(row.get("Rolling_Type", "")).upper()
+    q_grp = str(row.get("Quality_Group", ""))
     target_qs = ["CQ00", "CQ06", "CQ07", "CQB0"]
     is_target_q = any(q in q_grp for q in target_qs)
 
     if is_cold and is_target_q:
-        mat = str(row["Material"]).upper().strip()
-        if mat in ["A1081","A1081B"]:
-            return 56.0, 62.0, 52.0, 70.0, "Rule A1081 (Cold)"
-        elif mat in ["A108M","A108MR"]:
-            return 60.0, 68.0, 55.0, 72.0, "Rule A108M (Cold)"
-        elif mat in ["A108", "A108G", "A108R"]:
-            return 58.0, 62.0, 52.0, 65.0, "Rule A108 (Cold)"
+        mat = str(row.get("Material", "")).upper().strip()
+        if mat in ["A1081","A1081B"]: return 56.0, 62.0, 52.0, 70.0, "Rule A1081 (Cold)"
+        elif mat in ["A108M","A108MR"]: return 60.0, 68.0, 55.0, 72.0, "Rule A108M (Cold)"
+        elif mat in ["A108", "A108G", "A108R"]: return 58.0, 62.0, 52.0, 65.0, "Rule A108 (Cold)"
 
     return std_min, std_max, lab_min, lab_max, rule_name
 
@@ -198,67 +163,63 @@ df[['Limit_Min', 'Limit_Max', 'Lab_Min', 'Lab_Max', 'Rule_Name']] = df.apply(
 )
 
 # ================================
-# REFRESH BUTTON
-# ================================
-if st.sidebar.button("🔄 Refresh Data"):
-    st.cache_data.clear()
-    st.rerun()
-
-# ================================
-# LOAD GAUGE RANGE TABLE
+# LOAD GAUGE RANGE
 # ================================
 GAUGE_URL = "https://docs.google.com/spreadsheets/d/1utstALOQXfPSEN828aMdkrM1xXF3ckjBsgCUdJbwUdM/export?format=csv"
 
 @st.cache_data
-def load_gauge():
-    return pd.read_csv(GAUGE_URL)
+def load_gauge(): return pd.read_csv(GAUGE_URL)
 
 gauge_df = load_gauge()
 gauge_df.columns = gauge_df.columns.str.strip()
-gauge_col = next(c for c in gauge_df.columns if "RANGE" in c.upper())
+gauge_col = next((c for c in gauge_df.columns if "RANGE" in c.upper()), None)
 
-def parse_range(text):
-    nums = re.findall(r"\d+\.\d+|\d+", str(text))
-    if len(nums) < 2: return None, None
-    return float(nums[0]), float(nums[-1])
+if gauge_col and "Order_Gauge" in df.columns:
+    def parse_range(text):
+        nums = re.findall(r"\d+\.\d+|\d+", str(text))
+        if len(nums) < 2: return None, None
+        return float(nums[0]), float(nums[-1])
 
-ranges = []
-for _, r in gauge_df.iterrows():
-    lo, hi = parse_range(r[gauge_col])
-    if lo is not None:
-        ranges.append((lo, hi, r[gauge_col]))
+    ranges = []
+    for _, r in gauge_df.iterrows():
+        lo, hi = parse_range(r[gauge_col])
+        if lo is not None: ranges.append((lo, hi, r[gauge_col]))
 
-def map_gauge(val):
-    for lo, hi, name in ranges:
-        if lo <= val < hi: return name
-    return None
+    def map_gauge(val):
+        for lo, hi, name in ranges:
+            if lo <= val < hi: return name
+        return None
 
-df["Gauge_Range"] = df["Order_Gauge"].apply(map_gauge)
-df = df.dropna(subset=["Gauge_Range"])
+    df["Gauge_Range"] = df["Order_Gauge"].apply(map_gauge)
+    df = df.dropna(subset=["Gauge_Range"])
 
-# ================================
 # ================================
 # SIDEBAR FILTER
 # ================================
 st.sidebar.header("🎛 FILTER")
 
-all_rolling = sorted(df["Rolling_Type"].unique())
-all_metal = sorted(df["Metallic_Type"].unique())
-all_qgroup = sorted(df["Quality_Group"].unique())
+if st.sidebar.button("🔄 Refresh Data"):
+    st.cache_data.clear()
+    st.rerun()
 
-rolling = st.sidebar.radio("Rolling Type", all_rolling)
-metal   = st.sidebar.radio("Metallic Type", all_metal)
-qgroup  = st.sidebar.radio("Quality Group", all_qgroup)
+all_rolling = sorted(df["Rolling_Type"].astype(str).unique()) if "Rolling_Type" in df else []
+all_metal = sorted(df["Metallic_Type"].astype(str).unique()) if "Metallic_Type" in df else []
+all_qgroup = sorted(df["Quality_Group"].astype(str).unique()) if "Quality_Group" in df else []
 
-# ---> [CHỈNH SỬA BƯỚC 1]: TẠO KÉT SẮT LƯU TOÀN BỘ DỮ LIỆU ĐÃ LÀM SẠCH <---
+rolling = st.sidebar.radio("Rolling Type", all_rolling) if all_rolling else None
+metal   = st.sidebar.radio("Metallic Type", all_metal) if all_metal else None
+qgroup  = st.sidebar.radio("Quality Group", all_qgroup) if all_qgroup else None
+
+# ---> MASTER DATA SAFE (Dùng cho Master Export & KPI) <---
 df_master_full = df.copy() 
 
-# Bộ lọc này bây giờ chỉ ảnh hưởng đến biến 'df' dùng cho các View hiển thị, không chạm vào 'df_master_full'
-df = df[
-    (df["Rolling_Type"] == rolling) &
-    (df["Metallic_Type"] == metal) &
-    (df["Quality_Group"] == qgroup)
-]
+# Lọc dữ liệu hiển thị theo Sidebar
+if rolling and metal and qgroup:
+    df = df[
+        (df["Rolling_Type"] == rolling) &
+        (df["Metallic_Type"] == metal) &
+        (df["Quality_Group"] == qgroup)
+    ]
 
 view_mode = st.sidebar.radio(
     "📊 View Mode",
@@ -277,21 +238,403 @@ view_mode = st.sidebar.radio(
     ]
 )
 
-# ================================
-# GROUP CONDITION
-# ================================
 GROUP_COLS = ["Rolling_Type","Metallic_Type","Quality_Group","Gauge_Range","Material"]
-cnt = df.groupby(GROUP_COLS).agg(N_Coils=("COIL_NO","nunique")).reset_index()
+cnt = df.groupby(GROUP_COLS, observed=True).agg(N_Coils=("COIL_NO","nunique")).reset_index()
 valid = cnt[cnt["N_Coils"] >= 30]
 
-if valid.empty:
-    st.warning("⚠️ No group with ≥30 coils found.")
+# ==============================================================================
+# 0. MASTER DICTIONARY EXPORT (STANDALONE VIEW - MUST BE AT TOP LEVEL)
+# ==============================================================================
+if view_mode == "👑 Master Dictionary Export":
+    
+    st.markdown("---")
+    st.header("👑 Master Mechanical Properties Dictionary")
+    st.info("💡 **Interactive View & Export:** Review the logically grouped limits directly on the screen below, then download the formatted Excel file for your records.")
+    
+    # --- KHU VỰC ĐIỀU CHỈNH THỐNG KÊ ---
+    st.markdown("#### ⚙️ Custom Statistical Parameters")
+    col_sig1, col_sig2, col_sig3 = st.columns(3)
+    with col_sig1:
+        target_k = st.number_input("🎯 Target Zone (σ)", value=1.0, step=0.1, key="k_target")
+    with col_sig2:
+        control_k = st.number_input("🚧 Control Limit (σ)", value=2.0, step=0.5, key="k_control")
+    with col_sig3:
+        min_coils_req = st.number_input("📦 Min Coils Required", value=30, step=1, key="min_coils")
+
+    if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
+        
+        source_df = df_master_full.copy()
+        
+        required_cols = ['Hardness_LINE', 'TS', 'YS', 'EL']
+        missing_req = [col for col in required_cols if col not in source_df.columns]
+        if missing_req:
+            st.error(f"❌ File dữ liệu thiếu các cột bắt buộc: {', '.join(missing_req)}")
+            st.info("💡 Vui lòng đảm bảo file Excel gốc có đủ các cột TS, YS, EL và độ cứng mạ kẽm.")
+            st.stop()
+
+        clean_master_df = source_df.dropna(subset=required_cols).copy()
+        clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
+        
+        if clean_master_df.empty:
+            st.warning("⚠️ Không có cuộn thép nào có đủ dữ liệu cơ tính và độ cứng > 0.")
+            st.stop()
+
+        master_data = []
+        missing_groups = [col for col in GROUP_COLS if col not in clean_master_df.columns]
+        if missing_groups:
+            st.error(f"❌ File thiếu cột phân loại: {', '.join(missing_groups)}")
+            st.stop()
+
+        with st.spinner("Calculating limits and running AI predictions..."):
+            for keys, group in clean_master_df.groupby(GROUP_COLS, observed=True):
+                if len(group) < min_coils_req: continue 
+                
+                # --- Core Calculations (I-MR) ---
+                data = group["Hardness_LINE"]
+                mu = data.mean()
+                mrs = np.abs(np.diff(data.values))
+                sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else data.std()
+                if pd.isna(sigma_imr) or sigma_imr == 0: sigma_imr = data.std() if len(data) > 1 else 1.0
+                
+                c_min, c_max = mu - control_k * sigma_imr, mu + control_k * sigma_imr
+                t_min, t_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
+                
+                # AI Models
+                X_train = group[["Hardness_LINE"]].values
+                m_ts = LinearRegression().fit(X_train, group["TS"].values)
+                m_ys = LinearRegression().fit(X_train, group["YS"].values)
+                m_el = LinearRegression().fit(X_train, group["EL"].values)
+                
+                # Specs
+                s_ts_min = group["Standard TS min"].max() if "Standard TS min" in group.columns else 0
+                s_ts_max = group["Standard TS max"].min() if "Standard TS max" in group.columns else 0
+                s_ys_min = group["Standard YS min"].max() if "Standard YS min" in group.columns else 0
+                s_ys_max = group["Standard YS max"].min() if "Standard YS max" in group.columns else 0
+                s_el_min = group["Standard EL min"].max() if "Standard EL min" in group.columns else 0
+                
+                def fmt_s(mi, ma):
+                    if pd.isna(mi): mi = 0
+                    if pd.isna(ma): ma = 0
+                    if mi > 0 and 0 < ma < 9000: return f"{mi:.0f}~{ma:.0f}"
+                    elif mi > 0: return f"≥ {mi:.0f}"
+                    elif 0 < ma < 9000: return f"≤ {ma:.0f}"
+                    return "-"
+
+                curr_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
+                curr_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
+                curr_spec_str = f"{curr_min:.1f}~{curr_max:.1f}" if curr_max > 0 else (f"≥{curr_min:.1f}" if curr_min > 0 else "-")
+
+                ts_preds = sorted([m_ts.predict([[t_min]])[0], m_ts.predict([[t_max]])[0]])
+                ys_preds = sorted([m_ys.predict([[t_min]])[0], m_ys.predict([[t_max]])[0]])
+                el_preds = sorted([m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]])
+
+                master_dict = {col: (keys[idx] if isinstance(keys, tuple) else keys) for idx, col in enumerate(GROUP_COLS)}
+                
+                master_dict.update({
+                    "N Coils": len(group),
+                    "Current Hardness Spec": curr_spec_str,
+                    f"Proposed Control Limit ({control_k}σ)": f"{c_min:.1f} ~ {c_max:.1f}",
+                    f"🎯 Proposed Target Zone ({target_k}σ)": f"{t_min:.1f} ~ {t_max:.1f}",
+                    "Spec: TS": fmt_s(s_ts_min, s_ts_max),
+                    "Exp. TS (at Target)": f"{int(ts_preds[0])}~{int(ts_preds[1])}",
+                    "Spec: YS": fmt_s(s_ys_min, s_ys_max),
+                    "Exp. YS (at Target)": f"{int(ys_preds[0])}~{int(ys_preds[1])}",
+                    "Spec: EL": f"≥ {s_el_min:.1f}%" if s_el_min > 0 else "-",
+                    "Exp. EL (at Target)": f"{el_preds[0]:.1f}% ~ {el_preds[1]:.1f}%"
+                })
+                master_data.append(master_dict)
+        
+        if master_data:
+            df_out = pd.DataFrame(master_data)
+            
+            ordered_cols = GROUP_COLS + [
+                "N Coils", 
+                "Current Hardness Spec", f"Proposed Control Limit ({control_k}σ)", f"🎯 Proposed Target Zone ({target_k}σ)",
+                "Spec: TS", "Exp. TS (at Target)",
+                "Spec: YS", "Exp. YS (at Target)",
+                "Spec: EL", "Exp. EL (at Target)"
+            ]
+            final_cols = [c for c in ordered_cols if c in df_out.columns]
+            df_out = df_out[final_cols]
+            
+            st.markdown("### 👁️ Preview Master Dictionary")
+            
+            styled_df = df_out.style.set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=[c for c in final_cols if "Spec:" in c or "Current Hardness Spec" in c]) \
+                                    .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[c for c in final_cols if "Target" in c or "Exp." in c]) \
+                                    .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[f"Proposed Control Limit ({control_k}σ)"])
+            
+            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_out.to_excel(writer, sheet_name='Master_Specs', index=False)
+                workbook = writer.book
+                worksheet = writer.sheets['Master_Specs']
+                
+                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+                target_fmt = workbook.add_format({'bg_color': '#D9EAD3', 'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+                spec_fmt = workbook.add_format({'bg_color': '#FFF2CC', 'italic': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+                
+                worksheet.set_row(0, 30) 
+                
+                for col_num, value in enumerate(df_out.columns.values):
+                    fmt = header_fmt
+                    if "Target" in value or "Exp." in value: fmt = target_fmt
+                    if "Spec:" in value or "Current Hardness Spec" in value: fmt = spec_fmt
+                    worksheet.write(0, col_num, value, fmt)
+                    worksheet.set_column(col_num, col_num, max(12, len(value) * 0.8))
+            
+            st.markdown("### 📥 Download Report")
+            st.success(f"✅ Full Master Dictionary created for {len(master_data)} groups!")
+            st.download_button("📥 Download Full Dictionary (Excel)", output.getvalue(), f"Full_Master_Dictionary_{datetime.now().strftime('%Y%m%d')}.xlsx")
+        else:
+            st.error("❌ Không có dữ liệu hợp lệ để tạo báo cáo.")
+            
     st.stop()
 
+
 # ==============================================================================
+# 1. EXECUTIVE KPI DASHBOARD (OVERVIEW) - STANDALONE BLOCK
 # ==============================================================================
+if view_mode == "📊 Executive KPI Dashboard":
+    st.markdown("## 📊 Executive KPI Dashboard (Overall Quality Overview)")
+    
+    df_kpi = df_master_full.dropna(subset=['TS', 'YS', 'EL', 'Hardness_LINE']).copy()
+    
+    if df_kpi.empty:
+        st.warning("⚠️ No sufficient data to generate KPIs.")
+    else:
+        total_coils = len(df_kpi)
+        
+        def clean_num(val, is_pct=False):
+            if pd.isna(val): return "0%" if is_pct else "0"
+            v = round(float(val), 2)
+            res = str(int(v)) if v.is_integer() else str(v)
+            return f"{res}%" if is_pct else res
+
+        def check_pass(val, min_col, max_col):
+            s_min = df_kpi[min_col].fillna(0) if min_col in df_kpi.columns else 0
+            s_max = df_kpi[max_col].fillna(9999).replace(0, 9999) if max_col in df_kpi.columns else 9999
+            return (val >= s_min) & (val <= s_max)
+        
+        df_kpi['TS_Pass'] = check_pass(df_kpi['TS'], 'Standard TS min', 'Standard TS max')
+        df_kpi['YS_Pass'] = check_pass(df_kpi['YS'], 'Standard YS min', 'Standard YS max')
+        df_kpi['EL_Pass'] = df_kpi['EL'] >= (df_kpi['Standard EL min'].fillna(0) if 'Standard EL min' in df_kpi.columns else 0)
+        df_kpi['All_Pass'] = df_kpi['TS_Pass'] & df_kpi['YS_Pass'] & df_kpi['EL_Pass']
+        
+        df_kpi['HRB_Pass'] = (df_kpi['Hardness_LINE'] >= df_kpi['Limit_Min']) & (df_kpi['Hardness_LINE'] <= df_kpi['Limit_Max'])
+        
+        yield_rate = df_kpi['All_Pass'].mean() * 100
+        hrb_yield = df_kpi['HRB_Pass'].mean() * 100 
+        ts_yield = df_kpi['TS_Pass'].mean() * 100
+        ys_yield = df_kpi['YS_Pass'].mean() * 100
+        el_yield = df_kpi['EL_Pass'].mean() * 100
+        
+        scrap_col = next((c for c in df_kpi.columns if 'SCRAP' in str(c).upper() or 'CUT' in str(c).upper()), None)
+        if scrap_col:
+            total_scrap = df_kpi[scrap_col].sum()
+            scrap_label = "Total Cut Scrap"
+        else:
+            total_scrap = total_coils - df_kpi['All_Pass'].sum()
+            scrap_label = "Total Scrap / NG Coils"
+
+        st.markdown("### 🏆 Overall Quality Metrics")
+        
+        col1, col2, col3, col4 = st.columns(4)
+        col1.metric("📦 Total Coils Tested", f"{total_coils:,}")
+        
+        delta_mech = clean_num(yield_rate - 100, True) if yield_rate < 100 else "Perfect"
+        col2.metric("✅ Mech Yield Rate", clean_num(yield_rate, True), delta_mech, delta_color="normal" if yield_rate == 100 else "inverse")
+        
+        delta_hrb = clean_num(hrb_yield - 100, True) if hrb_yield < 100 else "In Control"
+        col3.metric("🎯 HRB Yield Rate", clean_num(hrb_yield, True), delta_hrb, delta_color="normal" if hrb_yield == 100 else "inverse")
+        
+        col4.metric(f"✂️ {scrap_label}", f"{total_scrap:,.0f}")
+        
+        st.markdown("<br>", unsafe_allow_html=True)
+        
+        col5, col6, col7 = st.columns(3)
+        col5.metric("🔹 TS Pass Rate", clean_num(ts_yield, True))
+        col6.metric("🔸 YS Pass Rate", clean_num(ys_yield, True))
+        col7.metric("🔻 EL Pass Rate", clean_num(el_yield, True))
+        
+        st.markdown("---")
+        
+        st.markdown("### ⚠️ High-Risk Specs Watchlist")
+        st.caption("Top list of standard codes with the lowest mechanical pass rates or out-of-control hardness, requiring priority review.")
+        
+        col_spec = "Product_Spec" if "Product_Spec" in df_kpi.columns else "Rule_Name"
+        
+        group_cols = [col_spec, "Quality_Group", "Material", "Gauge_Range"]
+        valid_group_cols = [c for c in group_cols if c in df_kpi.columns]
+        
+        risk_summary = df_kpi.groupby(valid_group_cols, observed=True).agg(
+            Total_Coils=('COIL_NO', 'count'),
+            Mech_Pass_Coils=('All_Pass', 'sum'),
+            HRB_Pass_Coils=('HRB_Pass', 'sum'), 
+            Hardness_Mean=('Hardness_LINE', 'mean'),
+            Hardness_Std=('Hardness_LINE', 'std'),
+            LSL=('Limit_Min', 'first'),
+            USL=('Limit_Max', 'first')
+        ).reset_index()
+        
+        risk_summary['Mech Yield (%)'] = (risk_summary['Mech_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
+        risk_summary['HRB Yield (%)'] = (risk_summary['HRB_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
+        
+        risk_top = risk_summary[risk_summary['Total_Coils'] >= 3].sort_values(['Mech Yield (%)', 'HRB Yield (%)']).head(10)
+        
+        if not risk_top.empty:
+            rename_dict = {
+                col_spec: "Specification",
+                "Quality_Group": "Quality",
+                "Material": "Material",
+                "Gauge_Range": "Gauge",
+                "Total_Coils": "Tested Coils",
+                "Hardness_Mean": "Avg Hardness",
+                "Hardness_Std": "Hardness Std Dev"
+            }
+            risk_top = risk_top.rename(columns=rename_dict)
+            
+            cols_order = ["Specification", "Quality", "Material", "Gauge", "Tested Coils", "Mech Yield (%)", "HRB Yield (%)", "Avg Hardness", "Hardness Std Dev"]
+            cols_order = [c for c in cols_order if c in risk_top.columns]
+            risk_top_display = risk_top[cols_order].copy()
+            
+            risk_top_display['Mech Yield (%)'] = risk_top_display['Mech Yield (%)'].apply(lambda x: clean_num(x, True))
+            risk_top_display['HRB Yield (%)'] = risk_top_display['HRB Yield (%)'].apply(lambda x: clean_num(x, True)) if 'HRB Yield (%)' in risk_top_display else risk_top_display['HRB_Yield (%)'].apply(lambda x: clean_num(x, True))
+            risk_top_display['Avg Hardness'] = risk_top_display['Avg Hardness'].apply(lambda x: clean_num(x))
+            risk_top_display['Hardness Std Dev'] = risk_top_display['Hardness Std Dev'].apply(lambda x: clean_num(x))
+            
+            def style_risk(val):
+                try:
+                    num = float(str(val).replace('%', '').strip())
+                    if num < 100: return 'color: #d32f2f; font-weight: bold; background-color: #ffebee'
+                    if num >= 100: return 'color: #388e3c; font-weight: bold'
+                except: pass
+                return ''
+            
+            def style_std(val):
+                try:
+                    num = float(str(val).strip())
+                    if num > 3.0: return 'color: #f57c00; font-weight: bold'
+                except: pass
+                return ''
+
+            styled_risk = risk_top_display.style
+            if hasattr(styled_risk, "map"):
+                styled_risk = (styled_risk
+                               .map(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
+                               .map(style_std, subset=['Hardness Std Dev']))
+            else:
+                styled_risk = (styled_risk
+                               .applymap(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
+                               .applymap(style_std, subset=['Hardness Std Dev']))
+            
+            st.dataframe(styled_risk, use_container_width=True, hide_index=True)
+            
+            st.markdown("#### 🔔 Visual Deep Dive: Top 5 Risk Distributions (HRB & Mech Props)")
+            st.caption("Visualizing the 'bell curve' of the top 5 most critical specifications (Filtered for N ≥ 30 coils).")
+            
+            top_risks_for_chart = risk_summary[risk_summary['Total_Coils'] >= 30].sort_values(['Mech Yield (%)', 'HRB Yield (%)']).head(5).to_dict('records')
+            
+            if not top_risks_for_chart:
+                st.info("💡 Hiện không có mã hàng nào gặp rủi ro mà đạt đủ điều kiện số lượng (≥ 30 cuộn) để vẽ biểu đồ phân phối.")
+            else:
+                for idx, risk_item in enumerate(top_risks_for_chart):
+                    spec_name = risk_item[col_spec]
+                    mat_name = risk_item["Material"]
+                    gauge_val = risk_item["Gauge_Range"]
+                    
+                    target_data = df_kpi[
+                        (df_kpi[col_spec] == spec_name) & 
+                        (df_kpi["Material"] == mat_name) & 
+                        (df_kpi["Gauge_Range"] == gauge_val)
+                    ]
+                    
+                    if not target_data.empty:
+                        st.markdown(f"**🚨 Top {idx+1}: {spec_name} | Material: {mat_name} | Gauge: {gauge_val} (N={len(target_data)})**")
+                        chart_cols = st.columns(4)
+                        
+                        def plot_mini(ax_data, col_name, title, color, l_min, l_max):
+                            fig, ax = plt.subplots(figsize=(4, 2.5))
+                            
+                            if col_name not in ax_data.columns:
+                                data = pd.Series(dtype=float)
+                            else:
+                                data = pd.to_numeric(ax_data[col_name], errors='coerce').dropna()
+                                
+                            if data.empty or len(data) < 2:
+                                ax.text(0.5, 0.5, "No Data", ha='center', va='center', color='gray')
+                                ax.axis('off')
+                            else:
+                                ax.hist(data, bins=15, color=color, edgecolor="white", density=True, alpha=0.8)
+                                mean_val, std_val = data.mean(), data.std()
+                                if std_val > 0:
+                                    x_axis = np.linspace(data.min() - 2*std_val, data.max() + 2*std_val, 100)
+                                    y_axis = (1/(std_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_axis - mean_val) / std_val)**2)
+                                    ax.plot(x_axis, y_axis, color="black", lw=1.5, alpha=0.5)
+                                
+                                safe_l_min = float(l_min) if pd.notna(l_min) else 0.0
+                                safe_l_max = float(l_max) if pd.notna(l_max) else 0.0
+                                
+                                if safe_l_min > 0: ax.axvline(safe_l_min, color="red", linestyle="--", lw=1.5)
+                                if 0 < safe_l_max < 9000: ax.axvline(safe_l_max, color="red", linestyle="--", lw=1.5)
+                            
+                            ax.set_title(title, fontsize=11, fontweight="bold")
+                            ax.tick_params(axis='both', which='major', labelsize=8)
+                            ax.grid(alpha=0.3, linestyle=":")
+                            return fig
+                        
+                        def safe_max(series): return series.max() if not series.empty and not pd.isna(series.max()) else 0
+                        def safe_min(series): return series.min() if not series.empty and not pd.isna(series.min()) else 0
+
+                        l_hrb_min = target_data["Limit_Min"].iloc[0] if "Limit_Min" in target_data.columns and not target_data.empty else 0
+                        l_hrb_max = target_data["Limit_Max"].iloc[0] if "Limit_Max" in target_data.columns and not target_data.empty else 0
+                        l_ts_min = safe_max(target_data["Standard TS min"]) if "Standard TS min" in target_data.columns else 0
+                        l_ts_max = safe_min(target_data["Standard TS max"]) if "Standard TS max" in target_data.columns else 0
+                        l_ys_min = safe_max(target_data["Standard YS min"]) if "Standard YS min" in target_data.columns else 0
+                        l_ys_max = safe_min(target_data["Standard YS max"]) if "Standard YS max" in target_data.columns else 0
+                        l_el_min = safe_max(target_data["Standard EL min"]) if "Standard EL min" in target_data.columns else 0
+                        
+                        with chart_cols[0]: 
+                            fig1 = plot_mini(target_data, "Hardness_LINE", "Hardness (HRB)", "#ff9999", l_hrb_min, l_hrb_max)
+                            st.pyplot(fig1)
+                            plt.close(fig1)
+                        with chart_cols[1]: 
+                            fig2 = plot_mini(target_data, "TS", "Tensile (TS)", "#6baed6", l_ts_min, l_ts_max)
+                            st.pyplot(fig2)
+                            plt.close(fig2)
+                        with chart_cols[2]: 
+                            fig3 = plot_mini(target_data, "YS", "Yield (YS)", "#74c476", l_ys_min, l_ys_max)
+                            st.pyplot(fig3)
+                            plt.close(fig3)
+                        with chart_cols[3]: 
+                            fig4 = plot_mini(target_data, "EL", "Elongation (EL)", "#fd8d3c", l_el_min, 0)
+                            st.pyplot(fig4)
+                            plt.close(fig4)
+                        
+                        st.write("")
+            
+            st.markdown("---")
+            st.markdown("#### 📑 Export Actionable Report")
+            import streamlit.components.v1 as components
+            col_csv, col_pdf, _ = st.columns([2, 2, 6])
+            
+            with col_csv:
+                csv_data = risk_top.to_csv(index=False).encode('utf-8-sig')
+                st.download_button(label="📥 Download Watchlist (CSV)", data=csv_data, file_name="High_Risk_Watchlist.csv", mime="text/csv", use_container_width=True)
+                
+            with col_pdf:
+                if st.button("🖨️ Save as PDF Report", use_container_width=True):
+                    components.html("<script>window.parent.print();</script>", height=0)
+            
+            st.markdown("""<style>@media print {[data-testid="stSidebar"] { display: none !important; } header { display: none !important; } .stButton, .stDownloadButton { display: none !important; } @page { size: A4 landscape; margin: 10mm; } .stApp { background-color: white !important; }}</style>""", unsafe_allow_html=True)
+        else:
+            st.success("🎉 Excellent! All products are stable with no significant risks.")
+    st.stop()
+
+
 # ==============================================================================
-# 🚀 GLOBAL SUMMARY DASHBOARD (FINAL: FULL COLUMNS - QUALITY & SPECS ADDED)
+# 2. GLOBAL SUMMARY DASHBOARD (FINAL)
 # ==============================================================================
 if view_mode == "🚀 Global Summary Dashboard":
     st.markdown("## 🚀 Global Process Dashboard")
@@ -349,7 +692,6 @@ if view_mode == "🚀 Global Summary Dashboard":
         if stats_rows:
             df_stats = pd.DataFrame(stats_rows)
             
-            # Sắp xếp logic theo từng cụm (Limit đứng cạnh Actual Avg)
             cols = ["Quality", "Material", "Gauge", "Specs", "N", "Pass Rate", 
                     "HRB Limit", "HRB (Avg)", "TS Limit", "TS (Avg)", 
                     "YS Limit", "YS (Avg)", "EL Limit", "EL (Avg)"]
@@ -361,7 +703,6 @@ if view_mode == "🚀 Global Summary Dashboard":
                 text_color = '#155724' if val >= 98 else ('#856404' if val >= 90 else '#721c24')
                 return f'background-color: {color}; color: {text_color}; font-weight: bold'
 
-            # Định dạng đẹp
             styled_df = df_stats.style.format("{:.1f}", subset=[c for c in df_stats.columns if "(Avg)" in c or "Pass" in c]) \
                 .applymap(color_pass_rate, subset=["Pass Rate"]) \
                 .set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=[c for c in cols if "Limit" in c]) \
@@ -459,456 +800,15 @@ if view_mode == "🚀 Global Summary Dashboard":
         else:
             st.warning("Không đủ dữ liệu để chạy mô hình AI (Cần nhóm có N ≥ 10).")
     st.stop()
- # ==============================================================================
-# ==============================================================================
-# 0. EXECUTIVE KPI DASHBOARD (OVERVIEW) - STANDALONE BLOCK
-# ==============================================================================
-if view_mode == "📊 Executive KPI Dashboard":
-    st.markdown("## 📊 Executive KPI Dashboard (Overall Quality Overview)")
-    
-    # --- SỬ DỤNG TOÀN BỘ DỮ LIỆU TỪ KÉT SẮT (BỎ QUA BỘ LỌC SIDEBAR) ---
-    df_kpi = df_master_full.dropna(subset=['TS', 'YS', 'EL', 'Hardness_LINE']).copy()
-    
-    if df_kpi.empty:
-        st.warning("⚠️ No sufficient data to generate KPIs.")
-    else:
-        total_coils = len(df_kpi)
-        
-        # --- HELPER FUNCTION: CLEAN NUMBERS ---
-        def clean_num(val, is_pct=False):
-            if pd.isna(val): return "0%" if is_pct else "0"
-            v = round(float(val), 2)
-            res = str(int(v)) if v.is_integer() else str(v)
-            return f"{res}%" if is_pct else res
 
-        # --- CALCULATE PRECISE PASS RATE ---
-        def check_pass(val, min_col, max_col):
-            s_min = df_kpi[min_col].fillna(0) if min_col in df_kpi.columns else 0
-            s_max = df_kpi[max_col].fillna(9999).replace(0, 9999) if max_col in df_kpi.columns else 9999
-            return (val >= s_min) & (val <= s_max)
-        
-        # Mechanical Evaluation
-        df_kpi['TS_Pass'] = check_pass(df_kpi['TS'], 'Standard TS min', 'Standard TS max')
-        df_kpi['YS_Pass'] = check_pass(df_kpi['YS'], 'Standard YS min', 'Standard YS max')
-        df_kpi['EL_Pass'] = df_kpi['EL'] >= (df_kpi['Standard EL min'].fillna(0) if 'Standard EL min' in df_kpi.columns else 0)
-        df_kpi['All_Pass'] = df_kpi['TS_Pass'] & df_kpi['YS_Pass'] & df_kpi['EL_Pass']
-        
-        # Hardness Control Evaluation
-        df_kpi['HRB_Pass'] = (df_kpi['Hardness_LINE'] >= df_kpi['Limit_Min']) & (df_kpi['Hardness_LINE'] <= df_kpi['Limit_Max'])
-        
-        yield_rate = df_kpi['All_Pass'].mean() * 100
-        hrb_yield = df_kpi['HRB_Pass'].mean() * 100 
-        ts_yield = df_kpi['TS_Pass'].mean() * 100
-        ys_yield = df_kpi['YS_Pass'].mean() * 100
-        el_yield = df_kpi['EL_Pass'].mean() * 100
-        
-        # Đánh giá khối lượng Scrap/NG
-        scrap_col = next((c for c in df_kpi.columns if 'SCRAP' in str(c).upper() or 'CUT' in str(c).upper()), None)
-        if scrap_col:
-            total_scrap = df_kpi[scrap_col].sum()
-            scrap_label = "Total Cut Scrap"
-        else:
-            total_scrap = total_coils - df_kpi['All_Pass'].sum()
-            scrap_label = "Total Scrap / NG Coils"
 
-        # --- BIG METRICS DISPLAY ---
-        st.markdown("### 🏆 Overall Quality Metrics")
-        
-        # Tầng 1: Chỉ số cốt lõi
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("📦 Total Coils Tested", f"{total_coils:,}")
-        
-        delta_mech = clean_num(yield_rate - 100, True) if yield_rate < 100 else "Perfect"
-        col2.metric("✅ Mech Yield Rate", clean_num(yield_rate, True), delta_mech, delta_color="normal" if yield_rate == 100 else "inverse")
-        
-        delta_hrb = clean_num(hrb_yield - 100, True) if hrb_yield < 100 else "In Control"
-        col3.metric("🎯 HRB Yield Rate", clean_num(hrb_yield, True), delta_hrb, delta_color="normal" if hrb_yield == 100 else "inverse")
-        
-        col4.metric(f"✂️ {scrap_label}", f"{total_scrap:,.0f}")
-        
-        st.markdown("<br>", unsafe_allow_html=True)
-        
-        # Tầng 2: Chi tiết cơ tính
-        col5, col6, col7 = st.columns(3)
-        col5.metric("🔹 TS Pass Rate", clean_num(ts_yield, True))
-        col6.metric("🔸 YS Pass Rate", clean_num(ys_yield, True))
-        col7.metric("🔻 EL Pass Rate", clean_num(el_yield, True))
-        
-        st.markdown("---")
-        
-        # --- 3. HIGH-RISK WATCHLIST & DIAGNOSTICS ---
-        st.markdown("### ⚠️ High-Risk Specs Watchlist")
-        st.caption("Top list of standard codes with the lowest mechanical pass rates or out-of-control hardness, requiring priority review.")
-        
-        col_spec = "Product_Spec" if "Product_Spec" in df_kpi.columns else "Rule_Name"
-        
-        group_cols = [col_spec, "Quality_Group", "Material", "Gauge_Range"]
-        valid_group_cols = [c for c in group_cols if c in df_kpi.columns]
-        
-        risk_summary = df_kpi.groupby(valid_group_cols).agg(
-            Total_Coils=('COIL_NO', 'count'),
-            Mech_Pass_Coils=('All_Pass', 'sum'),
-            HRB_Pass_Coils=('HRB_Pass', 'sum'), 
-            Hardness_Mean=('Hardness_LINE', 'mean'),
-            Hardness_Std=('Hardness_LINE', 'std'),
-            LSL=('Limit_Min', 'first'),
-            USL=('Limit_Max', 'first')
-        ).reset_index()
-        
-        risk_summary['Mech Yield (%)'] = (risk_summary['Mech_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
-        risk_summary['HRB Yield (%)'] = (risk_summary['HRB_Pass_Coils'] / risk_summary['Total_Coils'] * 100)
-        
-        risk_top = risk_summary[risk_summary['Total_Coils'] >= 3].sort_values(['Mech Yield (%)', 'HRB Yield (%)']).head(10)
-        
-        if not risk_top.empty:
-            rename_dict = {
-                col_spec: "Specification",
-                "Quality_Group": "Quality",
-                "Material": "Material",
-                "Gauge_Range": "Gauge",
-                "Total_Coils": "Tested Coils",
-                "Hardness_Mean": "Avg Hardness",
-                "Hardness_Std": "Hardness Std Dev"
-            }
-            risk_top = risk_top.rename(columns=rename_dict)
-            
-            cols_order = ["Specification", "Quality", "Material", "Gauge", "Tested Coils", "Mech Yield (%)", "HRB Yield (%)", "Avg Hardness", "Hardness Std Dev"]
-            cols_order = [c for c in cols_order if c in risk_top.columns]
-            risk_top_display = risk_top[cols_order].copy()
-            
-            risk_top_display['Mech Yield (%)'] = risk_top_display['Mech Yield (%)'].apply(lambda x: clean_num(x, True))
-            risk_top_display['HRB Yield (%)'] = risk_top_display['HRB Yield (%)'].apply(lambda x: clean_num(x, True)) if 'HRB Yield (%)' in risk_top_display else risk_top_display['HRB_Yield (%)'].apply(lambda x: clean_num(x, True))
-            risk_top_display['Avg Hardness'] = risk_top_display['Avg Hardness'].apply(lambda x: clean_num(x))
-            risk_top_display['Hardness Std Dev'] = risk_top_display['Hardness Std Dev'].apply(lambda x: clean_num(x))
-            
-            def style_risk(val):
-                try:
-                    num = float(str(val).replace('%', '').strip())
-                    if num < 100: return 'color: #d32f2f; font-weight: bold; background-color: #ffebee'
-                    if num >= 100: return 'color: #388e3c; font-weight: bold'
-                except: pass
-                return ''
-            
-            def style_std(val):
-                try:
-                    num = float(str(val).strip())
-                    if num > 3.0: return 'color: #f57c00; font-weight: bold'
-                except: pass
-                return ''
-
-            styled_risk = risk_top_display.style
-            if hasattr(styled_risk, "map"):
-                styled_risk = (styled_risk
-                               .map(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
-                               .map(style_std, subset=['Hardness Std Dev']))
-            else:
-                styled_risk = (styled_risk
-                               .applymap(style_risk, subset=['Mech Yield (%)', 'HRB Yield (%)'])
-                               .applymap(style_std, subset=['Hardness Std Dev']))
-            
-            st.dataframe(styled_risk, use_container_width=True, hide_index=True)
-            
-            # ==========================================
-            # ==========================================
-            # 4. VISUAL DEEP DIVE (HISTOGRAMS) - TOP 5 (ALL PROPS)
-            # ==========================================
-            st.markdown("#### 🔔 Visual Deep Dive: Top 5 Risk Distributions (HRB & Mech Props)")
-            st.caption("Visualizing the 'bell curve' of the top 5 most critical specifications (Filtered for N ≥ 30 coils).")
-            
-            # --- CHỈ VẼ CÁC NHÓM CÓ TỪ 30 CUỘN TRỞ LÊN ---
-            top_risks_for_chart = risk_summary[risk_summary['Total_Coils'] >= 30].sort_values(['Mech Yield (%)', 'HRB Yield (%)']).head(5).to_dict('records')
-            
-            if not top_risks_for_chart:
-                st.info("💡 Hiện không có mã hàng nào gặp rủi ro mà đạt đủ điều kiện số lượng (≥ 30 cuộn) để vẽ biểu đồ phân phối.")
-            else:
-                for idx, risk_item in enumerate(top_risks_for_chart):
-                    spec_name = risk_item[col_spec]
-                    mat_name = risk_item["Material"]
-                    gauge_val = risk_item["Gauge_Range"]
-                    
-                    target_data = df_kpi[
-                        (df_kpi[col_spec] == spec_name) & 
-                        (df_kpi["Material"] == mat_name) & 
-                        (df_kpi["Gauge_Range"] == gauge_val)
-                    ]
-                    
-                    if not target_data.empty:
-                        st.markdown(f"**🚨 Top {idx+1}: {spec_name} | Material: {mat_name} | Gauge: {gauge_val} (N={len(target_data)})**")
-                        chart_cols = st.columns(4)
-                        
-                        def plot_mini(ax_data, col_name, title, color, l_min, l_max):
-                            fig, ax = plt.subplots(figsize=(4, 2.5))
-                            
-                            if col_name not in ax_data.columns:
-                                data = pd.Series(dtype=float)
-                            else:
-                                data = pd.to_numeric(ax_data[col_name], errors='coerce').dropna()
-                                
-                            if data.empty or len(data) < 2:
-                                ax.text(0.5, 0.5, "No Data", ha='center', va='center', color='gray')
-                                ax.axis('off')
-                            else:
-                                ax.hist(data, bins=15, color=color, edgecolor="white", density=True, alpha=0.8)
-                                mean_val, std_val = data.mean(), data.std()
-                                if std_val > 0:
-                                    x_axis = np.linspace(data.min() - 2*std_val, data.max() + 2*std_val, 100)
-                                    y_axis = (1/(std_val * np.sqrt(2 * np.pi))) * np.exp(-0.5 * ((x_axis - mean_val) / std_val)**2)
-                                    ax.plot(x_axis, y_axis, color="black", lw=1.5, alpha=0.5)
-                                
-                                safe_l_min = float(l_min) if pd.notna(l_min) else 0.0
-                                safe_l_max = float(l_max) if pd.notna(l_max) else 0.0
-                                
-                                if safe_l_min > 0: ax.axvline(safe_l_min, color="red", linestyle="--", lw=1.5)
-                                if 0 < safe_l_max < 9000: ax.axvline(safe_l_max, color="red", linestyle="--", lw=1.5)
-                            
-                            ax.set_title(title, fontsize=11, fontweight="bold")
-                            ax.tick_params(axis='both', which='major', labelsize=8)
-                            ax.grid(alpha=0.3, linestyle=":")
-                            return fig
-                        
-                        def safe_max(series): return series.max() if not series.empty and not pd.isna(series.max()) else 0
-                        def safe_min(series): return series.min() if not series.empty and not pd.isna(series.min()) else 0
-
-                        l_hrb_min = target_data["Limit_Min"].iloc[0] if "Limit_Min" in target_data.columns and not target_data.empty else 0
-                        l_hrb_max = target_data["Limit_Max"].iloc[0] if "Limit_Max" in target_data.columns and not target_data.empty else 0
-                        l_ts_min = safe_max(target_data["Standard TS min"]) if "Standard TS min" in target_data.columns else 0
-                        l_ts_max = safe_min(target_data["Standard TS max"]) if "Standard TS max" in target_data.columns else 0
-                        l_ys_min = safe_max(target_data["Standard YS min"]) if "Standard YS min" in target_data.columns else 0
-                        l_ys_max = safe_min(target_data["Standard YS max"]) if "Standard YS max" in target_data.columns else 0
-                        l_el_min = safe_max(target_data["Standard EL min"]) if "Standard EL min" in target_data.columns else 0
-                        
-                        with chart_cols[0]: 
-                            fig1 = plot_mini(target_data, "Hardness_LINE", "Hardness (HRB)", "#ff9999", l_hrb_min, l_hrb_max)
-                            st.pyplot(fig1)
-                            plt.close(fig1)
-                        with chart_cols[1]: 
-                            fig2 = plot_mini(target_data, "TS", "Tensile (TS)", "#6baed6", l_ts_min, l_ts_max)
-                            st.pyplot(fig2)
-                            plt.close(fig2)
-                        with chart_cols[2]: 
-                            fig3 = plot_mini(target_data, "YS", "Yield (YS)", "#74c476", l_ys_min, l_ys_max)
-                            st.pyplot(fig3)
-                            plt.close(fig3)
-                        with chart_cols[3]: 
-                            fig4 = plot_mini(target_data, "EL", "Elongation (EL)", "#fd8d3c", l_el_min, 0)
-                            st.pyplot(fig4)
-                            plt.close(fig4)
-                        
-                        st.write("")
-            
-            # --- 5. REPORT EXPORT ---
-            st.markdown("---")
-            st.markdown("#### 📑 Export Actionable Report")
-            import streamlit.components.v1 as components
-            col_csv, col_pdf, _ = st.columns([2, 2, 6])
-            
-            with col_csv:
-                csv_data = risk_top.to_csv(index=False).encode('utf-8-sig')
-                st.download_button(label="📥 Download Watchlist (CSV)", data=csv_data, file_name="High_Risk_Watchlist.csv", mime="text/csv", use_container_width=True)
-                
-            with col_pdf:
-                if st.button("🖨️ Save as PDF Report", use_container_width=True):
-                    components.html("<script>window.parent.print();</script>", height=0)
-            
-            st.markdown("""<style>@media print {[data-testid="stSidebar"] { display: none !important; } header { display: none !important; } .stButton, .stDownloadButton { display: none !important; } @page { size: A4 landscape; margin: 10mm; } .stApp { background-color: white !important; }}</style>""", unsafe_allow_html=True)
-        else:
-            st.success("🎉 Excellent! All products are stable with no significant risks.")
-    st.stop()
- # ==============================================================================
-# ==============================================================================
-    # 9. MASTER DICTIONARY EXPORT (VIEW ON SCREEN & DOWNLOAD)
-    # ==============================================================================
-    elif view_mode == "👑 Master Dictionary Export":
-        
-        import datetime as dt
-        from io import BytesIO
-        import numpy as np
-        import pandas as pd
-        from sklearn.linear_model import LinearRegression
-
-        st.markdown("---")
-        st.header("👑 Master Mechanical Properties Dictionary")
-        st.info("💡 **Interactive View & Export:** Review the logically grouped limits directly on the screen below, then download the formatted Excel file for your records.")
-        
-        # --- KHU VỰC ĐIỀU CHỈNH THỐNG KÊ ---
-        st.markdown("#### ⚙️ Custom Statistical Parameters")
-        col_sig1, col_sig2, col_sig3 = st.columns(3)
-        with col_sig1:
-            target_k = st.number_input("🎯 Target Zone (σ)", value=1.0, step=0.1, key="k_target")
-        with col_sig2:
-            control_k = st.number_input("🚧 Control Limit (σ)", value=2.0, step=0.5, key="k_control")
-        with col_sig3:
-            min_coils_req = st.number_input("📦 Min Coils Required", value=30, step=1, key="min_coils")
-
-        if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
-            
-            # --- 1. KIỂM TRA & LỌC DỮ LIỆU SẠCH ---
-            if 'valid' in locals() and not valid.empty:
-                source_df = valid.copy()
-            elif 'df' in locals() and not df.empty:
-                source_df = df.copy()
-            else:
-                st.error("❌ Không tìm thấy dữ liệu. Vui lòng tải lên file báo cáo.")
-                st.stop()
-
-            # 🛠️ TỰ ĐỘNG DỊCH TÊN CỘT TỪ EXCEL GỐC SANG CHUẨN CỦA APP
-            rename_mapping = {
-                "TENSILE_TENSILE": "TS",
-                "TENSILE_YIELD": "YS",
-                "TENSILE_ELONG": "EL",
-                "HARDNESS 鍍鋅線 N": "Hardness_LINE" # Đang mặc định lấy dây mạ N, nếu cần đổi sang dây C hoặc S bạn sửa ở đây nhé
-            }
-            source_df.rename(columns=rename_mapping, inplace=True)
-
-            required_cols = ['Hardness_LINE', 'TS', 'YS', 'EL']
-            missing_req = [col for col in required_cols if col not in source_df.columns]
-            if missing_req:
-                st.error(f"❌ File dữ liệu thiếu các cột bắt buộc: {', '.join(missing_req)}")
-                st.info("💡 Hệ thống đã cố gắng tự động đổi tên nhưng vẫn không tìm thấy. Vui lòng kiểm tra lại file Excel gốc.")
-                st.stop()
-
-            # Chuyển đổi an toàn sang dạng số (loại bỏ các text rác nếu có)
-            for c in required_cols:
-                source_df[c] = pd.to_numeric(source_df[c], errors='coerce')
-                
-            clean_master_df = source_df.dropna(subset=required_cols).copy()
-            clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
-            
-            if clean_master_df.empty:
-                st.warning("⚠️ Không có cuộn thép nào có đủ dữ liệu cơ tính và độ cứng > 0.")
-                st.stop()
-
-            master_data = []
-            group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
-            
-            missing_groups = [col for col in group_cols if col not in clean_master_df.columns]
-            if missing_groups:
-                st.error(f"❌ File thiếu cột phân loại: {', '.join(missing_groups)}")
-                st.stop()
-
-            with st.spinner("Calculating limits and running AI predictions..."):
-                for keys, group in clean_master_df.groupby(group_cols):
-                    if len(group) < min_coils_req: continue 
-                    
-                    # --- Core Calculations (I-MR) ---
-                    data = group["Hardness_LINE"]
-                    mu = data.mean()
-                    mrs = np.abs(np.diff(data.values))
-                    sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else data.std()
-                    if pd.isna(sigma_imr) or sigma_imr == 0: sigma_imr = data.std() if len(data) > 1 else 1.0
-                    
-                    # 1. 建議控制界限 (Control Limit)
-                    c_min, c_max = mu - control_k * sigma_imr, mu + control_k * sigma_imr
-                    # 2. 建議目標界限 (Target Zone)
-                    t_min, t_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
-                    
-                    # AI 模型用於預測機械性能範圍 (AI Models for predicting Mech Ranges)
-                    X_train = group[["Hardness_LINE"]].values
-                    m_ts = LinearRegression().fit(X_train, group["TS"].values)
-                    m_ys = LinearRegression().fit(X_train, group["YS"].values)
-                    m_el = LinearRegression().fit(X_train, group["EL"].values)
-                    
-                    # 取得原始機械性能規格 (Original Mechanical Specs)
-                    s_ts_min = group["Standard TS min"].max() if "Standard TS min" in group.columns else 0
-                    s_ts_max = group["Standard TS max"].min() if "Standard TS max" in group.columns else 0
-                    s_ys_min = group["Standard YS min"].max() if "Standard YS min" in group.columns else 0
-                    s_ys_max = group["Standard YS max"].min() if "Standard YS max" in group.columns else 0
-                    s_el_min = group["Standard EL min"].max() if "Standard EL min" in group.columns else 0
-                    
-                    def fmt_s(mi, ma):
-                        if pd.isna(mi): mi = 0
-                        if pd.isna(ma): ma = 0
-                        if mi > 0 and 0 < ma < 9000: return f"{mi:.0f}~{ma:.0f}"
-                        elif mi > 0: return f"≥ {mi:.0f}"
-                        elif 0 < ma < 9000: return f"≤ {ma:.0f}"
-                        return "-"
-
-                    # Format current Hardness Specs
-                    curr_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
-                    curr_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
-                    curr_spec_str = f"{curr_min:.1f}~{curr_max:.1f}" if curr_max > 0 else (f"≥{curr_min:.1f}" if curr_min > 0 else "-")
-
-                    # Sắp xếp lại giá trị dự báo để luôn hiển thị min~max chuẩn xác
-                    ts_preds = sorted([m_ts.predict([[t_min]])[0], m_ts.predict([[t_max]])[0]])
-                    ys_preds = sorted([m_ys.predict([[t_min]])[0], m_ys.predict([[t_max]])[0]])
-                    el_preds = sorted([m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]])
-
-                    # 建立完整數據行 (Create full data row)
-                    master_dict = {col: (keys[idx] if isinstance(keys, tuple) else keys) for idx, col in enumerate(group_cols)}
-                    
-                    master_dict.update({
-                        "N Coils": len(group),
-                        "Current Hardness Spec": curr_spec_str,
-                        f"Proposed Control Limit ({control_k}σ)": f"{c_min:.1f} ~ {c_max:.1f}",
-                        f"🎯 Proposed Target Zone ({target_k}σ)": f"{t_min:.1f} ~ {t_max:.1f}",
-                        
-                        "Spec: TS": fmt_s(s_ts_min, s_ts_max),
-                        "Exp. TS (at Target)": f"{int(ts_preds[0])}~{int(ts_preds[1])}",
-                        
-                        "Spec: YS": fmt_s(s_ys_min, s_ys_max),
-                        "Exp. YS (at Target)": f"{int(ys_preds[0])}~{int(ys_preds[1])}",
-                        
-                        "Spec: EL": f"≥ {s_el_min:.1f}%" if s_el_min > 0 else "-",
-                        "Exp. EL (at Target)": f"{el_preds[0]:.1f}% ~ {el_preds[1]:.1f}%"
-                    })
-                    master_data.append(master_dict)
-            
-            if master_data:
-                df_out = pd.DataFrame(master_data)
-                
-                # 強制指定欄位排序 (Force column ordering for logical flow)
-                ordered_cols = group_cols + [
-                    "N Coils", 
-                    "Current Hardness Spec", f"Proposed Control Limit ({control_k}σ)", f"🎯 Proposed Target Zone ({target_k}σ)",
-                    "Spec: TS", "Exp. TS (at Target)",
-                    "Spec: YS", "Exp. YS (at Target)",
-                    "Spec: EL", "Exp. EL (at Target)"
-                ]
-                final_cols = [c for c in ordered_cols if c in df_out.columns]
-                df_out = df_out[final_cols]
-                
-                # --- 2. 在畫面上直接顯示美化後的預覽表格 (Show styled dataframe on screen) ---
-                st.markdown("### 👁️ Preview Master Dictionary")
-                
-                # 套用與 Excel 相同的顏色邏輯 (Apply color logic dynamically)
-                styled_df = df_out.style.set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=[c for c in final_cols if "Spec:" in c or "Current Hardness Spec" in c]) \
-                                        .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[c for c in final_cols if "Target" in c or "Exp." in c]) \
-                                        .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[f"Proposed Control Limit ({control_k}σ)"])
-                
-                st.dataframe(styled_df, use_container_width=True, hide_index=True)
-                
-                # --- 3. 準備 Excel 匯出檔案 (Prepare Excel Export file) ---
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    df_out.to_excel(writer, sheet_name='Master_Specs', index=False)
-                    workbook = writer.book
-                    worksheet = writer.sheets['Master_Specs']
-                    
-                    # Excel 美化格式設定 (Excel beautification settings)
-                    header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
-                    target_fmt = workbook.add_format({'bg_color': '#D9EAD3', 'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
-                    spec_fmt = workbook.add_format({'bg_color': '#FFF2CC', 'italic': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
-                    
-                    worksheet.set_row(0, 30) 
-                    
-                    for col_num, value in enumerate(df_out.columns.values):
-                        fmt = header_fmt
-                        if "Target" in value or "Exp." in value: fmt = target_fmt
-                        if "Spec:" in value or "Current Hardness Spec" in value: fmt = spec_fmt
-                        
-                        worksheet.write(0, col_num, value, fmt)
-                        worksheet.set_column(col_num, col_num, max(12, len(value) * 0.8))
-                
-                st.markdown("### 📥 Download Report")
-                st.success(f"✅ Full Master Dictionary created for {len(master_data)} groups!")
-                st.download_button("📥 Download Full Dictionary (Excel)", output.getvalue(), f"Full_Master_Dictionary_{dt.datetime.now().strftime('%Y%m%d')}.xlsx")
-            else:
-                st.error("❌ Không có dữ liệu hợp lệ để tạo báo cáo (Hãy thử giảm Min Coils Required).")
-                
-        st.stop()
 # ==============================================================================
 # MAIN LOOP (DETAILS)
 # ==============================================================================
+if valid.empty:
+    st.warning("⚠️ No valid data found for detailed views.")
+    st.stop()
+
 for i, (_, g) in enumerate(valid.iterrows()):
     sub = df[
         (df["Rolling_Type"] == g["Rolling_Type"]) &
@@ -918,50 +818,45 @@ for i, (_, g) in enumerate(valid.iterrows()):
         (df["Material"] == g["Material"])
     ].sort_values("COIL_NO")
 
-    lo, hi = sub.iloc[0][["Limit_Min", "Limit_Max"]] 
-    rule_used = sub.iloc[0]["Rule_Name"]
-    l_lo, l_hi = sub.iloc[0][["Lab_Min", "Lab_Max"]]
+    if sub.empty: continue
+
+    lo = sub["Limit_Min"].iloc[0] if "Limit_Min" in sub.columns else 0
+    hi = sub["Limit_Max"].iloc[0] if "Limit_Max" in sub.columns else 0
+    rule_used = sub["Rule_Name"].iloc[0] if "Rule_Name" in sub.columns else "Unknown"
+    l_lo = sub["Lab_Min"].iloc[0] if "Lab_Min" in sub.columns else 0
+    l_hi = sub["Lab_Max"].iloc[0] if "Lab_Max" in sub.columns else 0
 
     sub["NG_LAB"] = (sub["Hardness_LAB"] < lo) | (sub["Hardness_LAB"] > hi)
     sub["NG_LINE"] = (sub["Hardness_LINE"] < lo) | (sub["Hardness_LINE"] > hi)
     sub["NG"] = sub["NG_LAB"] | sub["NG_LINE"] 
 
-    specs = ", ".join(sorted(sub["Product_Spec"].unique()))
+    specs = ", ".join(sorted(sub["Product_Spec"].dropna().unique()))
 
-    if view_mode != "🚀 Global Summary Dashboard":
-        st.markdown(f"### 🧱 {g['Quality_Group']} | {g['Material']} | {g['Gauge_Range']}")
-        st.markdown(f"**Specs:** {specs} | **Coils:** {sub['COIL_NO'].nunique()} | **Limit:** {lo:.1f}~{hi:.1f}")
-        
-        if view_mode != "⚙️ Mech Props Analysis":
-            if "Rule" in rule_used: st.success(f"✅ Applied: **{rule_used}** (Control: {lo:.0f} - {hi:.0f} | Lab: {l_lo:.0f} - {l_hi:.0f})")
-            else: st.caption(f"ℹ️ Applied: **Standard Excel Spec**")
-
+    st.markdown(f"### 🧱 {g['Quality_Group']} | {g['Material']} | {g['Gauge_Range']}")
+    st.markdown(f"**Specs:** {specs} | **Coils:** {sub['COIL_NO'].nunique()} | **Limit:** {lo:.1f}~{hi:.1f}")
     
-    # ================================
-    # ================================
-    # 1. DATA INSPECTION (SMART FORMATTING & COLUMN FILTERING)
-    # ================================
+    if view_mode != "⚙️ Mech Props Analysis":
+        if "Rule" in str(rule_used): st.success(f"✅ Applied: **{rule_used}** (Control: {lo:.0f} - {hi:.0f} | Lab: {l_lo:.0f} - {l_hi:.0f})")
+        else: st.caption(f"ℹ️ Applied: **Standard Excel Spec**")
+
+    # ==============================================================================
+    # 3. DATA INSPECTION
+    # ==============================================================================
     if view_mode == "📋 Data Inspection":
-        st.markdown(f"### 📋 {g['Material']} | {g['Gauge_Range']}")
         
-        # Tạo bản sao dữ liệu để xử lý hiển thị mà không làm ảnh hưởng đến dữ liệu gốc
         df_display = sub.copy()
         
-        # 1. Cắt bỏ thời gian, chỉ giữ lại định dạng Ngày (YYYY-MM-DD)
         if "PRODUCTION DATE" in df_display.columns:
             df_display["PRODUCTION DATE"] = pd.to_datetime(df_display["PRODUCTION DATE"], errors='coerce').dt.strftime('%Y-%m-%d')
             
-        # 2. Ẩn bỏ các cột không cần thiết
         cols_to_hide = ["Rolling_Type", "Rule_Name"]
         df_display = df_display.drop(columns=[c for c in cols_to_hide if c in df_display.columns])
         
         def highlight_ng_rows(row): 
-            # Bôi đỏ nhạt các cuộn NG (Out of Limit)
             return ['background-color: #ffe6e6; color: #a00000'] * len(row) if row.get('NG', False) else [''] * len(row)
         
         num_cols = df_display.select_dtypes(include=[np.number]).columns.tolist()
         
-        # Tách riêng cột Độ cứng/Giới hạn (1 số thập phân) và cột Cơ tính/Khác (Số nguyên)
         hard_cols = [c for c in num_cols if "Hardness" in c or "Limit" in c or "Lab" in c]
         other_num_cols = [c for c in num_cols if c not in hard_cols]
         
@@ -971,18 +866,14 @@ for i, (_, g) in enumerate(valid.iterrows()):
                             .apply(highlight_ng_rows, axis=1), 
             use_container_width=True
         )
-        # ================================
-    # ================================
-  # ================================
-    # 2. HARDNESS ANALYSIS
-    # ================================
+
+    # ==============================================================================
+    # 4. HARDNESS ANALYSIS
+    # ==============================================================================
     elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
-        st.markdown("### 📉 Hardness Analysis: Process Stability & Capability")
         
-        # --- BỘ LỌC THÔNG MINH: LOẠI BỎ 0 VÀ NaN ---
         df_valid = sub[(sub["Hardness_LINE"].notna()) & (sub["Hardness_LINE"] > 0)].copy()
         
-        # Chuyển các giá trị 0 của LAB thành NaN để không bị vẽ cắm đầu xuống đất
         if "Hardness_LAB" in df_valid.columns:
             df_valid["Hardness_LAB"] = df_valid["Hardness_LAB"].replace(0, np.nan)
 
@@ -995,26 +886,21 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 x = np.arange(1, len(df_valid)+1)
                 fig, ax = plt.subplots(figsize=(12, 5))
                 
-                # 1. Vẽ vùng Target Zone (Đổ bóng Xanh lá nhạt)
                 if l_lo > 0 and l_hi > 0:
                     ax.fill_between(x, l_lo, l_hi, color="green", alpha=0.1, label="Target Zone")
                     ax.axhline(l_lo, linestyle="--", linewidth=2, color="green", label=f"Target LSL={l_lo:.1f}")
                     ax.axhline(l_hi, linestyle="--", linewidth=2, color="green", label=f"Target USL={l_hi:.1f}")
                 
-                # 2. Vẽ đường Giới hạn Standard (Vạch Đỏ đứt nét)
                 ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"Std LSL={lo:.1f}")
                 ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"Std USL={hi:.1f}")
                 
-                # 3. Vẽ đường Dữ liệu thực tế
                 ax.plot(x, df_valid["Hardness_LAB"], marker="o", linewidth=2, color="#7fb3d5", markersize=6, label="LAB")
                 ax.plot(x, df_valid["Hardness_LINE"], marker="s", linewidth=2, color="#f5871f", markersize=6, label="LINE") 
                 
-                # Highlight các điểm NG (Out of Control) trên LINE
                 ng_line_mask = (df_valid["Hardness_LINE"] < lo) | (df_valid["Hardness_LINE"] > hi)
                 if ng_line_mask.any():
                     ax.scatter(x[ng_line_mask], df_valid["Hardness_LINE"][ng_line_mask], color='red', s=100, zorder=5, label="Out of Control")
 
-                # 4. Trang trí
                 ax.set_title(f"Hardness Trend by Coil Sequence - {g['Material']}", weight="bold", fontsize=14)
                 ax.grid(False) 
                 
@@ -1097,17 +983,16 @@ for i, (_, g) in enumerate(valid.iterrows()):
                             styled_spc = styled_spc.applymap(style_rating, subset=['Rating'])
                             
                         st.dataframe(styled_spc, hide_index=True)
-     # ================================
-    # 3. CORRELATION (UPGRADED DUAL-AXIS & SPEC LINES)
-    # ================================
+
+    # ==============================================================================
+    # 5. CORRELATION
+    # ==============================================================================
     elif view_mode == "🔗 Correlation: Hardness vs Mech Props":
         
-        # --- 1. KHỞI TẠO DANH SÁCH TỔNG HỢP Ở VÒNG LẶP ĐẦU TIÊN ---
-        if i == 0:
-            corr_bin_summary = []
+        if i == 0: corr_bin_summary = []
 
         st.markdown("### 🔗 Correlation: Hardness vs Mechanical Properties")
-        sub_corr = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"])
+        sub_corr = sub.dropna(subset=["Hardness_LAB","TS","YS","EL"]).copy()
         
         bins = [0,56,58,60,62,65,70,75,80,85,88,92,97,100]
         labels = ["<56","56-58","58-60","60-62","62-65","65-70","70-75","75-80","80-85","85-88","88-92","92-97","≥97"]
@@ -1127,7 +1012,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         if not summary.empty:
             x = np.arange(len(summary))
             fig, ax = plt.subplots(figsize=(15,6))
-            ax2 = ax.twinx() # Tách trục Y thứ 2 cho EL (đơn vị %)
+            ax2 = ax.twinx() 
             
             def plot_prop(ax_obj, x, y, ymin, ymax, c, lbl, m):
                 ax_obj.plot(x, y, marker=m, color=c, label=lbl, lw=2)
@@ -1137,7 +1022,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             plot_prop(ax, x, summary["YS_mean"], summary["YS_min"], summary["YS_max"], "#2ca02c", "YS Actual", "s")
             plot_prop(ax2, x, summary["EL_mean"], summary["EL_min"], summary["EL_max"], "#ff7f0e", "EL Actual", "^")
 
-            # --- VẼ ĐƯỜNG GIỚI HẠN SPEC ---
             g_ts_min = summary["Std_TS_min"].max()
             g_ts_max = summary["Std_TS_max"].min()
             g_ys_min = summary["Std_YS_min"].max()
@@ -1155,7 +1039,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ys_min, ys_max = row.Std_YS_min, row.Std_YS_max
                 el_spec = row.Std_EL_min if pd.notna(row.Std_EL_min) else 0
                 
-                # Đánh giá Đạt/Không Đạt
                 ts_fail = (pd.notna(ts_min) and ts_min > 0 and row.TS_mean < ts_min) or (pd.notna(ts_max) and 0 < ts_max < 9000 and row.TS_mean > ts_max)
                 ys_fail = (pd.notna(ys_min) and ys_min > 0 and row.YS_mean < ys_min) or (pd.notna(ys_max) and 0 < ys_max < 9000 and row.YS_mean > ys_max)
                 el_fail = (el_spec > 0) and (row.EL_mean < el_spec)
@@ -1169,45 +1052,29 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ax.set_ylabel("Strength (MPa)", fontweight="bold")
             ax2.set_ylabel("Elongation (%)", fontweight="bold", color="#ff7f0e")
             
-            # Gộp Legend của 2 trục lại
             lines_1, labels_1 = ax.get_legend_handles_labels()
             lines_2, labels_2 = ax2.get_legend_handles_labels()
             ax.legend(lines_1 + lines_2, labels_1 + labels_2, loc="center left", bbox_to_anchor=(1.05, 0.5))
             
             ax.grid(True, ls="--", alpha=0.5); fig.tight_layout(); st.pyplot(fig)
-            plt.close(fig) # Chống tràn bộ nhớ Matplotlib
+            plt.close(fig) 
 
-            # --- 2. THU THẬP DỮ LIỆU TỔNG HỢP ---
             col_spec = "Product_Spec"
             specs_str = f"Specs: {', '.join(str(x) for x in sub[col_spec].dropna().unique())}" if col_spec in sub.columns else "Specs: N/A"
 
             for row in summary.itertuples():
                 bin_data = sub_corr[sub_corr["HRB_bin"] == row.HRB_bin]
-                
                 corr_bin_summary.append({
-                    "Specification List": specs_str,
-                    "Material": g["Material"],
-                    "Gauge": g["Gauge_Range"],
-                    "Hardness Bin": row.HRB_bin,
-                    "N": row.N_coils,
-                    # TS Data
+                    "Specification List": specs_str, "Material": g["Material"], "Gauge": g["Gauge_Range"],
+                    "Hardness Bin": row.HRB_bin, "N": row.N_coils,
                     "TS Spec": f"{row.Std_TS_min:.0f}~{row.Std_TS_max:.0f}" if row.Std_TS_max < 9000 else f"≥{row.Std_TS_min:.0f}",
-                    "TS Actual": f"{row.TS_min:.0f}~{row.TS_max:.0f}",
-                    "TS Mean": f"{row.TS_mean:.1f}",
-                    "TS Std": f"{bin_data['TS'].std():.1f}",
-                    # YS Data
+                    "TS Actual": f"{row.TS_min:.0f}~{row.TS_max:.0f}", "TS Mean": f"{row.TS_mean:.1f}", "TS Std": f"{bin_data['TS'].std():.1f}",
                     "YS Spec": f"{row.Std_YS_min:.0f}~{row.Std_YS_max:.0f}" if row.Std_YS_max < 9000 else f"≥{row.Std_YS_min:.0f}",
-                    "YS Actual": f"{row.YS_min:.0f}~{row.YS_max:.0f}",
-                    "YS Mean": f"{row.YS_mean:.1f}",
-                    "YS Std": f"{bin_data['YS'].std():.1f}",
-                    # EL Data
-                    "EL Spec": f"≥{row.Std_EL_min:.0f}",
-                    "EL Actual": f"{row.EL_min:.1f}~{row.EL_max:.1f}",
-                    "EL Mean": f"{row.EL_mean:.1f}",
-                    "EL Std": f"{bin_data['EL'].std():.1f}"
+                    "YS Actual": f"{row.YS_min:.0f}~{row.YS_max:.0f}", "YS Mean": f"{row.YS_mean:.1f}", "YS Std": f"{bin_data['YS'].std():.1f}",
+                    "EL Spec": f"≥{row.Std_EL_min:.0f}", "EL Actual": f"{row.EL_min:.1f}~{row.EL_max:.1f}", 
+                    "EL Mean": f"{row.EL_mean:.1f}", "EL Std": f"{bin_data['EL'].std():.1f}"
                 })
 
-        # --- 3. HIỂN THỊ CÁC BẢNG TỔNG HỢP VÀ XUẤT EXCEL Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'corr_bin_summary' in locals() and len(corr_bin_summary) > 0:
             st.markdown("---")
             st.markdown(f"## 📊 Hardness Binning Comprehensive Report: {qgroup}")
@@ -1218,7 +1085,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.markdown(f"#### {title}")
                 base_cols = ["Specification List", "Material", "Gauge", "Hardness Bin", "N"]
                 target_df = df_full[base_cols + cols]
-                
                 std_col = [c for c in target_df.columns if "Std" in c]
                 styled = target_df.style.set_properties(**{'background-color': color_code, 'font-weight': 'bold'}, subset=std_col)
                 st.dataframe(styled, use_container_width=True, hide_index=True)
@@ -1227,10 +1093,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
             display_bin_table("📉 YS Analysis by Hardness Bin", ["YS Spec", "YS Actual", "YS Mean", "YS Std"], "#f2fff2")
             display_bin_table("📉 EL Analysis by Hardness Bin", ["EL Spec", "EL Actual", "EL Mean", "EL Std"], "#fff5e6")
             
-            # --- XUẤT FILE EXCEL ĐA SHEET TỐI ƯU ---
             import datetime
             from io import BytesIO
-            
             excel_name = f"Hardness_Bin_Report_{str(qgroup).replace(' ','')}_{datetime.datetime.now().strftime('%Y%m%d')}.xlsx"
             
             output = BytesIO()
@@ -1247,29 +1111,18 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     worksheet.set_column('B:C', 15) 
                     worksheet.set_column('D:Z', 12) 
             
-            processed_data = output.getvalue()
-            
-            st.download_button(
-                label="📥 Export Binning Report (Excel)",
-                data=processed_data,
-                file_name=excel_name,
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )                   
-    # ================================
- # ================================
-    # 4. MECH PROPS ANALYSIS
-    # ================================
+            st.download_button("📥 Export Binning Report (Excel)", output.getvalue(), file_name=excel_name, mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")                  
+
+    # ==============================================================================
+    # 6. MECH PROPS ANALYSIS
+    # ==============================================================================
     elif view_mode == "⚙️ Mech Props Analysis":
         
-        # --- 1. KHỞI TẠO 3 DANH SÁCH TỔNG HỢP RIÊNG BIỆT ---
-        if i == 0:
-            ts_summary, ys_summary, el_summary = [], [], []
+        if i == 0: ts_summary, ys_summary, el_summary = [], [], []
 
-        # Hiển thị cả 2 dải giới hạn trên tiêu đề
         lab_str = f" | Target Zone: {l_lo:.1f} ~ {l_hi:.1f}" if l_lo > 0 else ""
         st.markdown(f"### ⚙️ Mechanical Properties Analysis: {g['Material']} | {g['Gauge_Range']} 🎯 (Control: {lo:.1f} ~ {hi:.1f}{lab_str})")
         
-        # [CẬP NHẬT QUAN TRỌNG]: LỌC BỎ NGAY LẬP TỨC CÁC CUỘN CÓ ĐỘ CỨNG = 0 VÀ NaN
         sub_mech = sub.dropna(subset=["TS", "YS", "EL", "Hardness_LINE"]).copy()
         sub_mech = sub_mech[sub_mech["Hardness_LINE"] > 0]
         
@@ -1283,11 +1136,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ]
             fig, axes = plt.subplots(1, 3, figsize=(18, 6))
             
-            # Xử lý trích xuất Specs từ cột Product_Spec
             col_spec = "Product_Spec"
             specs_str = f"Specs: {', '.join(str(x) for x in sub_mech[col_spec].dropna().unique())}" if col_spec in sub_mech.columns else "Specs: N/A"
 
-            # --- TÍNH TOÁN DẢI ĐỘ CỨNG THỰC TẾ (ĐÃ SẠCH BÓNG SỐ 0) ---
             h_data = sub_mech["Hardness_LINE"]
             hardness_range_str = f"{h_data.min():.1f} ~ {h_data.max():.1f}"
 
@@ -1298,11 +1149,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 if pd.isna(spec_min): spec_min = 0
                 if pd.isna(spec_max): spec_max = 0
                 
-                # Tính toán giới hạn 3-Sigma
-                lcl_3s = mean - 3 * std
-                ucl_3s = mean + 3 * std
+                lcl_3s, ucl_3s = mean - 3 * std, mean + 3 * std
                 
-                # Vẽ biểu đồ
                 axes[j].hist(data, bins=20, color=cfg["color"], alpha=0.5, density=True)
                 if std > 0:
                     x_p = np.linspace(mean - 5 * std, mean + 5 * std, 200)
@@ -1312,28 +1160,20 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 if spec_min > 0: axes[j].axvline(spec_min, color="red", linestyle="--", linewidth=2)
                 if spec_max > 0 and spec_max < 9000: axes[j].axvline(spec_max, color="red", linestyle="--", linewidth=2)
                 
-                # Vẽ thêm đường 3-Sigma trên biểu đồ để trực quan hóa
                 axes[j].axvline(lcl_3s, color="blue", linestyle=":", linewidth=1.5)
                 axes[j].axvline(ucl_3s, color="blue", linestyle=":", linewidth=1.5)
                 
                 axes[j].set_title(f"{cfg['name']}\n(Mean={mean:.1f}, Std={std:.1f})", fontweight="bold")
                 axes[j].grid(alpha=0.3, linestyle="--")
 
-                # --- PHÂN LOẠI DỮ LIỆU VÀO 3 BẢNG RIÊNG VỚI ĐẦY ĐỦ CÁC GIỚI HẠN ---
                 row_data = {
-                    "Specification List": specs_str,
-                    "Material": g["Material"],
-                    "Gauge": g["Gauge_Range"],
-                    "N": len(sub_mech),
-                    "Control Limit (HRB)": f"{lo:.1f} ~ {hi:.1f}",
+                    "Specification List": specs_str, "Material": g["Material"], "Gauge": g["Gauge_Range"],
+                    "N": len(sub_mech), "Control Limit (HRB)": f"{lo:.1f} ~ {hi:.1f}",
                     "Target Zone (HRB)": f"{l_lo:.1f} ~ {l_hi:.1f}" if (l_lo > 0 and l_hi > 0) else "N/A", 
                     "Actual Range (HRB)": hardness_range_str,
                     "Limit (Spec)": f"{spec_min:.0f}~{spec_max:.0f}" if (spec_max > 0 and spec_max < 9000) else (f"≥ {spec_min:.0f}" if spec_min > 0 else "-"),
                     "Actual Range": f"{data.min():.1f}~{data.max():.1f}",
-                    "Mean": f"{mean:.1f}",
-                    "Std Dev": f"{std:.1f}",
-                    "LCL (-3σ)": f"{lcl_3s:.1f}", 
-                    "UCL (+3σ)": f"{ucl_3s:.1f}"  
+                    "Mean": f"{mean:.1f}", "Std Dev": f"{std:.1f}", "LCL (-3σ)": f"{lcl_3s:.1f}", "UCL (+3σ)": f"{ucl_3s:.1f}"  
                 }
                 
                 if col == "TS": ts_summary.append(row_data)
@@ -1343,7 +1183,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.pyplot(fig)
             plt.close(fig) 
 
-        # --- 2. HIỂN THỊ 3 BẢNG TỔNG HỢP RIÊNG BIỆT Ở CUỐI VÒNG LẶP ---
         if i == len(valid) - 1:
             st.markdown("---")
             st.markdown(f"## 📊 Mechanical Properties Comprehensive Report: {qgroup}")
@@ -1352,7 +1191,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 if data_list:
                     st.markdown(f"#### {title}")
                     df = pd.DataFrame(data_list)
-                    
                     styled_df = df.style.set_properties(**{'font-weight': 'bold'}, subset=['Mean']) \
                                         .set_properties(**{'background-color': '#FFF2CC', 'font-weight': 'bold', 'color': '#856404'}, subset=['Control Limit (HRB)', 'Target Zone (HRB)']) \
                                         .set_properties(**{'background-color': '#f0f8ff', 'font-weight': 'bold', 'color': '#0056b3'}, subset=['Actual Range (HRB)']) \
@@ -1367,80 +1205,64 @@ for i, (_, g) in enumerate(valid.iterrows()):
             today_str = datetime.datetime.now().strftime("%Y%m%d")
             
             if ts_summary or ys_summary or el_summary:
-                dfs = []
-                keys = []
+                dfs, keys = [], []
                 if ts_summary: dfs.append(pd.DataFrame(ts_summary)); keys.append('TS')
                 if ys_summary: dfs.append(pd.DataFrame(ys_summary)); keys.append('YS')
                 if el_summary: dfs.append(pd.DataFrame(el_summary)); keys.append('EL')
                 
                 full_df = pd.concat(dfs, keys=keys)
                 st.download_button("📥 Export Full Mech Report CSV", full_df.to_csv(index=True).encode('utf-8-sig'), f"Full_Mech_Report_{today_str}.csv")
-   # ================================
-   # ==============================================================================
-   # ==============================================================================
-    # 5. LOOKUP (FIXED: STABLE INPUT KEYS & CLEAN DATA)
+
+    # ==============================================================================
+    # 7. LOOKUP
     # ==============================================================================
     elif view_mode == "🔍 Lookup: Hardness Range → Actual Mech Props":
         
         st.markdown(f"### 🔍 Lookup: {g['Material']} | {g['Gauge_Range']}")
-        
         c1, c2 = st.columns(2)
         
-        # Nhờ làm sạch toàn App ở Bước 1, min/max ở đây chắc chắn là dữ liệu thực tế
         actual_min = float(sub["Hardness_LINE"].min()) if not sub["Hardness_LINE"].empty else 0.0
         actual_max = float(sub["Hardness_LINE"].max()) if not sub["Hardness_LINE"].empty else 100.0
         
         if actual_min == 0.0 and actual_max == 0.0:
             st.warning("⚠️ Không có dữ liệu hợp lệ để tra cứu.")
         else:
-            # [QUAN TRỌNG] Dùng biến 'i' làm key thay vì uuid để widget không bị reset giật lag
             mn = c1.number_input("Min HRB", value=actual_min, step=0.5, key=f"lk1_lookup_{i}")
             mx = c2.number_input("Max HRB", value=actual_max, step=0.5, key=f"lk2_lookup_{i}")
             
-            # Lọc dữ liệu theo dải độ cứng người dùng vừa nhập
             filt = sub[(sub["Hardness_LINE"] >= mn) & (sub["Hardness_LINE"] <= mx)].dropna(subset=["TS", "YS", "EL"])
             
-            # Hiển thị kết quả
             if not filt.empty: 
                 st.success(f"✅ Found {len(filt)} coils matching HRB from {mn} to {mx}.")
-                
-                # Bảng thống kê mô tả (In đậm các cột quan trọng Mean, Min, Max)
                 styled_describe = filt[["TS", "YS", "EL"]].describe().T.style.format("{:.1f}")\
                                     .set_properties(**{'background-color': '#f0f8ff', 'font-weight': 'bold', 'color': '#0056b3'}, subset=['mean', 'min', 'max'])
-                
                 st.dataframe(styled_describe, use_container_width=True)
             else:
                 st.error(f"❌ No coils found in the range {mn} ~ {mx} HRB.")
-    # ================================
- # ================================
-# ==============================================================================
-    # 6. REVERSE LOOKUP (TARGET HARDNESS) - HISTORICAL TRACEABILITY MODE
+
+    # ==============================================================================
+    # 8. REVERSE LOOKUP (TARGET HARDNESS)
     # ==============================================================================
     elif view_mode == "🎯 Find Target Hardness (Reverse Lookup)":
         
-        if i == 0:
-            reverse_lookup_summary = []
+        if i == 0: reverse_lookup_summary = []
 
         st.markdown(f"### 🎯 Target Hardness Finder: {g['Material']} | {g['Gauge_Range']}")
         
-        # 1. Dọn dẹp dữ liệu: Chỉ lấy các cuộn có đủ cả Cơ tính và Độ cứng thực tế
         sub_clean = sub.dropna(subset=["TS", "YS", "EL", "Hardness_LINE"]).copy()
         sub_clean = sub_clean[sub_clean["Hardness_LINE"] > 0]
 
         if sub_clean.empty:
             st.warning("⚠️ No historical production data available for this group.")
         else:
-            # Lấy Spec từ hệ thống để sếp tham khảo
             s_ts_min = sub_clean["Standard TS min"].max()
             s_ts_max = sub_clean["Standard TS max"].min()
             s_ys_min = sub_clean["Standard YS min"].max()
             s_ys_max = sub_clean["Standard YS max"].min()
             s_el_min = sub_clean["Standard EL min"].max()
 
-            # Helper function để hiển thị Spec Reference chuẩn (chỉ hiện Max nếu có thật)
             def format_ref(min_val, max_val, unit=""):
-                if 0 < max_val < 9000:
-                    return f"{min_val:.0f} (Min) ~ {max_val:.0f} (Max){unit}"
+                if 0 < max_val < 9000: return f"{min_val:.0f} (Min) ~ {max_val:.0f} (Max){unit}"
                 return f"≥ {min_val:.0f}{unit} (Min)"
 
             ts_ref = format_ref(s_ts_min, s_ts_max)
@@ -1449,26 +1271,22 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
             st.caption(f"📌 **Mechanical Spec Reference:** TS: {ts_ref} | YS: {ys_ref} | EL: {el_ref}")
 
-            # Giao diện nhập mục tiêu cơ tính muốn tìm kiếm
             c1, c2, c3 = st.columns(3)
             with c1:
                 st.markdown("**Tensile (TS)**")
                 r_ts_min = st.number_input("Desired TS (Min)", value=float(s_ts_min), step=5.0, key=f"rev_tsmin_{i}")
                 default_ts_max = float(s_ts_max) if (0 < s_ts_max < 9000) else float(s_ts_min + 200)
                 r_ts_max = st.number_input("Desired TS (Max)", value=default_ts_max, step=5.0, key=f"rev_tsmax_{i}")
-            
             with c2:
                 st.markdown("**Yield (YS)**")
                 r_ys_min = st.number_input("Desired YS (Min)", value=float(s_ys_min), step=5.0, key=f"rev_ysmin_{i}")
                 default_ys_max = float(s_ys_max) if (0 < s_ys_max < 9000) else float(s_ys_min + 200)
                 r_ys_max = st.number_input("Desired YS (Max)", value=default_ys_max, step=5.0, key=f"rev_ysmax_{i}")
-            
             with c3:
                 st.markdown("**Elongation (EL)**")
                 r_el_min = st.number_input("Desired EL % (Min)", value=float(s_el_min), step=1.0, key=f"rev_elmin_{i}")
                 r_el_max = st.number_input("Desired EL % (Max)", value=100.0, step=1.0, key=f"rev_elmax_{i}")
 
-            # TRUY VẤN LỊCH SỬ: Tìm các cuộn thép ĐÃ SẢN XUẤT khớp với yêu cầu trên
             matched_coils = sub_clean[
                 (sub_clean['TS'] >= r_ts_min) & (sub_clean['TS'] <= r_ts_max) &
                 (sub_clean['YS'] >= r_ys_min) & (sub_clean['YS'] <= r_ys_max) &
@@ -1476,14 +1294,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
             ]
             
             if not matched_coils.empty:
-                # Tìm dải độ cứng của những cuộn đạt chuẩn này
-                found_min = matched_coils['Hardness_LINE'].min()
-                found_max = matched_coils['Hardness_LINE'].max()
+                found_min, found_max = matched_coils['Hardness_LINE'].min(), matched_coils['Hardness_LINE'].max()
                 n_found = len(matched_coils)
-                
                 st.success(f"✅ Found **{n_found}** produced coils. Their actual hardness was: **{found_min:.1f} ~ {found_max:.1f} HRB**")
                 
-                # Hiển thị danh sách cuộn để sếp kiểm tra
                 with st.expander("See matched coils list"):
                     st.dataframe(matched_coils[['COIL_NO', 'Hardness_LINE', 'TS', 'YS', 'EL']], hide_index=True)
                 
@@ -1493,33 +1307,26 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 target_text = "Not Found"
                 n_found = 0
 
-            # Tổng hợp vào báo cáo
             col_spec = "Product_Spec"
             specs_str = f"{', '.join(str(x) for x in sub[col_spec].dropna().unique())}" if col_spec in sub.columns else "N/A"
             
             reverse_lookup_summary.append({
-                "Specification": specs_str,
-                "Material": g["Material"],
-                "Gauge": g["Gauge_Range"],
+                "Specification": specs_str, "Material": g["Material"], "Gauge": g["Gauge_Range"],
                 "Desired Mech Range": f"TS:{r_ts_min:.0f}-{r_ts_max:.0f} | YS:{r_ys_min:.0f}-{r_ys_max:.0f} | EL:≥{r_el_min:.0f}%",
-                "Historical Hardness (HRB)": target_text,
-                "Matched Coils": n_found
+                "Historical Hardness (HRB)": target_text, "Matched Coils": n_found
             })
 
-        # Hiển thị bảng tổng hợp ở cuối trang cho sếp xem một lượt
         if i == len(valid) - 1 and len(reverse_lookup_summary) > 0:
             st.markdown("---")
             st.markdown("#### 📊 Target Hardness Summary Table (Based on Historical Production)")
             st.dataframe(pd.DataFrame(reverse_lookup_summary), use_container_width=True, hide_index=True)
-   # ================================
-# ================================
+
     # ==============================================================================
-    # 7. AI PREDICTION (STABLE INPUT + METRICS + AUTO SPEC VERIFICATION)
+    # 9. AI PREDICTION
     # ==============================================================================
     elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
         st.markdown(f"### 🧮 AI Prediction: {g['Material']} | {g['Gauge_Range']}")
         
-        # Đảm bảo dữ liệu sạch sẽ trước khi đưa vào mô hình học máy
         train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
         train_df = train_df[train_df["Hardness_LINE"] > 0]
         
@@ -1529,16 +1336,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
             col1, col2 = st.columns([1, 3])
             with col1:
                 mean_h = train_df["Hardness_LINE"].mean()
-                
-                # Sử dụng biến 'i' làm key để widget không bị nhấp nháy/reset
-                target_h = st.number_input(
-                    "🎯 Target Hardness (HRB)", 
-                    value=float(round(mean_h, 1)), 
-                    step=0.1, 
-                    key=f"ai_fix_{i}" 
-                )
+                target_h = st.number_input("🎯 Target Hardness (HRB)", value=float(round(mean_h, 1)), step=0.1, key=f"ai_fix_{i}")
             
-            # --- LẤY SPEC CƠ TÍNH ĐỂ ĐỐI CHIẾU ---
             s_ts_min = train_df["Standard TS min"].max() if "Standard TS min" in train_df.columns else 0
             s_ts_max = train_df["Standard TS max"].min() if "Standard TS max" in train_df.columns else 0
             s_ys_min = train_df["Standard YS min"].max() if "Standard YS min" in train_df.columns else 0
@@ -1557,55 +1356,41 @@ for i, (_, g) in enumerate(valid.iterrows()):
             spec_el_str = f"≥ {s_el_min:.0f}" if pd.notna(s_el_min) and s_el_min > 0 else "N/A"
 
             X_train = train_df[["Hardness_LINE"]].values
-            preds = {}
-            model_metrics = {}
+            preds, model_metrics = {}, {}
             
-            # Huấn luyện mô hình và dự báo ngay lập tức
             for col in ["TS", "YS", "EL"]:
                 model = LinearRegression().fit(X_train, train_df[col].values)
                 val = model.predict([[target_h]])[0]
                 preds[col] = val 
                 
-                # Tính R2 Score và Sai số RMSE để đánh giá độ tin cậy
                 y_true = train_df[col].values
                 y_pred = model.predict(X_train)
-                r2 = r2_score(y_true, y_pred)
-                rmse = np.sqrt(mean_squared_error(y_true, y_pred))
-                model_metrics[col] = {"r2": r2, "rmse": rmse}
+                model_metrics[col] = {"r2": r2_score(y_true, y_pred), "rmse": np.sqrt(mean_squared_error(y_true, y_pred))}
 
-            # --- VẼ BIỂU ĐỒ BẰNG PLOTLY (INTERACTIVE) ---
             fig = make_subplots(specs=[[{"secondary_y": True}]])
             colors = {"TS": "#2980b9", "YS": "#27ae60", "EL": "#c0392b"} 
             idx = list(range(len(train_df)))
             nxt = len(train_df)
 
             for col in ["TS", "YS", "EL"]:
-                sec = (col == "EL") # EL dùng trục Y bên phải (đơn vị %)
+                sec = (col == "EL")
                 
-                # 1. Vẽ đường Lịch sử (History)
                 fig.add_trace(go.Scatter(
-                    x=idx, y=train_df[col], 
-                    mode='lines', 
+                    x=idx, y=train_df[col], mode='lines', 
                     line=dict(color=colors[col], width=2, shape='spline'), 
-                    name=f"{col} (History)",
-                    opacity=0.6,
-                    hoverinfo='y' 
+                    name=f"{col} (History)", opacity=0.6, hoverinfo='y' 
                 ), secondary_y=sec)
                 
                 last_val_raw = train_df[col].iloc[-1]
                 pred_clean = round(preds[col], 1) if col == "EL" else int(round(preds[col]))
                 last_clean = round(last_val_raw, 1) if col == "EL" else int(round(last_val_raw))
                 
-                # 2. Vẽ đường nối nét đứt (Connector)
                 fig.add_trace(go.Scatter(
                     x=[idx[-1], nxt], y=[last_val_raw, preds[col]],
-                    mode='lines',
-                    line=dict(color=colors[col], width=2, dash='dot'),
-                    showlegend=False,
-                    hoverinfo='skip'
+                    mode='lines', line=dict(color=colors[col], width=2, dash='dot'),
+                    showlegend=False, hoverinfo='skip'
                 ), secondary_y=sec)
 
-                # Kiểm tra dự báo Đạt/Không đạt để gắn icon trên biểu đồ
                 is_pass = True
                 if col == "TS":
                     if pd.notna(s_ts_min) and s_ts_min > 0 and pred_clean < s_ts_min: is_pass = False
@@ -1618,91 +1403,62 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                 status_icon = "✅" if is_pass else "❌"
 
-                # 3. Vẽ Điểm Dự báo (Kèm Tooltip thông minh & Trạng thái)
                 fig.add_trace(go.Scatter(
-                    x=[nxt], y=[preds[col]], 
-                    mode='markers+text', 
-                    text=[f"<b>{status_icon} {pred_clean}</b>"], 
+                    x=[nxt], y=[preds[col]], mode='markers+text', text=[f"<b>{status_icon} {pred_clean}</b>"], 
                     textposition="middle right" if nxt < 10 else "top center",
                     marker=dict(color=colors[col], size=14, symbol='diamond', line=dict(width=2, color='white')), 
                     name=f"Pred {col}",
-                    hovertemplate=(
-                        f"<b>🎯 Pred {col}: {pred_clean}</b><br>"
-                        f"🔙 Last {col}: {last_clean}<br>"
-                        f"📈 Change: {pred_clean - last_clean:.1f}"
-                        "<extra></extra>"
-                    )
+                    hovertemplate=(f"<b>🎯 Pred {col}: {pred_clean}</b><br>🔙 Last {col}: {last_clean}<br>📈 Change: {pred_clean - last_clean:.1f}<extra></extra>")
                 ), secondary_y=sec)
 
-            # 4. Vẽ các đường nét đứt biểu thị Giới hạn Spec trên biểu đồ
             def add_spec_lines(vmin, vmax, color, name, is_sec):
-                if pd.notna(vmin) and vmin > 0:
-                    fig.add_hline(y=vmin, line_dash="dash", line_color=color, opacity=0.3, annotation_text=f"{name} Min", secondary_y=is_sec)
-                if pd.notna(vmax) and 0 < vmax < 9000:
-                    fig.add_hline(y=vmax, line_dash="dash", line_color=color, opacity=0.3, annotation_text=f"{name} Max", secondary_y=is_sec)
+                if pd.notna(vmin) and vmin > 0: fig.add_hline(y=vmin, line_dash="dash", line_color=color, opacity=0.3, annotation_text=f"{name} Min", secondary_y=is_sec)
+                if pd.notna(vmax) and 0 < vmax < 9000: fig.add_hline(y=vmax, line_dash="dash", line_color=color, opacity=0.3, annotation_text=f"{name} Max", secondary_y=is_sec)
 
             add_spec_lines(s_ts_min, s_ts_max, colors["TS"], "TS", False)
             add_spec_lines(s_ys_min, s_ys_max, colors["YS"], "YS", False)
             add_spec_lines(s_el_min, 0, colors["EL"], "EL", True)
 
-            # Phân cách vùng Tương lai và Lịch sử
             fig.add_vline(x=nxt - 0.5, line_width=1, line_dash="dash", line_color="gray")
             fig.add_annotation(x=nxt - 0.5, y=1.05, yref="paper", text="Forecast Zone ➔", showarrow=False, font=dict(color="gray"))
 
-            # Tối ưu Layout
-            fig.update_layout(
-                height=500,
-                title=dict(text=f"📈 Prediction at Target HRB = {target_h:.1f}", font=dict(size=18)),
-                plot_bgcolor="white",
-                hovermode="closest",
-                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
-                margin=dict(l=20, r=20, t=80, b=20)
-            )
+            fig.update_layout(height=500, title=dict(text=f"📈 Prediction at Target HRB = {target_h:.1f}", font=dict(size=18)), plot_bgcolor="white", hovermode="closest", legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1), margin=dict(l=20, r=20, t=80, b=20))
             fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#eee', title="Coil Sequence")
             fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#eee', secondary_y=False, title="Strength (MPa)")
             fig.update_yaxes(showgrid=False, secondary_y=True, title="Elongation (%)")
 
             st.plotly_chart(fig, use_container_width=True)
             
-            # --- TỔNG HỢP CHỈ SỐ VÀ KIỂM ĐỊNH TIÊU CHUẨN (SPEC VERIFICATION) ---
             st.markdown("#### 🏁 Forecast Summary & Spec Verification")
             c1, c2, c3 = st.columns(3)
             
             def get_delta(p, l): return round(p - l, 1)
             
-            last_ts = train_df["TS"].iloc[-1]
-            last_ys = train_df["YS"].iloc[-1]
-            last_el = train_df["EL"].iloc[-1]
+            last_ts, last_ys, last_el = train_df["TS"].iloc[-1], train_df["YS"].iloc[-1], train_df["EL"].iloc[-1]
 
-            # TS Card
             ts_pred_clean = int(round(preds['TS']))
             ts_pass = not ((pd.notna(s_ts_min) and s_ts_min > 0 and ts_pred_clean < s_ts_min) or (pd.notna(s_ts_max) and 0 < s_ts_max < 9000 and ts_pred_clean > s_ts_max))
             c1.metric(f"Tensile Strength (TS)", f"{ts_pred_clean} MPa", f"{get_delta(preds['TS'], last_ts)} vs Last Coil")
             c1.markdown(f"**Spec:** `{spec_ts_str}` ➔ {'✅ **PASS**' if ts_pass else '❌ **FAIL**'}")
             c1.caption(f"🎯 **R² Score:** {model_metrics['TS']['r2']:.2f} | **RMSE:** ±{model_metrics['TS']['rmse']:.1f}")
 
-            # YS Card
             ys_pred_clean = int(round(preds['YS']))
             ys_pass = not ((pd.notna(s_ys_min) and s_ys_min > 0 and ys_pred_clean < s_ys_min) or (pd.notna(s_ys_max) and 0 < s_ys_max < 9000 and ys_pred_clean > s_ys_max))
             c2.metric(f"Yield Strength (YS)", f"{ys_pred_clean} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last Coil")
             c2.markdown(f"**Spec:** `{spec_ys_str}` ➔ {'✅ **PASS**' if ys_pass else '❌ **FAIL**'}")
             c2.caption(f"🎯 **R² Score:** {model_metrics['YS']['r2']:.2f} | **RMSE:** ±{model_metrics['YS']['rmse']:.1f}")
 
-            # EL Card
             el_pred_clean = round(preds['EL'], 1)
             el_pass = not (pd.notna(s_el_min) and s_el_min > 0 and el_pred_clean < s_el_min)
             c3.metric(f"Elongation (EL)", f"{el_pred_clean} %", f"{get_delta(preds['EL'], last_el)} vs Last Coil")
             c3.markdown(f"**Spec:** `{spec_el_str}` ➔ {'✅ **PASS**' if el_pass else '❌ **FAIL**'}")
             c3.caption(f"🎯 **R² Score:** {model_metrics['EL']['r2']:.2f} | **RMSE:** ±{model_metrics['EL']['rmse']:.1f}")
 
-  # ==============================================================================
-# ==============================================================================
-# ==============================================================================
-    # 8. CONTROL LIMIT CALCULATOR (COMPARE METHODS) - STRICT TARGET VS CONTROL LOGIC
+    # ==============================================================================
+    # 10. CONTROL LIMIT CALCULATOR
     # ==============================================================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
-        # --- 1. HIỂN THỊ GIẢI THÍCH DUY NHẤT MỘT LẦN Ở ĐẦU VIEW ---
         if i == 0:
             all_groups_summary = []
             st.markdown("### 📘 Control Limit Calculation Methods")
@@ -1716,10 +1472,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 | **M4: I-MR (SPC)** | Process Control | **Optimal approach:** Monitors variation between adjacent coils; highly scientific for process stability. |
                 """)
 
-        # --- 2. PHÂN TÍCH CHI TIẾT ---
         st.markdown(f"### 🎛️ Control Limits Analysis: {g['Material']} | {g['Gauge_Range']}")
         
-        # [CHỐT CHẶN BẢO MẬT DỮ LIỆU]: Loại bỏ tuyệt đối 0 và NA
         sub_clean = sub[(sub["Hardness_LINE"].notna()) & (sub["Hardness_LINE"] > 0)].copy()
         
         data = sub_clean["Hardness_LINE"]
@@ -1745,41 +1499,33 @@ for i, (_, g) in enumerate(valid.iterrows()):
             mu = data.mean()
             std_dev = data.std() if len(data) > 1 else 1.0
             
-            # M1: Standard
+            # M1
             m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
-            
-            # M2: IQR Robust
+            # M2
             Q1 = data.quantile(0.25); Q3 = data.quantile(0.75); IQR = Q3 - Q1
             clean_data = data[~((data < (Q1 - iqr_k * IQR)) | (data > (Q3 + iqr_k * IQR)))]
             if clean_data.empty or len(clean_data) < 2: clean_data = data
             mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
             m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
-            
-            # M3: Smart Hybrid
+            # M3
             m3_min = max(m2_min, spec_min)
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
-            
-            # M4: I-MR (SPC)
+            # M4
             mrs = np.abs(np.diff(data))
             mr_bar = np.mean(mrs) if len(mrs) > 0 else 0
             sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_dev
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
-            # Tính New Core Target (Luôn là ±1.0σ cho mục tiêu vận hành)
             target_k = 1.0 
             new_target_min = mu - target_k * sigma_imr
             new_target_max = mu + target_k * sigma_imr
             
-            # ==================================================================
-            # BIỂU ĐỒ TỔNG HỢP: LIMITS + NORMAL CURVE
-            # ==================================================================
             from scipy.stats import norm
             fig, ax = plt.subplots(figsize=(12, 4.5))
             
             ax.hist(data, bins=15, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
-            if not data_lab.empty: 
-                ax.hist(data_lab, bins=15, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
+            if not data_lab.empty: ax.hist(data_lab, bins=15, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
             
             min_cands = [m1_min, m4_min, spec_min, data.min()]
             max_cands = [m1_max, m4_max, display_max, data.max()]
@@ -1810,9 +1556,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.pyplot(fig)
             plt.close(fig)
 
-            # ==================================================================
-            # BẢNG TỔNG HỢP CƠ TÍNH BẰNG AI & TÌM PHƯƠNG ÁN TỐI ƯU
-            # ==================================================================
             st.write("")
             sub_mech = sub_clean.dropna(subset=['TS', 'YS', 'EL']).copy()
             
@@ -1861,7 +1604,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     if pd.notna(spec_max) and 0 < spec_max < 9000 and p_max > spec_max: return "❌ Fail"
                     return "✅ Pass"
 
-                # CHỈ lưu các phương pháp M1-M4 nếu vượt qua bài test cơ tính
                 passed_control_methods = [] 
 
                 for cat, l_min, l_max, sig, disp_lim in configs:
@@ -1879,38 +1621,23 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         overall = "⚠️ Warning"
                     else:
                         overall = "✅ Optimal"
-                        # Chỉ xét M1, M2, M3, M4 làm Control Limit ứng cử viên
-                        if "M" in cat: 
-                            passed_control_methods.append(cat)
-                        elif "Old Target" in cat:
-                            passed_control_methods.append("Old Target")
+                        if "M" in cat: passed_control_methods.append(cat)
+                        elif "Old Target" in cat: passed_control_methods.append("Old Target")
 
                     rows.append({
-                        "Limit Type": cat,
-                        "Hardness Limits": disp_lim,
-                        "Variation": sig,
-                        "Est. TS": f"{ts_preds[0]:.0f} ~ {ts_preds[1]:.0f}",
-                        "TS Eval": ts_eval,
-                        "Est. YS": f"{ys_preds[0]:.0f} ~ {ys_preds[1]:.0f}",
-                        "YS Eval": ys_eval,
-                        "Est. EL (%)": f"{el_preds[0]:.1f} ~ {el_preds[1]:.1f}",
-                        "EL Eval": el_eval,
+                        "Limit Type": cat, "Hardness Limits": disp_lim, "Variation": sig,
+                        "Est. TS": f"{ts_preds[0]:.0f} ~ {ts_preds[1]:.0f}", "TS Eval": ts_eval,
+                        "Est. YS": f"{ys_preds[0]:.0f} ~ {ys_preds[1]:.0f}", "YS Eval": ys_eval,
+                        "Est. EL (%)": f"{el_preds[0]:.1f} ~ {el_preds[1]:.1f}", "EL Eval": el_eval,
                         "Overall Proposal": overall
                     })
 
-                # -- LOGIC CHỌN CONTROL LIMIT TỐI ƯU NHẤT --
-                if any("M4: I-MR" in m for m in passed_control_methods):
-                    best_control_limit = "🟣 M4: I-MR"
-                elif any("M3: Smart Hybrid" in m for m in passed_control_methods):
-                    best_control_limit = "🟢 M3: Smart Hybrid"
-                elif any("M2: IQR" in m for m in passed_control_methods):
-                    best_control_limit = "🔵 M2: IQR"
-                elif any("M1: Standard" in m for m in passed_control_methods):
-                    best_control_limit = "🔴 M1: Standard"
-                elif any("Old Target" in m for m in passed_control_methods):
-                    best_control_limit = "🎯 Keep Current Spec"
-                else:
-                    best_control_limit = "❌ High Risk (All Failed)"
+                if any("M4: I-MR" in m for m in passed_control_methods): best_control_limit = "🟣 M4: I-MR"
+                elif any("M3: Smart Hybrid" in m for m in passed_control_methods): best_control_limit = "🟢 M3: Smart Hybrid"
+                elif any("M2: IQR" in m for m in passed_control_methods): best_control_limit = "🔵 M2: IQR"
+                elif any("M1: Standard" in m for m in passed_control_methods): best_control_limit = "🔴 M1: Standard"
+                elif any("Old Target" in m for m in passed_control_methods): best_control_limit = "🎯 Keep Current Spec"
+                else: best_control_limit = "❌ High Risk (All Failed)"
 
                 df_summary = pd.DataFrame(rows)
                 
@@ -1921,16 +1648,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
                             styles.iloc[idx, :] = 'background-color: #e6f4ea;'
                         
                         for col in ['TS Eval', 'YS Eval', 'EL Eval']:
-                            if "Fail" in str(row[col]):
-                                styles.at[idx, col] = 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
-                            elif "Pass" in str(row[col]):
-                                styles.at[idx, col] = 'color: #155724; font-weight: bold;'
+                            if "Fail" in str(row[col]): styles.at[idx, col] = 'background-color: #f8d7da; color: #721c24; font-weight: bold;'
+                            elif "Pass" in str(row[col]): styles.at[idx, col] = 'color: #155724; font-weight: bold;'
                                 
-                        if "Warning" in str(row['Overall Proposal']):
-                            styles.at[idx, 'Overall Proposal'] = 'color: #856404; font-weight: bold;'
-                        elif "Optimal" in str(row['Overall Proposal']):
-                            styles.at[idx, 'Overall Proposal'] = 'color: #155724; font-weight: bold;'
-                            
+                        if "Warning" in str(row['Overall Proposal']): styles.at[idx, 'Overall Proposal'] = 'color: #856404; font-weight: bold;'
+                        elif "Optimal" in str(row['Overall Proposal']): styles.at[idx, 'Overall Proposal'] = 'color: #155724; font-weight: bold;'
                     return styles
 
                 styled_summary = df_summary.style.apply(style_table, axis=None)
@@ -1939,42 +1661,31 @@ for i, (_, g) in enumerate(valid.iterrows()):
             else:
                 st.warning("Không đủ dữ liệu cơ tính sạch (N<5) để chạy AI Linear Regression.")
 
-            # ==================================================================
-            # LƯU VÀO DANH SÁCH FACTORY SUMMARY (TÁCH BIỆT TARGET VÀ CONTROL LIMIT)
-            # ==================================================================
             spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}" if display_max > 0 else f"Ctrl: ≥{spec_min:.0f}"
             col_spec = "Product_Spec"
             unique_specs = sub_clean[col_spec].dropna().unique() if col_spec in sub_clean.columns else []
             specs_val = f"Specs: {', '.join(str(x) for x in unique_specs)}" if len(unique_specs) > 0 else "Specs: N/A"
 
             all_groups_summary.append({
-                "Specification List": specs_val,
-                "Material": g["Material"],
-                "Gauge": g["Gauge_Range"],
-                "N Coils": len(data),
-                "Current Spec": spec_str,
-                "🎯 Core Target (±1.0σ)": f"{new_target_min:.1f} ~ {new_target_max:.1f}", # Luôn luôn hiển thị Target
+                "Specification List": specs_val, "Material": g["Material"], "Gauge": g["Gauge_Range"],
+                "N Coils": len(data), "Current Spec": spec_str,
+                "🎯 Core Target (±1.0σ)": f"{new_target_min:.1f} ~ {new_target_max:.1f}", 
                 "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
                 "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
                 "M3: Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
                 "M4: I-MR (Opt)": f"{m4_min:.1f} ~ {m4_max:.1f}",
-                "🚧 Control Limit Rec.": best_control_limit # Đề xuất từ M1->M4
+                "🚧 Control Limit Rec.": best_control_limit 
             })
 
-        # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
             st.markdown(f"## 📊 Factory-wide Operation & Control Limits Summary: {qgroup}")
             df_total = pd.DataFrame(all_groups_summary)
             
-            # Định dạng màu để báo cáo cuối trang thật ấn tượng
             def style_recommendation(val):
-                if 'M4' in str(val) or 'M3' in str(val) or 'M2' in str(val) or 'M1' in str(val): 
-                    return 'color: #155724; background-color: #d4edda; font-weight: bold'
-                elif 'Keep' in str(val):
-                    return 'color: #856404; background-color: #fff3cd; font-weight: bold'
-                else:
-                    return 'color: #721c24; background-color: #f8d7da; font-weight: bold'
+                if 'M4' in str(val) or 'M3' in str(val) or 'M2' in str(val) or 'M1' in str(val): return 'color: #155724; background-color: #d4edda; font-weight: bold'
+                elif 'Keep' in str(val): return 'color: #856404; background-color: #fff3cd; font-weight: bold'
+                else: return 'color: #721c24; background-color: #f8d7da; font-weight: bold'
 
             styled_df_total = df_total.style
             if hasattr(styled_df_total, "map"):
