@@ -718,7 +718,7 @@ if view_mode == "📊 Executive KPI Dashboard":
 # ==============================================================================
     # 9. MASTER DICTIONARY EXPORT (FULL VIEW - ULTIMATE UI VERSION)
     # ==============================================================================
-    elif view_mode == "👑 Master Dictionary Export":
+    if view_mode == "👑 Master Dictionary Export":
         
         import plotly.graph_objects as go
         from plotly.subplots import make_subplots
