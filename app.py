@@ -1640,7 +1640,188 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.dataframe(pd.DataFrame(reverse_lookup_summary), use_container_width=True, hide_index=True)
    # ================================
 # ================================
- elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
+    # ==============================================================================
+    # 7. AI PREDICTION (STABLE INPUT + METRICS + AUTO SPEC VERIFICATION)
+    # ==============================================================================
+    elif view_mode == "🧮 Predict TS/YS/EL from Std Hardness":
+        st.markdown(f"### 🧮 AI Prediction: {g['Material']} | {g['Gauge_Range']}")
+        
+        # Đảm bảo dữ liệu sạch sẽ trước khi đưa vào mô hình học máy
+        train_df = sub.dropna(subset=["Hardness_LINE", "TS", "YS", "EL"]).copy()
+        train_df = train_df[train_df["Hardness_LINE"] > 0]
+        
+        if len(train_df) < 5:
+            st.warning("⚠️ Cần ít nhất 5 cuộn hợp lệ để huấn luyện mô hình AI.")
+        else:
+            col1, col2 = st.columns([1, 3])
+            with col1:
+                mean_h = train_df["Hardness_LINE"].mean()
+                
+                # Sử dụng biến 'i' làm key để widget không bị nhấp nháy/reset
+                target_h = st.number_input(
+                    "🎯 Target Hardness (HRB)", 
+                    value=float(round(mean_h, 1)), 
+                    step=0.1, 
+                    key=f"ai_fix_{i}" 
+                )
+            
+            # --- LẤY SPEC CƠ TÍNH ĐỂ ĐỐI CHIẾU ---
+            s_ts_min = train_df["Standard TS min"].max() if "Standard TS min" in train_df.columns else 0
+            s_ts_max = train_df["Standard TS max"].min() if "Standard TS max" in train_df.columns else 0
+            s_ys_min = train_df["Standard YS min"].max() if "Standard YS min" in train_df.columns else 0
+            s_ys_max = train_df["Standard YS max"].min() if "Standard YS max" in train_df.columns else 0
+            s_el_min = train_df["Standard EL min"].max() if "Standard EL min" in train_df.columns else 0
+            
+            def fmt_spec(vmin, vmax):
+                if pd.isna(vmin): vmin = 0
+                if pd.isna(vmax): vmax = 0
+                if vmax > 0 and vmax < 9000: return f"{vmin:.0f} ~ {vmax:.0f}"
+                if vmin > 0: return f"≥ {vmin:.0f}"
+                return "N/A"
+                
+            spec_ts_str = fmt_spec(s_ts_min, s_ts_max)
+            spec_ys_str = fmt_spec(s_ys_min, s_ys_max)
+            spec_el_str = f"≥ {s_el_min:.0f}" if pd.notna(s_el_min) and s_el_min > 0 else "N/A"
+
+            X_train = train_df[["Hardness_LINE"]].values
+            preds = {}
+            model_metrics = {}
+            
+            # Huấn luyện mô hình và dự báo ngay lập tức
+            for col in ["TS", "YS", "EL"]:
+                model = LinearRegression().fit(X_train, train_df[col].values)
+                val = model.predict([[target_h]])[0]
+                preds[col] = val 
+                
+                # Tính R2 Score và Sai số RMSE để đánh giá độ tin cậy
+                y_true = train_df[col].values
+                y_pred = model.predict(X_train)
+                r2 = r2_score(y_true, y_pred)
+                rmse = np.sqrt(mean_squared_error(y_true, y_pred))
+                model_metrics[col] = {"r2": r2, "rmse": rmse}
+
+            # --- VẼ BIỂU ĐỒ BẰNG PLOTLY (INTERACTIVE) ---
+            fig = make_subplots(specs=[[{"secondary_y": True}]])
+            colors = {"TS": "#2980b9", "YS": "#27ae60", "EL": "#c0392b"} 
+            idx = list(range(len(train_df)))
+            nxt = len(train_df)
+
+            for col in ["TS", "YS", "EL"]:
+                sec = (col == "EL") # EL dùng trục Y bên phải (đơn vị %)
+                
+                # 1. Vẽ đường Lịch sử (History)
+                fig.add_trace(go.Scatter(
+                    x=idx, y=train_df[col], 
+                    mode='lines', 
+                    line=dict(color=colors[col], width=2, shape='spline'), 
+                    name=f"{col} (History)",
+                    opacity=0.6,
+                    hoverinfo='y' 
+                ), secondary_y=sec)
+                
+                last_val_raw = train_df[col].iloc[-1]
+                pred_clean = round(preds[col], 1) if col == "EL" else int(round(preds[col]))
+                last_clean = round(last_val_raw, 1) if col == "EL" else int(round(last_val_raw))
+                
+                # 2. Vẽ đường nối nét đứt (Connector)
+                fig.add_trace(go.Scatter(
+                    x=[idx[-1], nxt], y=[last_val_raw, preds[col]],
+                    mode='lines',
+                    line=dict(color=colors[col], width=2, dash='dot'),
+                    showlegend=False,
+                    hoverinfo='skip'
+                ), secondary_y=sec)
+
+                # Kiểm tra dự báo Đạt/Không đạt để gắn icon trên biểu đồ
+                is_pass = True
+                if col == "TS":
+                    if pd.notna(s_ts_min) and s_ts_min > 0 and pred_clean < s_ts_min: is_pass = False
+                    if pd.notna(s_ts_max) and 0 < s_ts_max < 9000 and pred_clean > s_ts_max: is_pass = False
+                elif col == "YS":
+                    if pd.notna(s_ys_min) and s_ys_min > 0 and pred_clean < s_ys_min: is_pass = False
+                    if pd.notna(s_ys_max) and 0 < s_ys_max < 9000 and pred_clean > s_ys_max: is_pass = False
+                elif col == "EL":
+                    if pd.notna(s_el_min) and s_el_min > 0 and pred_clean < s_el_min: is_pass = False
+
+                status_icon = "✅" if is_pass else "❌"
+
+                # 3. Vẽ Điểm Dự báo (Kèm Tooltip thông minh & Trạng thái)
+                fig.add_trace(go.Scatter(
+                    x=[nxt], y=[preds[col]], 
+                    mode='markers+text', 
+                    text=[f"<b>{status_icon} {pred_clean}</b>"], 
+                    textposition="middle right" if nxt < 10 else "top center",
+                    marker=dict(color=colors[col], size=14, symbol='diamond', line=dict(width=2, color='white')), 
+                    name=f"Pred {col}",
+                    hovertemplate=(
+                        f"<b>🎯 Pred {col}: {pred_clean}</b><br>"
+                        f"🔙 Last {col}: {last_clean}<br>"
+                        f"📈 Change: {pred_clean - last_clean:.1f}"
+                        "<extra></extra>"
+                    )
+                ), secondary_y=sec)
+
+            # 4. Vẽ các đường nét đứt biểu thị Giới hạn Spec trên biểu đồ
+            def add_spec_lines(vmin, vmax, color, name, is_sec):
+                if pd.notna(vmin) and vmin > 0:
+                    fig.add_hline(y=vmin, line_dash="dash", line_color=color, opacity=0.3, annotation_text=f"{name} Min", secondary_y=is_sec)
+                if pd.notna(vmax) and 0 < vmax < 9000:
+                    fig.add_hline(y=vmax, line_dash="dash", line_color=color, opacity=0.3, annotation_text=f"{name} Max", secondary_y=is_sec)
+
+            add_spec_lines(s_ts_min, s_ts_max, colors["TS"], "TS", False)
+            add_spec_lines(s_ys_min, s_ys_max, colors["YS"], "YS", False)
+            add_spec_lines(s_el_min, 0, colors["EL"], "EL", True)
+
+            # Phân cách vùng Tương lai và Lịch sử
+            fig.add_vline(x=nxt - 0.5, line_width=1, line_dash="dash", line_color="gray")
+            fig.add_annotation(x=nxt - 0.5, y=1.05, yref="paper", text="Forecast Zone ➔", showarrow=False, font=dict(color="gray"))
+
+            # Tối ưu Layout
+            fig.update_layout(
+                height=500,
+                title=dict(text=f"📈 Prediction at Target HRB = {target_h:.1f}", font=dict(size=18)),
+                plot_bgcolor="white",
+                hovermode="closest",
+                legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+                margin=dict(l=20, r=20, t=80, b=20)
+            )
+            fig.update_xaxes(showgrid=True, gridwidth=1, gridcolor='#eee', title="Coil Sequence")
+            fig.update_yaxes(showgrid=True, gridwidth=1, gridcolor='#eee', secondary_y=False, title="Strength (MPa)")
+            fig.update_yaxes(showgrid=False, secondary_y=True, title="Elongation (%)")
+
+            st.plotly_chart(fig, use_container_width=True)
+            
+            # --- TỔNG HỢP CHỈ SỐ VÀ KIỂM ĐỊNH TIÊU CHUẨN (SPEC VERIFICATION) ---
+            st.markdown("#### 🏁 Forecast Summary & Spec Verification")
+            c1, c2, c3 = st.columns(3)
+            
+            def get_delta(p, l): return round(p - l, 1)
+            
+            last_ts = train_df["TS"].iloc[-1]
+            last_ys = train_df["YS"].iloc[-1]
+            last_el = train_df["EL"].iloc[-1]
+
+            # TS Card
+            ts_pred_clean = int(round(preds['TS']))
+            ts_pass = not ((pd.notna(s_ts_min) and s_ts_min > 0 and ts_pred_clean < s_ts_min) or (pd.notna(s_ts_max) and 0 < s_ts_max < 9000 and ts_pred_clean > s_ts_max))
+            c1.metric(f"Tensile Strength (TS)", f"{ts_pred_clean} MPa", f"{get_delta(preds['TS'], last_ts)} vs Last Coil")
+            c1.markdown(f"**Spec:** `{spec_ts_str}` ➔ {'✅ **PASS**' if ts_pass else '❌ **FAIL**'}")
+            c1.caption(f"🎯 **R² Score:** {model_metrics['TS']['r2']:.2f} | **RMSE:** ±{model_metrics['TS']['rmse']:.1f}")
+
+            # YS Card
+            ys_pred_clean = int(round(preds['YS']))
+            ys_pass = not ((pd.notna(s_ys_min) and s_ys_min > 0 and ys_pred_clean < s_ys_min) or (pd.notna(s_ys_max) and 0 < s_ys_max < 9000 and ys_pred_clean > s_ys_max))
+            c2.metric(f"Yield Strength (YS)", f"{ys_pred_clean} MPa", f"{get_delta(preds['YS'], last_ys)} vs Last Coil")
+            c2.markdown(f"**Spec:** `{spec_ys_str}` ➔ {'✅ **PASS**' if ys_pass else '❌ **FAIL**'}")
+            c2.caption(f"🎯 **R² Score:** {model_metrics['YS']['r2']:.2f} | **RMSE:** ±{model_metrics['YS']['rmse']:.1f}")
+
+            # EL Card
+            el_pred_clean = round(preds['EL'], 1)
+            el_pass = not (pd.notna(s_el_min) and s_el_min > 0 and el_pred_clean < s_el_min)
+            c3.metric(f"Elongation (EL)", f"{el_pred_clean} %", f"{get_delta(preds['EL'], last_el)} vs Last Coil")
+            c3.markdown(f"**Spec:** `{spec_el_str}` ➔ {'✅ **PASS**' if el_pass else '❌ **FAIL**'}")
+            c3.caption(f"🎯 **R² Score:** {model_metrics['EL']['r2']:.2f} | **RMSE:** ±{model_metrics['EL']['rmse']:.1f}")
+
   # ==============================================================================
     # 8. CONTROL LIMIT CALCULATOR (COMPARE 4 METHODS) - FINAL OPTIMIZED
     # ==============================================================================
