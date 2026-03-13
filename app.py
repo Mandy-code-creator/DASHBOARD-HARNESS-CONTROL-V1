@@ -257,7 +257,7 @@ valid = cnt[cnt["N_Coils"] >= 30]
 # ==============================================================================
 # 9. MASTER DICTIONARY EXPORT (CORRECTED DUAL-LIMIT NAMES & ACTUALS)
     # ==============================================================================
-   if view_mode == "👑 Master Dictionary Export":
+if view_mode == "👑 Master Dictionary Export":
         
         import datetime as dt
         from io import BytesIO
