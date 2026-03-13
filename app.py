@@ -1472,6 +1472,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         import io
         import datetime
         import uuid
+        import re
         import numpy as np
         import pandas as pd
         import matplotlib.pyplot as plt
@@ -1492,11 +1493,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 | **M4: I-MR (SPC)** | Process Control | **Optimal approach:** Monitors variation between adjacent coils; highly scientific for process stability. |
                 """)
 
-        # Process material names to avoid errors
+        # Process material names and CLEAN UP weird unicode chars like ≦ to prevent Font Error
         mat_name = g['Material'] if 'Material' in g else "Unknown"
         gauge_name = g['Gauge_Range'] if 'Gauge_Range' in g else "Unknown"
+        safe_gauge_name = re.sub(r'[^\x00-\x7F]+', '<=', str(gauge_name))
 
-        st.markdown(f"### 🎛️ Control Limits Analysis: {mat_name} | {gauge_name}")
+        st.markdown(f"### 🎛️ Control Limits Analysis: {mat_name} | {safe_gauge_name}")
         
         # Clean data: Remove NA and <= 0
         sub_clean = sub[(sub["Hardness_LINE"].notna()) & (sub["Hardness_LINE"] > 0)].copy()
@@ -1545,44 +1547,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             new_target_min = mu - target_k * sigma_imr
             new_target_max = mu + target_k * sigma_imr
             
-            # --- 1. NORMAL DISTRIBUTION CHART ---
-            fig, ax = plt.subplots(figsize=(12, 4.5))
-            fig.patch.set_facecolor('white')
-            ax.set_facecolor('white')
-
-            ax.hist(data, bins=15, density=True, alpha=0.6, color="#1f77b4", label="LINE (Production)")
-            if not data_lab.empty: ax.hist(data_lab, bins=15, density=True, alpha=0.4, color="#ff7f0e", label="LAB (Ref)")
-            
-            min_cands = [m1_min, m4_min, spec_min, data.min()]
-            max_cands = [m1_max, m4_max, display_max, data.max()]
-            if not data_lab.empty:
-                min_cands.append(data_lab.min())
-                max_cands.append(data_lab.max())
-                
-            x_min_val = min(min_cands) - 5
-            x_max_val = max(max_cands) + 5
-            x_axis = np.linspace(x_min_val, x_max_val, 500)
-            
-            ax.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color="#333333", lw=2, alpha=0.8, label=f"Normal Curve (σ={std_dev:.2f})")
-            ax.axvline(m1_min, c="red", ls=":", alpha=0.4, label="M1: Standard")
-            ax.axvline(m1_max, c="red", ls=":", alpha=0.4)
-            ax.axvline(m2_min, c="blue", ls="--", alpha=0.5, label="M2: IQR")
-            ax.axvline(m2_max, c="blue", ls="--", alpha=0.5)
-            ax.axvline(m4_min, c="purple", ls="-.", lw=2, label="M4: I-MR (SPC)")
-            ax.axvline(m4_max, c="purple", ls="-.", lw=2)
-            ax.axvspan(m3_min, m3_max, color="green", alpha=0.15, label="M3: Hybrid Zone")
-            
-            if spec_min > 0: ax.axvline(spec_min, c="black", lw=2)
-            if display_max > 0: ax.axvline(display_max, c="black", lw=2)
-            
-            ax.set_title(f"Limits Comparison with Normal Distribution (σ={sigma_n})", fontsize=11, fontweight="bold")
-            ax.legend(loc="upper right", fontsize="small")
-            st.pyplot(fig)
-            plt.close(fig)
-
-            st.write("")
-            
-            # --- AI PREDICTION & COMPARISON TABLE ---
+            # --- AI PREDICTION & COMPARISON TABLE (Theoretical vs Actual) ---
             sub_mech = sub_clean.dropna(subset=['TS', 'YS', 'EL']).copy()
             
             s_ts_min = sub_mech["Standard TS min"].max() if "Standard TS min" in sub_mech.columns else 0
@@ -1632,7 +1597,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 passed_control_methods = [] 
 
                 for cat, l_min, l_max, sig, disp_lim in configs:
-                    # 1. Theoretical Prediction (AI)
+                    # 1. Theoretical Prediction
                     calc_max = l_max if l_max > 0 else sub_mech['Hardness_LINE'].max()
                     
                     ts_preds = sorted([model_ts.predict([[l_min]])[0], model_ts.predict([[calc_max]])[0]])
@@ -1642,12 +1607,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     theo_ts = f"{ts_preds[0]:.0f} ~ {ts_preds[1]:.0f}"
                     theo_ys = f"{ys_preds[0]:.0f} ~ {ys_preds[1]:.0f}"
                     theo_el = f"{el_preds[0]:.1f} ~ {el_preds[1]:.1f}"
-
-                    # Evaluation for Overall Proposal
+                    
                     ts_eval = eval_prop(ts_preds, s_ts_min, s_ts_max)
                     ys_eval = eval_prop(ys_preds, s_ys_min, s_ys_max)
                     el_eval = eval_prop(el_preds, s_el_min, 9999) 
-                    
+
                     if "Fail" in ts_eval or "Fail" in ys_eval or "Fail" in el_eval:
                         overall = "⚠️ Warning"
                     else:
@@ -1663,7 +1627,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     actual_coils = sub_mech[actual_mask]
                     
                     if not actual_coils.empty:
-                        # Bổ sung thêm Average (Avg) để sếp dễ thấy sự thay đổi giữa các phương pháp
                         act_ts = f"{actual_coils['TS'].min():.0f}~{actual_coils['TS'].max():.0f} (Avg:{actual_coils['TS'].mean():.0f})"
                         act_ys = f"{actual_coils['YS'].min():.0f}~{actual_coils['YS'].max():.0f} (Avg:{actual_coils['YS'].mean():.0f})"
                         act_el = f"{actual_coils['EL'].min():.1f}~{actual_coils['EL'].max():.1f} (Avg:{actual_coils['EL'].mean():.1f})"
@@ -1697,11 +1660,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     for idx, row in df.iterrows():
                         if "New Core Target" in str(row['Limit Type']):
                             styles.iloc[idx, :] = 'background-color: #e6f4ea;'
-                                
+                        
                         if "Warning" in str(row['Overall Proposal']): styles.at[idx, 'Overall Proposal'] = 'color: #856404; font-weight: bold;'
                         elif "Optimal" in str(row['Overall Proposal']): styles.at[idx, 'Overall Proposal'] = 'color: #155724; font-weight: bold;'
                         
-                        # Làm nổi bật các cột Actual để sếp dễ so sánh
                         styles.at[idx, 'Actual TS'] = 'background-color: #f8f9fa;'
                         styles.at[idx, 'Actual YS'] = 'background-color: #f8f9fa;'
                         styles.at[idx, 'Actual EL (%)'] = 'background-color: #f8f9fa;'
@@ -1712,6 +1674,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 # --- DISPLAY COMPARISON TABLE ON APP ---
                 st.dataframe(styled_summary, use_container_width=True, hide_index=True)
                 st.caption("*(**) Theoretical values are generated by AI Linear Regression. Actual values are the observed min/max of historical coils falling within the specified Hardness limits.*")
+                
                 # --- EXCEL DOWNLOAD BUTTON FOR COMPARISON ---
                 indiv_buffer = io.BytesIO()
                 with pd.ExcelWriter(indiv_buffer, engine='xlsxwriter') as writer:
@@ -1736,7 +1699,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.download_button(
                     label=f"📥 Download Excel Comparison: {mat_name}",
                     data=indiv_buffer.getvalue(),
-                    file_name=f"Comparison_{mat_name}_{gauge_name}.xlsx",
+                    file_name=f"Comparison_{mat_name}_vs_Target.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     key=f"dl_indiv_{i}_{uuid.uuid4().hex[:4]}" 
                 )
@@ -1747,15 +1710,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 fig2.patch.set_facecolor('white')
                 ax2.set_facecolor('white')
 
-                from scipy.stats import norm
-
-                # 1. Histogram
+                # Histogram
                 sns.histplot(data, stat='density', bins=15, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax2)
                 
                 if not data_lab.empty:
                     sns.histplot(data_lab, stat='density', bins=15, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax2)
 
-                # 2. Extend X-axis limits smartly to fit Old Target limits as well
+                # Extend X-axis limits smartly to fit Old Target limits as well
                 min_cands_fig2 = [m1_min, m4_min, data.min()]
                 max_cands_fig2 = [m1_max, m4_max, data.max()]
                 if spec_min > 0: min_cands_fig2.append(spec_min)
@@ -1765,27 +1726,27 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 max_limit = max(max_cands_fig2) + 4
                 x_axis = np.linspace(min_limit, max_limit, 500)
                 
-                # 3. Normal Curve for LINE
+                # Normal Curve for LINE
                 ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color='#1f77b4', lw=2.5, label=f'Normal Curve (LINE)')
 
-                # 4. Normal Curve for LAB
+                # Normal Curve for LAB
                 if not data_lab.empty and len(data_lab) > 1:
                     mu_lab = data_lab.mean()
                     std_lab = data_lab.std()
                     ax2.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab), color='#d62728', lw=2.5, linestyle='-.', label=f'Normal Curve (LAB)')
 
-                # 5. Old Target Span (Solid Black Lines)
+                # Old Target Span
                 if spec_min > 0:
                     ax2.axvline(spec_min, color='black', linestyle='-', linewidth=2.5, label=f'Old Target Min ({spec_min:.1f})')
                 if display_max > 0:
                     ax2.axvline(display_max, color='black', linestyle='-', linewidth=2.5, label=f'Old Target Max ({display_max:.1f})')
 
-                # 6. M1 Span (Red dashed)
+                # M1 Span
                 ax2.axvline(m1_min, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Min ({m1_min:.1f})')
                 ax2.axvline(m1_max, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Max ({m1_max:.1f})')
                 ax2.axvspan(m1_min, m1_max, color='#d62728', alpha=0.05)
 
-                # 7. M4 Span (Purple solid)
+                # M4 Span
                 ax2.axvline(m4_min, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Min ({m4_min:.1f})')
                 ax2.axvline(m4_max, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Max ({m4_max:.1f})')
                 ax2.axvspan(m4_min, m4_max, color='#9467bd', alpha=0.15)
@@ -1793,12 +1754,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 # Lock X-axis
                 ax2.set_xlim(min_limit, max_limit)
 
-                # ==========================================
-                # Chart Formatting (Fixing Font Error Here)
-                # ==========================================
-                # Chuyển đổi ký tự đặc biệt sang ký tự thường để Matplotlib không bị lỗi font
-                safe_gauge_name = str(gauge_name).replace("≦", "<=").replace("≤", "<=")
-                
+                # Chart Formatting using the clean Safe Gauge Name
                 ax2.set_title(f"Limits Comparison: M1 vs M4 vs Old Target - {mat_name} {safe_gauge_name}", fontsize=12, fontweight='bold', color='#333333')
                 ax2.set_xlabel("Hardness (HRB)", fontweight='bold')
                 ax2.set_ylabel("Density", fontweight='bold')
@@ -1809,6 +1765,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                 st.pyplot(fig2)
                 plt.close(fig2)
+
             else:
                 st.warning("⚠️ Insufficient clean mechanical data (N<5) to run AI Linear Regression.")
 
