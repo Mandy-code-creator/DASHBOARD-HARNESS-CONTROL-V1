@@ -1825,8 +1825,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
   # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-  # ==============================================================================
-    # 8. CONTROL LIMIT CALCULATOR (COMPARE METHODS) - AUTO RECOMMENDATION
+    # 8. CONTROL LIMIT CALCULATOR (COMPARE METHODS) - STRICT TARGET VS CONTROL LOGIC
     # ==============================================================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
@@ -1858,8 +1857,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
         else:
             with st.expander("⚙️ Parameter Settings", expanded=False):
                 c1, c2 = st.columns(2)
-                sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 2.0, 0.5, key=f"sig_v4_{i}")
-                iqr_k = c2.number_input("2. IQR Sensitivity", 0.1, 3.0, 0.5, 0.1, key=f"iqr_v4_{i}")
+                sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 2.0, 0.5, key=f"sig_v5_{i}")
+                iqr_k = c2.number_input("2. IQR Sensitivity", 0.1, 3.0, 0.5, 0.1, key=f"iqr_v5_{i}")
 
             spec_min = sub_clean["Limit_Min"].max() if "Limit_Min" in sub_clean.columns else 0
             spec_max = sub_clean["Limit_Max"].min() if "Limit_Max" in sub_clean.columns else 0
@@ -1894,13 +1893,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
             sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_dev
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
-            # Tính New Core Target
+            # Tính New Core Target (Luôn là ±1.0σ cho mục tiêu vận hành)
             target_k = 1.0 
             new_target_min = mu - target_k * sigma_imr
             new_target_max = mu + target_k * sigma_imr
             
             # ==================================================================
-            # BIỂU ĐỒ TỔNG HỢP: LIMITS + NORMAL CURVE 
+            # BIỂU ĐỒ TỔNG HỢP: LIMITS + NORMAL CURVE
             # ==================================================================
             from scipy.stats import norm
             fig, ax = plt.subplots(figsize=(12, 4.5))
@@ -1956,7 +1955,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             st.info(f"🎯 **Mechanical Specs Target:** TS: **{ts_spec_str}** | YS: **{ys_spec_str}** | EL: **{el_spec_str}**")
 
-            best_recommendation = "⚠️ Manual Review" # Biến lưu kết quả đề xuất tối ưu
+            best_control_limit = "⚠️ Manual Review" 
 
             if len(sub_mech) >= 5:
                 X_train = sub_mech[['Hardness_LINE']].values
@@ -1989,7 +1988,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     if pd.notna(spec_max) and 0 < spec_max < 9000 and p_max > spec_max: return "❌ Fail"
                     return "✅ Pass"
 
-                passed_methods = [] # Danh sách các phương pháp Pass 100% cơ tính
+                # CHỈ lưu các phương pháp M1-M4 nếu vượt qua bài test cơ tính
+                passed_control_methods = [] 
 
                 for cat, l_min, l_max, sig, disp_lim in configs:
                     calc_max = l_max if l_max > 0 else sub_mech['Hardness_LINE'].max()
@@ -2006,7 +2006,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         overall = "⚠️ Warning"
                     else:
                         overall = "✅ Optimal"
-                        passed_methods.append(cat) # Ghi nhận phương pháp này là An toàn
+                        # Chỉ xét M1, M2, M3, M4 làm Control Limit ứng cử viên
+                        if "M" in cat: 
+                            passed_control_methods.append(cat)
+                        elif "Old Target" in cat:
+                            passed_control_methods.append("Old Target")
 
                     rows.append({
                         "Limit Type": cat,
@@ -2021,21 +2025,19 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         "Overall Proposal": overall
                     })
 
-                # -- LOGIC TÌM PHƯƠNG ÁN TỐI ƯU NHẤT CHO FACTORY SUMMARY --
-                if any("New Core Target" in m for m in passed_methods):
-                    best_recommendation = "🌟 New Core Target"
-                elif any("M4: I-MR" in m for m in passed_methods):
-                    best_recommendation = "🟣 M4: I-MR"
-                elif any("M3: Smart Hybrid" in m for m in passed_methods):
-                    best_recommendation = "🟢 M3: Smart Hybrid"
-                elif any("M2: IQR" in m for m in passed_methods):
-                    best_recommendation = "🔵 M2: IQR"
-                elif any("M1: Standard" in m for m in passed_methods):
-                    best_recommendation = "🔴 M1: Standard"
-                elif any("Old Target" in m for m in passed_methods):
-                    best_recommendation = "🎯 Keep Current Spec"
+                # -- LOGIC CHỌN CONTROL LIMIT TỐI ƯU NHẤT --
+                if any("M4: I-MR" in m for m in passed_control_methods):
+                    best_control_limit = "🟣 M4: I-MR"
+                elif any("M3: Smart Hybrid" in m for m in passed_control_methods):
+                    best_control_limit = "🟢 M3: Smart Hybrid"
+                elif any("M2: IQR" in m for m in passed_control_methods):
+                    best_control_limit = "🔵 M2: IQR"
+                elif any("M1: Standard" in m for m in passed_control_methods):
+                    best_control_limit = "🔴 M1: Standard"
+                elif any("Old Target" in m for m in passed_control_methods):
+                    best_control_limit = "🎯 Keep Current Spec"
                 else:
-                    best_recommendation = "❌ High Risk (All Failed)"
+                    best_control_limit = "❌ High Risk (All Failed)"
 
                 df_summary = pd.DataFrame(rows)
                 
@@ -2065,7 +2067,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.warning("Không đủ dữ liệu cơ tính sạch (N<5) để chạy AI Linear Regression.")
 
             # ==================================================================
-            # LƯU VÀO DANH SÁCH FACTORY SUMMARY (CÓ CỘT ĐỀ XUẤT)
+            # LƯU VÀO DANH SÁCH FACTORY SUMMARY (TÁCH BIỆT TARGET VÀ CONTROL LIMIT)
             # ==================================================================
             spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}" if display_max > 0 else f"Ctrl: ≥{spec_min:.0f}"
             col_spec = "Product_Spec"
@@ -2078,34 +2080,36 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 "Gauge": g["Gauge_Range"],
                 "N Coils": len(data),
                 "Current Spec": spec_str,
+                "🎯 Core Target (±1.0σ)": f"{new_target_min:.1f} ~ {new_target_max:.1f}", # Luôn luôn hiển thị Target
                 "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
                 "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
                 "M3: Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
                 "M4: I-MR (Opt)": f"{m4_min:.1f} ~ {m4_max:.1f}",
-                "New Target": f"{new_target_min:.1f} ~ {new_target_max:.1f}",
-                "🏆 AI Recommendation": best_recommendation
+                "🚧 Control Limit Rec.": best_control_limit # Đề xuất từ M1->M4
             })
 
         # --- HIỂN THỊ BẢNG TỔNG HỢP TOÀN BỘ Ở CUỐI TRANG ---
         if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
-            st.markdown(f"## 📊 Factory-wide Control Limits & AI Recommendations: {qgroup}")
+            st.markdown(f"## 📊 Factory-wide Operation & Control Limits Summary: {qgroup}")
             df_total = pd.DataFrame(all_groups_summary)
             
-            # Định dạng màu cho cột Đề xuất
+            # Định dạng màu để báo cáo cuối trang thật ấn tượng
             def style_recommendation(val):
-                if 'New Core' in val or 'M4' in val or 'M3' in val or 'M2' in val: 
+                if 'M4' in str(val) or 'M3' in str(val) or 'M2' in str(val) or 'M1' in str(val): 
                     return 'color: #155724; background-color: #d4edda; font-weight: bold'
-                elif 'Keep' in val:
+                elif 'Keep' in str(val):
                     return 'color: #856404; background-color: #fff3cd; font-weight: bold'
                 else:
                     return 'color: #721c24; background-color: #f8d7da; font-weight: bold'
 
             styled_df_total = df_total.style
             if hasattr(styled_df_total, "map"):
-                styled_df_total = styled_df_total.map(style_recommendation, subset=['🏆 AI Recommendation'])
+                styled_df_total = styled_df_total.map(style_recommendation, subset=['🚧 Control Limit Rec.'])\
+                                                 .set_properties(**{'background-color': '#e6f4ea', 'font-weight': 'bold', 'color': '#0d5302'}, subset=['🎯 Core Target (±1.0σ)'])
             else:
-                styled_df_total = styled_df_total.applymap(style_recommendation, subset=['🏆 AI Recommendation'])
+                styled_df_total = styled_df_total.applymap(style_recommendation, subset=['🚧 Control Limit Rec.'])\
+                                                 .set_properties(**{'background-color': '#e6f4ea', 'font-weight': 'bold', 'color': '#0d5302'}, subset=['🎯 Core Target (±1.0σ)'])
             
             st.dataframe(styled_df_total, use_container_width=True, hide_index=True)
             
@@ -2116,6 +2120,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
             with pd.ExcelWriter(out_total, engine='xlsxwriter') as writer2:
                 df_total.to_excel(writer2, sheet_name='Recommendations', index=False)
                 ws = writer2.sheets['Recommendations']
-                ws.set_column('A:A', 25); ws.set_column('B:E', 12); ws.set_column('F:J', 16); ws.set_column('K:K', 25)
+                ws.set_column('A:A', 25); ws.set_column('B:E', 12); ws.set_column('F:F', 20); ws.set_column('G:J', 16); ws.set_column('K:K', 25)
             
             st.download_button("📥 Export Master Summary (Excel)", out_total.getvalue(), f"Factory_Recommendations_{today_str}.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
