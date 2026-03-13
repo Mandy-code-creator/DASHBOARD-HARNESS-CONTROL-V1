@@ -254,7 +254,8 @@ valid = cnt[cnt["N_Coils"] >= 30]
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (FULL STABLE VERSION - WITH CURRENT SPEC)
+# ==============================================================================
+# 9. MASTER DICTIONARY EXPORT (STRICT DATA & DUAL LIMITS VERSION)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     
@@ -266,8 +267,9 @@ if view_mode == "👑 Master Dictionary Export":
 
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary")
-    st.info("💡 **Interactive View & Export:** Review grouped limits directly on the screen, then download the formatted Excel file.")
+    st.info("💡 **Strict Quality Policy:** All coils with NA or 0 Hardness are excluded. Target Zone (±1σ) is for operations, Control Limit (±2σ) is for risk prevention.")
     
+    # --- THIẾT LẬP THAM SỐ THỐNG KÊ ---
     col_sig1, col_sig2, col_sig3 = st.columns(3)
     with col_sig1:
         target_k = st.number_input("🎯 Target Zone (σ)", value=1.0, step=0.1, key="k_target")
@@ -278,68 +280,65 @@ if view_mode == "👑 Master Dictionary Export":
 
     if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
         
-        # 1. LẤY DỮ LIỆU & LÀM SẠCH CỘT TRÙNG
+        # 1. LẤY DỮ LIỆU & DỌN DẸP TUYỆT ĐỐI
         if 'df_master_full' in locals() and not df_master_full.empty:
             source_df = df_master_full.copy()
         elif 'df' in locals() and not df.empty:
             source_df = df.copy()
         else:
-            st.error("❌ Không tìm thấy dữ liệu.")
+            st.error("❌ Không tìm thấy dữ liệu nguồn.")
             st.stop()
 
+        # Loại bỏ cột trùng tên (nếu có)
         source_df = source_df.loc[:, ~source_df.columns.duplicated()].copy()
 
-        # 2. AUTO-MAPPING TÊN CỘT
-        rename_mapping = {
-            "TENSILE_TENSILE": "TS", "TENSILE_YIELD": "YS", "TENSILE_ELONG": "EL"
+        # 2. AUTO-MAPPING & CHUYỂN ĐỔI SỐ
+        rename_map = {
+            "TENSILE_TENSILE": "TS", "TENSILE_YIELD": "YS", "TENSILE_ELONG": "EL",
+            "HARDNESS 鍍鋅線 N": "Hardness_LINE", "HARDNESS 鍍鋅線 C": "Hardness_LINE"
         }
-        source_df.rename(columns=rename_mapping, inplace=True)
+        # Chỉ rename nếu cột đó tồn tại
+        actual_rename = {k: v for k, v in rename_map.items() if k in source_df.columns}
+        source_df.rename(columns=actual_rename, inplace=True)
 
-        # Xử lý Hardness_LINE an toàn
-        if "Hardness_LINE" not in source_df.columns:
-            for c in ["HARDNESS 鍍鋅線 N", "HARDNESS 鍍鋅線 C", "HARDNESS 鍍鋅線 S"]:
-                if c in source_df.columns:
-                    source_df["Hardness_LINE"] = source_df[c]
-                    break
-        
-        required_cols = ['Hardness_LINE', 'TS', 'YS', 'EL']
-        for c in required_cols:
+        req_cols = ['Hardness_LINE', 'TS', 'YS', 'EL']
+        for c in req_cols:
             if c in source_df.columns:
-                col_data = source_df[c]
-                if isinstance(col_data, pd.DataFrame): col_data = col_data.iloc[:, 0]
-                source_df[c] = pd.to_numeric(col_data, errors='coerce')
+                source_df[c] = pd.to_numeric(source_df[c], errors='coerce')
 
-        clean_master_df = source_df.dropna(subset=required_cols).copy()
+        # 🔥 BỘ LỌC NGHIÊM NGẶT: KHÔNG CHẤP NHẬN NA HOẶC 0
+        clean_master_df = source_df.dropna(subset=req_cols).copy()
         clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
         
         if clean_master_df.empty:
-            st.warning("⚠️ Không có cuộn thép nào đạt chuẩn.")
+            st.warning("⚠️ Không có dữ liệu sạch (NA/0 Hardness đã bị loại bỏ hoàn toàn).")
             st.stop()
 
         master_data = []
         group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
         
-        with st.spinner("Processing AI Predictions..."):
+        with st.spinner("Analyzing stable process limits..."):
             for keys, group in clean_master_df.groupby(group_cols, observed=True):
                 if len(group) < min_coils_req: continue 
                 
-                # Tính toán SPC (I-MR)
-                data_h = group["Hardness_LINE"]
-                mu = data_h.mean()
-                mrs = np.abs(np.diff(data_h.values))
-                sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else data_h.std()
+                # Tính toán SPC theo phương pháp M4 (I-MR)
+                hrb_vals = group["Hardness_LINE"]
+                mu = hrb_vals.mean()
+                mrs = np.abs(np.diff(hrb_vals.values))
+                sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else hrb_vals.std()
                 if pd.isna(sigma_imr) or sigma_imr == 0: sigma_imr = 1.0
                 
+                # Giới hạn kiểm soát (Control) và Mục tiêu (Target)
                 c_min, c_max = mu - control_k * sigma_imr, mu + control_k * sigma_imr
                 t_min, t_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
                 
-                # AI Prediction Models
-                X_train = group[["Hardness_LINE"]].values
-                m_ts = LinearRegression().fit(X_train, group["TS"].values)
-                m_ys = LinearRegression().fit(X_train, group["YS"].values)
-                m_el = LinearRegression().fit(X_train, group["EL"].values)
+                # AI Prediction cho Cơ tính
+                X = group[["Hardness_LINE"]].values
+                m_ts = LinearRegression().fit(X, group["TS"].values)
+                m_ys = LinearRegression().fit(X, group["YS"].values)
+                m_el = LinearRegression().fit(X, group["EL"].values)
                 
-                # Get Mechanical Specs
+                # Lấy Specs Cơ tính
                 s_ts_min = group["Standard TS min"].max() if "Standard TS min" in group.columns else 0
                 s_ts_max = group["Standard TS max"].min() if "Standard TS max" in group.columns else 0
                 s_ys_min = group["Standard YS min"].max() if "Standard YS min" in group.columns else 0
@@ -351,20 +350,20 @@ if view_mode == "👑 Master Dictionary Export":
                     elif mi > 0: return f"≥ {mi:.0f}"
                     return "-"
 
-                # --- LẤY GIỚI HẠN ĐỘ CỨNG HIỆN TẠI (CURRENT SPEC) ---
+                # Hardness Spec hiện tại
                 curr_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
                 curr_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
-                curr_spec_str = f"{curr_min:.1f}~{curr_max:.1f}" if curr_max > 0 else (f"≥{curr_min:.1f}" if curr_min > 0 else "N/A")
+                curr_spec = f"{curr_min:.1f}~{curr_max:.1f}" if curr_max > 0 else f"≥{curr_min:.1f}"
 
-                # Predict mechanical outcomes
+                # Dự báo Cơ tính tại dải Target (1.0 sigma)
                 ts_p = sorted([m_ts.predict([[t_min]])[0], m_ts.predict([[t_max]])[0]])
                 ys_p = sorted([m_ys.predict([[t_min]])[0], m_ys.predict([[t_max]])[0]])
                 el_p = sorted([m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]])
 
-                row_dict = {col: (keys[idx] if isinstance(keys, tuple) else keys) for idx, col in enumerate(group_cols)}
-                row_dict.update({
+                row = {col: (keys[idx] if isinstance(keys, tuple) else keys) for idx, col in enumerate(group_cols)}
+                row.update({
                     "N Coils": len(group),
-                    "Current Hardness Spec": curr_spec_str, # CỘT THÊM MỚI
+                    "Current Hardness Spec": curr_spec,
                     f"Proposed Control Limit ({control_k}σ)": f"{c_min:.1f} ~ {c_max:.1f}",
                     f"🎯 Proposed Target Zone ({target_k}σ)": f"{t_min:.1f} ~ {t_max:.1f}",
                     "Spec: TS": fmt_s(s_ts_min, s_ts_max),
@@ -374,50 +373,42 @@ if view_mode == "👑 Master Dictionary Export":
                     "Spec: EL": f"≥ {s_el_min:.1f}%" if s_el_min > 0 else "-",
                     "Exp. EL (at Target)": f"{el_p[0]:.1f}% ~ {el_p[1]:.1f}%"
                 })
-                master_data.append(row_dict)
+                master_data.append(row)
         
         if master_data:
             df_out = pd.DataFrame(master_data)
             df_out.insert(0, "No.", range(1, len(df_out) + 1))
             
-            # Thứ tự cột logic
-            ordered_cols = ["No."] + group_cols + [
-                "N Coils", "Current Hardness Spec", 
-                f"Proposed Control Limit ({control_k}σ)", f"🎯 Proposed Target Zone ({target_k}σ)",
-                "Spec: TS", "Exp. TS (at Target)", "Spec: YS", "Exp. YS (at Target)", "Spec: EL", "Exp. EL (at Target)"
-            ]
-            df_out = df_out[[c for c in ordered_cols if c in df_out.columns]]
+            # Sắp xếp cột
+            ordered = ["No."] + group_cols + ["N Coils", "Current Hardness Spec", 
+                       f"Proposed Control Limit ({control_k}σ)", f"🎯 Proposed Target Zone ({target_k}σ)",
+                       "Spec: TS", "Exp. TS (at Target)", "Spec: YS", "Exp. YS (at Target)", "Spec: EL", "Exp. EL (at Target)"]
+            df_out = df_out[[c for c in ordered if c in df_out.columns]]
             
             st.markdown("### 👁️ Preview Master Dictionary")
-            # Bôi màu: Vàng cho Spec cũ, Xanh lá cho Target mới, Xanh dương cho Control mới
-            styled_df = df_out.style.set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=[c for c in df_out.columns if "Spec" in c]) \
-                                    .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[c for c in df_out.columns if "Target" in c or "Exp." in c]) \
-                                    .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[f"Proposed Control Limit ({control_k}σ)"]) \
-                                    .set_properties(**{'text-align': 'center', 'font-weight': 'bold'}, subset=["No."])
+            # Styling: Vàng (Spec), Xanh dương (Control), Xanh lá (Target)
+            styled = df_out.style.set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=[c for c in df_out.columns if "Spec" in c]) \
+                                 .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[f"Proposed Control Limit ({control_k}σ)"]) \
+                                 .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[c for c in df_out.columns if "Target" in c or "Exp." in c]) \
+                                 .set_properties(**{'text-align': 'center', 'font-weight': 'bold'}, subset=["No."])
             
-            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            st.dataframe(styled, use_container_width=True, hide_index=True)
             
+            # XUẤT EXCEL
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_out.to_excel(writer, sheet_name='Master_Specs', index=False)
+                df_out.to_excel(writer, sheet_name='Master_Dictionary', index=False)
                 workbook = writer.book
-                worksheet = writer.sheets['Master_Specs']
-                
-                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
-                target_fmt = workbook.add_format({'bg_color': '#D9EAD3', 'bold': True, 'border': 1, 'align': 'center'})
-                spec_fmt = workbook.add_format({'bg_color': '#FFF2CC', 'border': 1, 'align': 'center'})
-                
+                worksheet = writer.sheets['Master_Dictionary']
+                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center'})
                 for col_num, value in enumerate(df_out.columns.values):
-                    fmt = header_fmt
-                    if "Target" in value or "Exp." in value: fmt = target_fmt
-                    if "Spec" in value: fmt = spec_fmt
-                    worksheet.write(0, col_num, value, fmt)
+                    worksheet.write(0, col_num, value, header_fmt)
                     worksheet.set_column(col_num, col_num, 16)
             
-            st.success(f"✅ Master Dictionary created for {len(master_data)} groups!")
+            st.success(f"✅ Success! Dictionary generated for {len(master_data)} groups.")
             st.download_button("📥 Download Master Excel", output.getvalue(), f"Master_Dictionary_{dt.datetime.now().strftime('%Y%m%d')}.xlsx")
         else:
-            st.error("❌ Không có dữ liệu hợp lệ (Cần nhóm có N ≥ 30).")
+            st.error("❌ No groups met the criteria (N ≥ 30 and no NA data).")
             
     st.stop()
 # ==============================================================================
