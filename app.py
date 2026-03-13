@@ -1705,57 +1705,36 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 styled_df_total = styled_df_total.applymap(style_recommendation, subset=['🚧 Control Limit Rec.'])\
                                                  .set_properties(**{'background-color': '#e6f4ea', 'font-weight': 'bold', 'color': '#0d5302'}, subset=['🎯 Core Target (±1.0σ)'])
             
-           st.dataframe(styled_df_total, use_container_width=True, hide_index=True)
+# --- ĐOẠN MÃ ĐÃ CĂN CHỈNH LỀ CHUẨN ---
+        st.dataframe(styled_df_total, use_container_width=True, hide_index=True)
+        
+        import datetime
+        import io
+        
+        today_str = datetime.datetime.now().strftime("%Y%m%d")
+        out_total = io.BytesIO()
+        
+        with pd.ExcelWriter(out_total, engine='xlsxwriter') as writer2:
+            df_total.to_excel(writer2, sheet_name='Recommendations', index=False)
+            workbook = writer2.book
+            ws = writer2.sheets['Recommendations']
             
-            # --- PHẦN XUẤT EXCEL CHO BẢNG SO SÁNH PHƯƠNG PHÁP ---
-            import datetime
-            import io
+            # Thiết lập định dạng cột và tiêu đề Excel
+            header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center'})
+            for col_num, value in enumerate(df_total.columns.values):
+                ws.write(0, col_num, value, header_fmt)
             
-            today_str = datetime.datetime.now().strftime("%Y%m%d")
-            out_total = io.BytesIO()
-            
-            with pd.ExcelWriter(out_total, engine='xlsxwriter') as writer2:
-                # Xuất dữ liệu thô
-                df_total.to_excel(writer2, sheet_name='Methods_Comparison', index=False)
-                
-                workbook = writer2.book
-                ws = writer2.sheets['Methods_Comparison']
-                
-                # --- ĐỊNH DẠNG EXCEL CHUYÊN NGHIỆP ---
-                header_fmt = workbook.add_format({
-                    'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center', 'valign': 'vcenter'
-                })
-                pass_fmt = workbook.add_format({
-                    'font_color': '#155724', 'bg_color': '#D4EDDA', 'bold': True, 'border': 1, 'align': 'center'
-                })
-                fail_fmt = workbook.add_format({
-                    'font_color': '#721C24', 'bg_color': '#F8D7DA', 'bold': True, 'border': 1, 'align': 'center'
-                })
-                target_fmt = workbook.add_format({
-                    'bg_color': '#E6F4EA', 'bold': True, 'border': 1, 'align': 'center'
-                })
-                
-                # Ghi đè Header với định dạng đẹp
-                for col_num, value in enumerate(df_total.columns.values):
-                    ws.write(0, col_num, value, header_fmt)
-                
-                # Tự động điều chỉnh độ rộng cột
-                ws.set_column('A:A', 30) # Specification
-                ws.set_column('B:E', 15) # Material, Gauge, N, Spec
-                ws.set_column('F:J', 20) # Các cột giới hạn M1-M4
-                ws.set_column('K:K', 25) # Cột Recommendation
-                
-                # Tô màu cột Recommendation dựa trên nội dung
-                for row_num in range(len(df_total)):
-                    val = str(df_total.iloc[row_num, -1]) # Lấy giá trị cột cuối cùng
-                    cell_format = pass_fmt if "M" in val else (fail_fmt if "Risk" in val else header_fmt)
-                    ws.write(row_num + 1, len(df_total.columns) - 1, val, cell_format)
-            
-            # --- NÚT TẢI FILE ---
-            st.download_button(
-                label="📥 Export Methods Comparison Summary (Excel)",
-                data=out_total.getvalue(),
-                file_name=f"Factory_Methods_Comparison_{today_str}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"dl_master_comp_{today_str}"
-            )
+            # Căn chỉnh độ rộng cột
+            ws.set_column('A:A', 25)
+            ws.set_column('B:E', 12)
+            ws.set_column('F:F', 20)
+            ws.set_column('G:J', 16)
+            ws.set_column('K:K', 25)
+        
+        st.download_button(
+            label="📥 Export Master Summary (Excel)",
+            data=out_total.getvalue(),
+            file_name=f"Factory_Recommendations_{today_str}.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            key=f"dl_final_summary_{today_str}"
+        )
