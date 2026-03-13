@@ -1741,40 +1741,51 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     key=f"dl_indiv_{i}_{uuid.uuid4().hex[:4]}" 
                 )
 
-                # --- DISTRIBUTION CHART (M1 vs M4 with Normal Curve) ---
-                st.markdown(f"**📈 Actual Distribution vs M1 & M4 (with Normal Curve)**")
+                # --- DISTRIBUTION CHART (M1 vs M4 with Normal Curve & Old Target) ---
+                st.markdown(f"**📈 Actual Distribution vs M1, M4 & Old Target**")
                 fig2, ax2 = plt.subplots(figsize=(10, 4))
                 fig2.patch.set_facecolor('white')
                 ax2.set_facecolor('white')
 
                 from scipy.stats import norm
 
-                # Histogram
+                # 1. Histogram
                 sns.histplot(data, stat='density', bins=15, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax2)
                 
                 if not data_lab.empty:
                     sns.histplot(data_lab, stat='density', bins=15, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax2)
 
-                # Extend X-axis limits
-                min_limit = min(m1_min, m4_min, data.min()) - 4
-                max_limit = max(m1_max, m4_max, data.max()) + 4
+                # 2. Extend X-axis limits smartly to fit Old Target limits as well
+                min_cands_fig2 = [m1_min, m4_min, data.min()]
+                max_cands_fig2 = [m1_max, m4_max, data.max()]
+                if spec_min > 0: min_cands_fig2.append(spec_min)
+                if display_max > 0: max_cands_fig2.append(display_max)
+                
+                min_limit = min(min_cands_fig2) - 4
+                max_limit = max(max_cands_fig2) + 4
                 x_axis = np.linspace(min_limit, max_limit, 500)
                 
-                # Normal Curve for LINE
+                # 3. Normal Curve for LINE
                 ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color='#1f77b4', lw=2.5, label=f'Normal Curve (LINE)')
 
-                # Normal Curve for LAB
+                # 4. Normal Curve for LAB
                 if not data_lab.empty and len(data_lab) > 1:
                     mu_lab = data_lab.mean()
                     std_lab = data_lab.std()
                     ax2.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab), color='#d62728', lw=2.5, linestyle='-.', label=f'Normal Curve (LAB)')
 
-                # M1 Span
+                # 5. Old Target Span (Solid Black Lines)
+                if spec_min > 0:
+                    ax2.axvline(spec_min, color='black', linestyle='-', linewidth=2.5, label=f'Old Target Min ({spec_min:.1f})')
+                if display_max > 0:
+                    ax2.axvline(display_max, color='black', linestyle='-', linewidth=2.5, label=f'Old Target Max ({display_max:.1f})')
+
+                # 6. M1 Span (Red dashed)
                 ax2.axvline(m1_min, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Min ({m1_min:.1f})')
                 ax2.axvline(m1_max, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Max ({m1_max:.1f})')
                 ax2.axvspan(m1_min, m1_max, color='#d62728', alpha=0.05)
 
-                # M4 Span
+                # 7. M4 Span (Purple solid)
                 ax2.axvline(m4_min, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Min ({m4_min:.1f})')
                 ax2.axvline(m4_max, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Max ({m4_max:.1f})')
                 ax2.axvspan(m4_min, m4_max, color='#9467bd', alpha=0.15)
@@ -1783,7 +1794,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ax2.set_xlim(min_limit, max_limit)
 
                 # Chart Formatting
-                ax2.set_title(f"M1 vs M4 - {mat_name} {gauge_name}", fontsize=12, fontweight='bold', color='#333333')
+                ax2.set_title(f"Limits Comparison: M1 vs M4 vs Old Target - {mat_name} {gauge_name}", fontsize=12, fontweight='bold', color='#333333')
                 ax2.set_xlabel("Hardness (HRB)", fontweight='bold')
                 ax2.set_ylabel("Density", fontweight='bold')
                 
@@ -1793,7 +1804,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                 st.pyplot(fig2)
                 plt.close(fig2)
-
             else:
                 st.warning("⚠️ Insufficient clean mechanical data (N<5) to run AI Linear Regression.")
 
