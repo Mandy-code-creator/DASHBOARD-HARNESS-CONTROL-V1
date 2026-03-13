@@ -255,7 +255,7 @@ valid = cnt[cnt["N_Coils"] >= 30]
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (EXACT COLUMN MATCH & STRIP SPACES)
+# 9. MASTER DICTIONARY EXPORT (FAILSAFE VERSION - NEVER CRASHES)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
@@ -286,18 +286,27 @@ if view_mode == "👑 Master Dictionary Export":
 
         source_df = raw_source.loc[:, ~raw_source.columns.duplicated()].copy()
         
-        # 1. GỌT SẠCH KHOẢNG TRẮNG TÀNG HÌNH Ở TÊN CỘT EXCEL
-        source_df.columns = source_df.columns.str.strip()
+        # 1. Dọn dẹp khoảng trắng mọi tên cột
+        source_df.columns = source_df.columns.astype(str).str.strip()
         
-        # Gán chính xác tên cột bạn vừa gửi
-        spec_col_name = "PRODUCT SPECIFICATION CODE" 
+        # 2. HỆ THỐNG DÒ TÌM & CHỐNG SẬP (FAILSAFE)
+        candidates = ["Product_Spec", "PRODUCT SPECIFICATION CODE", "PRODUCT_SPEC", "SPEC CODE", "SPECIFICATION CODE"]
+        found_spec_col = None
         
-        if spec_col_name not in source_df.columns:
-            st.error(f"❌ Vẫn không tìm thấy '{spec_col_name}'. Dưới đây là các cột đã được gọt khoảng trắng: {source_df.columns.tolist()}")
-            st.stop()
-        
-        # Đổi tên nội bộ để xử lý
-        source_df.rename(columns={spec_col_name: "SPEC_CODE_INTERNAL"}, inplace=True)
+        for col in source_df.columns:
+            if col.upper() in [c.upper() for c in candidates]:
+                found_spec_col = col
+                break
+                
+        if found_spec_col:
+            # Nếu tìm thấy, đổi tên để dùng chung
+            source_df.rename(columns={found_spec_col: "SPEC_CODE_INTERNAL"}, inplace=True)
+        else:
+            # Nếu KHÔNG tìm thấy, tạo cột giả để giữ App sống sót và hiển thị bảng
+            source_df["SPEC_CODE_INTERNAL"] = "Not Found (Check Raw File)"
+            st.warning("⚠️ Không tìm thấy cột Mã Quy Cách trong dữ liệu nguồn. Đang hiển thị với giá trị 'Not Found'.")
+
+        # 3. Đổi tên các cột cơ tính
         source_df.rename(columns={"TENSILE_TENSILE": "TS", "TENSILE_YIELD": "YS", "TENSILE_ELONG": "EL"}, inplace=True)
 
         if "Hardness_LINE" not in source_df.columns:
@@ -306,7 +315,7 @@ if view_mode == "👑 Master Dictionary Export":
                     source_df["Hardness_LINE"] = source_df[c]
                     break
 
-        # 2. Convert & Clean Data
+        # 4. Ép kiểu số & Lọc dữ liệu
         req_cols = ['Hardness_LINE', 'TS', 'YS', 'EL']
         for c in req_cols:
             if c in source_df.columns:
@@ -315,14 +324,12 @@ if view_mode == "👑 Master Dictionary Export":
         clean_master_df = source_df.dropna(subset=req_cols).copy()
         clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
         
-        # Ép kiểu string để nhóm không bị rớt NA
-        clean_master_df["SPEC_CODE_INTERNAL"] = clean_master_df["SPEC_CODE_INTERNAL"].astype(str).str.strip().replace(['nan', 'None', ''], 'Unknown')
+        clean_master_df["SPEC_CODE_INTERNAL"] = clean_master_df["SPEC_CODE_INTERNAL"].astype(str).replace(['nan', 'None', ''], 'Unknown')
         
         master_data = []
-        # Gộp nhóm chuẩn có chứa SPEC_CODE_INTERNAL
         group_cols = ['SPEC_CODE_INTERNAL', 'Material', 'Gauge_Range', 'Rolling_Type', 'Metallic_Type', 'Quality_Group']
         
-        with st.spinner("Analyzing Mechanical Properties..."):
+        with st.spinner("Processing Data..."):
             for keys, group in clean_master_df.groupby(group_cols, observed=True):
                 if len(group) < min_coils_req: continue 
                 
@@ -333,30 +340,26 @@ if view_mode == "👑 Master Dictionary Export":
                 
                 t_min, t_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
                 
-                # Regressions
                 X = group[["Hardness_LINE"]].values
                 m_ts = LinearRegression().fit(X, group["TS"].values)
                 m_ys = LinearRegression().fit(X, group["YS"].values)
                 m_el = LinearRegression().fit(X, group["EL"].values)
 
-                # Predictions
                 ts_p = sorted([m_ts.predict([[t_min]])[0], m_ts.predict([[t_max]])[0]])
                 ys_p = sorted([m_ys.predict([[t_min]])[0], m_ys.predict([[t_max]])[0]])
                 el_p = sorted([m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]])
 
-                # Actuals in zone
                 actual_in = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
                 act_ts = f"{actual_in['TS'].min():.0f}~{actual_in['TS'].max():.0f}" if not actual_in.empty else "N/A"
                 act_ys = f"{actual_in['YS'].min():.0f}~{actual_in['YS'].max():.0f}" if not actual_in.empty else "N/A"
                 act_el = f"{actual_in['EL'].min():.1f}~{actual_in['EL'].max():.1f}" if not actual_in.empty else "N/A"
 
-                # Specs
                 s_ts_min = group["Standard TS min"].max() if "Standard TS min" in group.columns else 0
                 s_ys_min = group["Standard YS min"].max() if "Standard YS min" in group.columns else 0
                 s_el_min = group["Standard EL min"].max() if "Standard EL min" in group.columns else 0
                 
                 row = {
-                    "PRODUCT SPECIFICATION CODE": keys[0], # Đã được lôi ra ánh sáng!
+                    "PRODUCT SPECIFICATION CODE": keys[0], 
                     "Material": keys[1],
                     "Gauge Range": keys[2],
                     "N Coils": len(group),
@@ -376,7 +379,6 @@ if view_mode == "👑 Master Dictionary Export":
         if master_data:
             df_out = pd.DataFrame(master_data)
             
-            # --- COLOR STYLING ---
             target_col = f"🎯 Target ({target_k}σ)"
             styled_df = df_out.style.set_properties(**{'background-color': '#fff2cc', 'color': '#000', 'font-weight': 'bold'}, subset=["PRODUCT SPECIFICATION CODE"]) \
                                      .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, 
@@ -391,7 +393,7 @@ if view_mode == "👑 Master Dictionary Export":
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_out.to_excel(writer, index=False, sheet_name='Master_Dictionary')
-            st.download_button("📥 Download Master Dictionary (Excel)", output.getvalue(), "Master_Dictionary.xlsx")
+            st.download_button("📥 Download Master Dictionary", output.getvalue(), "Master_Dictionary.xlsx")
         else:
             st.warning("⚠️ No groups matched the criteria (Check Min Coils or Hardness data).")
     
