@@ -1705,46 +1705,29 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 styled_df_total = styled_df_total.applymap(style_recommendation, subset=['🚧 Control Limit Rec.'])\
                                                  .set_properties(**{'background-color': '#e6f4ea', 'font-weight': 'bold', 'color': '#0d5302'}, subset=['🎯 Core Target (±1.0σ)'])
             
-# --- 1. HIỂN THỊ BẢNG TRÊN MÀN HÌNH ---
+# --- 1. HIỂN THỊ BẢNG TRÊN APP ---
                 st.dataframe(styled_summary, use_container_width=True, hide_index=True)
 
-                # --- 2. XỬ LÝ DỮ LIỆU EXCEL (FIXED) ---
+                # --- 2. TẠO DỮ LIỆU EXCEL ---
                 import io
-                excel_buffer = io.BytesIO()
-                
-                # Tạo file Excel với định dạng chuyên nghiệp
-                with pd.ExcelWriter(excel_buffer, engine='xlsxwriter') as writer:
-                    df_summary.to_excel(writer, sheet_name='Comparison_Report', index=False)
-                    workbook  = writer.book
-                    worksheet = writer.sheets['Comparison_Report']
+                output_xlsx = io.BytesIO()
+                with pd.ExcelWriter(output_xlsx, engine='xlsxwriter') as writer:
+                    df_summary.to_excel(writer, sheet_name='Comparison', index=False)
+                    workbook = writer.book
+                    worksheet = writer.sheets['Comparison']
                     
-                    # Định dạng màu sắc
-                    fmt_header = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center'})
-                    fmt_pass   = workbook.add_format({'bg_color': '#D4EDDA', 'font_color': '#155724', 'bold': True, 'border': 1})
-                    fmt_fail   = workbook.add_format({'bg_color': '#F8D7DA', 'font_color': '#721C24', 'bold': True, 'border': 1})
-                    fmt_opt    = workbook.add_format({'bg_color': '#E6F4EA', 'bold': True, 'border': 1})
-
-                    # Ghi Header và chỉnh độ rộng cột
+                    # Định dạng Header
+                    header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1})
                     for col_num, value in enumerate(df_summary.columns.values):
-                        worksheet.write(0, col_num, value, fmt_header)
+                        worksheet.write(0, col_num, value, header_fmt)
                         worksheet.set_column(col_num, col_num, 18)
 
-                    # Quét dữ liệu để tô màu các ô Eval và Proposal
-                    for r_idx in range(len(df_summary)):
-                        for c_idx in range(len(df_summary.columns)):
-                            val = str(df_summary.iloc[r_idx, c_idx])
-                            if "Pass" in val:
-                                worksheet.write(r_idx + 1, c_idx, val, fmt_pass)
-                            elif "Fail" in val:
-                                worksheet.write(r_idx + 1, c_idx, val, fmt_fail)
-                            elif "Optimal" in val:
-                                worksheet.write(r_idx + 1, c_idx, val, fmt_opt)
-
-                # --- 3. NÚT TẢI FILE (SỬ DỤNG KEY DUY NHẤT ĐỂ TRÁNH LỖI) ---
+                # --- 3. NÚT TẢI XUẤT HIỆN RIÊNG BIỆT ---
                 st.download_button(
-                    label=f"📥 Download Excel Comparison ({g['Material']})",
-                    data=excel_buffer.getvalue(),
-                    file_name=f"Comparison_{g['Material']}_{g['Gauge_Range']}.xlsx",
+                    label=f"📥 Download Excel: {g['Material']}",
+                    data=output_xlsx.getvalue(),
+                    file_name=f"Methods_Comparison_{g['Material']}.xlsx",
                     mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"dl_btn_final_{i}_{g['Material']}_{uuid.uuid4().hex[:4]}" # Key động để tránh trùng lặp
+                    key=f"btn_dl_{i}_{uuid.uuid4().hex[:4]}" # Tạo key ngẫu nhiên để không bị kẹt nút
                 )
+                st.markdown("<br>", unsafe_allow_html=True) # Khoảng cách cho thoáng
