@@ -1793,8 +1793,13 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 # Lock X-axis
                 ax2.set_xlim(min_limit, max_limit)
 
-                # Chart Formatting
-                ax2.set_title(f"Limits Comparison: M1 vs M4 vs Old Target - {mat_name} {gauge_name}", fontsize=12, fontweight='bold', color='#333333')
+                # ==========================================
+                # Chart Formatting (Fixing Font Error Here)
+                # ==========================================
+                # Chuyển đổi ký tự đặc biệt sang ký tự thường để Matplotlib không bị lỗi font
+                safe_gauge_name = str(gauge_name).replace("≦", "<=").replace("≤", "<=")
+                
+                ax2.set_title(f"Limits Comparison: M1 vs M4 vs Old Target - {mat_name} {safe_gauge_name}", fontsize=12, fontweight='bold', color='#333333')
                 ax2.set_xlabel("Hardness (HRB)", fontweight='bold')
                 ax2.set_ylabel("Density", fontweight='bold')
                 
