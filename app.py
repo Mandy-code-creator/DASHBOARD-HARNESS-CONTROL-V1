@@ -254,8 +254,7 @@ valid = cnt[cnt["N_Coils"] >= 30]
 
 # ==============================================================================
 # ==============================================================================
-# ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (FINAL STYLED VERSION)
+# 9. MASTER DICTIONARY EXPORT (FINAL FIX - NO MORE NA)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
@@ -285,26 +284,36 @@ if view_mode == "👑 Master Dictionary Export":
             st.stop()
 
         source_df = raw_source.loc[:, ~raw_source.columns.duplicated()].copy()
+        
+        # 1. Map Mechanical Columns
         source_df.rename(columns={"TENSILE_TENSILE": "TS", "TENSILE_YIELD": "YS", "TENSILE_ELONG": "EL"}, inplace=True)
 
+        # 2. Fix Hardness Column
         if "Hardness_LINE" not in source_df.columns:
             for c in ["HARDNESS 鍍鋅線 N", "HARDNESS 鍍鋅線 C", "HARDNESS 鍍鋅線 S"]:
                 if c in source_df.columns:
                     source_df["Hardness_LINE"] = source_df[c]
                     break
 
+        # 3. Numeric Conversion
         req_cols = ['Hardness_LINE', 'TS', 'YS', 'EL']
         for c in req_cols:
             if c in source_df.columns:
                 source_df[c] = pd.to_numeric(source_df[c], errors='coerce')
 
+        # 4. Filter clean data
         clean_master_df = source_df.dropna(subset=req_cols).copy()
         clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
         
         master_data = []
         group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
         
-        with st.spinner("Applying colors and processing identifiers..."):
+        # --- PRE-IDENTIFY SPEC CODE COLUMN ---
+        # Tìm chính xác tên cột mã quy cách trong dữ liệu thực tế
+        all_cols = clean_master_df.columns.tolist()
+        spec_col = next((c for c in all_cols if "PRODUCT SPECIFICATION CODE" in str(c).upper()), None)
+
+        with st.spinner("Rendering styled table with Specification Codes..."):
             for keys, group in clean_master_df.groupby(group_cols, observed=True):
                 if len(group) < min_coils_req: continue 
                 
@@ -314,30 +323,39 @@ if view_mode == "👑 Master Dictionary Export":
                 if pd.isna(sigma_imr) or sigma_imr <= 0: sigma_imr = 1.0
                 
                 t_min, t_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
-                c_min, c_max = mu - control_k * sigma_imr, mu + control_k * sigma_imr
                 
+                # Regression Models
                 X = group[["Hardness_LINE"]].values
                 m_ts = LinearRegression().fit(X, group["TS"].values)
                 m_ys = LinearRegression().fit(X, group["YS"].values)
                 m_el = LinearRegression().fit(X, group["EL"].values)
 
+                # AI Theoretical Predictions
                 ts_p = sorted([m_ts.predict([[t_min]])[0], m_ts.predict([[t_max]])[0]])
                 ys_p = sorted([m_ys.predict([[t_min]])[0], m_ys.predict([[t_max]])[0]])
                 el_p = sorted([m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]])
 
+                # Actual Performance
                 actual_in = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
                 act_ts = f"{actual_in['TS'].min():.0f}~{actual_in['TS'].max():.0f}" if not actual_in.empty else "N/A"
                 act_ys = f"{actual_in['YS'].min():.0f}~{actual_in['YS'].max():.0f}" if not actual_in.empty else "N/A"
                 act_el = f"{actual_in['EL'].min():.1f}~{actual_in['EL'].max():.1f}" if not actual_in.empty else "N/A"
 
+                # Standard Specs
                 s_ts_min = group["Standard TS min"].max() if "Standard TS min" in group.columns else 0
                 s_ys_min = group["Standard YS min"].max() if "Standard YS min" in group.columns else 0
                 s_el_min = group["Standard EL min"].max() if "Standard EL min" in group.columns else 0
                 
-                spec_code = group["PRODUCT SPECIFICATION CODE"].dropna().iloc[0] if "PRODUCT SPECIFICATION CODE" in group.columns and not group["PRODUCT SPECIFICATION CODE"].dropna().empty else "N/A"
+                # --- DYNAMIC SPEC CODE FETCHING ---
+                final_spec_code = "N/A"
+                if spec_col:
+                    # Lấy giá trị xuất hiện nhiều nhất (mode) trong nhóm để đảm bảo chính xác
+                    val_series = group[spec_col].dropna()
+                    if not val_series.empty:
+                        final_spec_code = val_series.mode()[0] if not val_series.mode().empty else val_series.iloc[0]
 
                 row = {
-                    "SPEC CODE": spec_code,
+                    "SPEC CODE": final_spec_code,
                     "Material": keys[3],
                     "Gauge Range": keys[4],
                     "N Coils": len(group),
@@ -357,15 +375,15 @@ if view_mode == "👑 Master Dictionary Export":
         if master_data:
             df_out = pd.DataFrame(master_data)
             
-            # --- COLOR STYLING ENGINE ---
+            # --- COLOR STYLING ---
             target_col = f"🎯 Proposed Target ({target_k}σ)"
-            
             styled_df = df_out.style.set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, 
                                                    subset=[target_col, "Exp. TS", "Exp. YS", "Exp. EL"]) \
                                      .set_properties(**{'background-color': '#f8f9fa', 'color': '#6c757d'}, 
                                                    subset=["TS Spec", "YS Spec", "EL Spec"]) \
                                      .set_properties(**{'background-color': '#e8f0fe', 'color': '#1a73e8', 'font-weight': 'bold'}, 
-                                                   subset=["Actual TS", "Actual YS", "Actual EL"])
+                                                   subset=["Actual TS", "Actual YS", "Actual EL"]) \
+                                     .set_properties(**{'background-color': '#fff2cc', 'font-weight': 'bold'}, subset=["SPEC CODE"])
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
