@@ -353,10 +353,14 @@ if view_mode == "👑 Master Dictionary Export":
                 })
                 master_data.append(master_dict)
         
-        if master_data:
+       if master_data:
             df_out = pd.DataFrame(master_data)
             
-            ordered_cols = GROUP_COLS + [
+            # --- THÊM CỘT SỐ THỨ TỰ (STT) ---
+            df_out.insert(0, "No.", range(1, len(df_out) + 1))
+            
+            # 強制指定欄位排序 (Thêm cột "No." vào đầu danh sách ordered_cols)
+            ordered_cols = ["No."] + GROUP_COLS + [
                 "N Coils", 
                 "Current Hardness Spec", f"Proposed Control Limit ({control_k}σ)", f"🎯 Proposed Target Zone ({target_k}σ)",
                 "Spec: TS", "Exp. TS (at Target)",
@@ -366,23 +370,28 @@ if view_mode == "👑 Master Dictionary Export":
             final_cols = [c for c in ordered_cols if c in df_out.columns]
             df_out = df_out[final_cols]
             
+            # --- 2. 在畫面上直接顯示美化後的預覽表格 ---
             st.markdown("### 👁️ Preview Master Dictionary")
             
             styled_df = df_out.style.set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=[c for c in final_cols if "Spec:" in c or "Current Hardness Spec" in c]) \
                                     .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[c for c in final_cols if "Target" in c or "Exp." in c]) \
-                                    .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[f"Proposed Control Limit ({control_k}σ)"])
+                                    .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[f"Proposed Control Limit ({control_k}σ)"]) \
+                                    .set_properties(**{'text-align': 'center', 'font-weight': 'bold'}, subset=["No."])
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
+            # --- 3. 準備 Excel 匯出檔案 ---
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_out.to_excel(writer, sheet_name='Master_Specs', index=False)
                 workbook = writer.book
                 worksheet = writer.sheets['Master_Specs']
                 
+                # Excel 美化格式設定
                 header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
                 target_fmt = workbook.add_format({'bg_color': '#D9EAD3', 'bold': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
                 spec_fmt = workbook.add_format({'bg_color': '#FFF2CC', 'italic': True, 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True})
+                stt_fmt = workbook.add_format({'bold': True, 'align': 'center', 'border': 1})
                 
                 worksheet.set_row(0, 30) 
                 
@@ -390,12 +399,16 @@ if view_mode == "👑 Master Dictionary Export":
                     fmt = header_fmt
                     if "Target" in value or "Exp." in value: fmt = target_fmt
                     if "Spec:" in value or "Current Hardness Spec" in value: fmt = spec_fmt
+                    if value == "No.": fmt = header_fmt # No. giữ màu header chính
+                    
                     worksheet.write(0, col_num, value, fmt)
-                    worksheet.set_column(col_num, col_num, max(12, len(value) * 0.8))
+                    # Tự động chỉnh độ rộng cột, riêng cột No. để hẹp lại
+                    width = 6 if value == "No." else max(12, len(value) * 0.8)
+                    worksheet.set_column(col_num, col_num, width)
             
             st.markdown("### 📥 Download Report")
             st.success(f"✅ Full Master Dictionary created for {len(master_data)} groups!")
-            st.download_button("📥 Download Full Dictionary (Excel)", output.getvalue(), f"Full_Master_Dictionary_{datetime.now().strftime('%Y%m%d')}.xlsx")
+            st.download_button("📥 Download Full Dictionary (Excel)", output.getvalue(), f"Full_Master_Dictionary_{dt.datetime.now().strftime('%Y%m%d')}.xlsx")
         else:
             st.error("❌ Không có dữ liệu hợp lệ để tạo báo cáo.")
             
