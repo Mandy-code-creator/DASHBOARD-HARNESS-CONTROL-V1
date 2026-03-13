@@ -1655,8 +1655,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         if "M" in cat: passed_control_methods.append(cat)
                         elif "Old Target" in cat: passed_control_methods.append("Old Target")
 
-                    # 2. Actual Data Extraction (Lọc các cuộn thép thực tế lọt vào dải Hardness này)
-                    # Xử lý trường hợp l_max = 0 (vô cực)
+                    # 2. Actual Data Extraction
                     actual_mask = (sub_mech['Hardness_LINE'] >= l_min)
                     if l_max > 0:
                         actual_mask = actual_mask & (sub_mech['Hardness_LINE'] <= l_max)
@@ -1664,9 +1663,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     actual_coils = sub_mech[actual_mask]
                     
                     if not actual_coils.empty:
-                        act_ts = f"{actual_coils['TS'].min():.0f} ~ {actual_coils['TS'].max():.0f}"
-                        act_ys = f"{actual_coils['YS'].min():.0f} ~ {actual_coils['YS'].max():.0f}"
-                        act_el = f"{actual_coils['EL'].min():.1f} ~ {actual_coils['EL'].max():.1f}"
+                        # Bổ sung thêm Average (Avg) để sếp dễ thấy sự thay đổi giữa các phương pháp
+                        act_ts = f"{actual_coils['TS'].min():.0f}~{actual_coils['TS'].max():.0f} (Avg:{actual_coils['TS'].mean():.0f})"
+                        act_ys = f"{actual_coils['YS'].min():.0f}~{actual_coils['YS'].max():.0f} (Avg:{actual_coils['YS'].mean():.0f})"
+                        act_el = f"{actual_coils['EL'].min():.1f}~{actual_coils['EL'].max():.1f} (Avg:{actual_coils['EL'].mean():.1f})"
                     else:
                         act_ts, act_ys, act_el = "No Data", "No Data", "No Data"
 
