@@ -254,8 +254,7 @@ valid = cnt[cnt["N_Coils"] >= 30]
 
 # ==============================================================================
 # ==============================================================================
-# ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (FAILSAFE VERSION - NEVER CRASHES)
+# 9. MASTER DICTIONARY EXPORT (RESTORED 'NO.' COLUMN & GROUPED SPECS)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
@@ -285,28 +284,21 @@ if view_mode == "👑 Master Dictionary Export":
             st.stop()
 
         source_df = raw_source.loc[:, ~raw_source.columns.duplicated()].copy()
-        
-        # 1. Dọn dẹp khoảng trắng mọi tên cột
         source_df.columns = source_df.columns.astype(str).str.strip()
         
-        # 2. HỆ THỐNG DÒ TÌM & CHỐNG SẬP (FAILSAFE)
+        # --- BẮT CỘT SPECS VÀ ĐỔI TÊN ---
         candidates = ["Product_Spec", "PRODUCT SPECIFICATION CODE", "PRODUCT_SPEC", "SPEC CODE", "SPECIFICATION CODE"]
         found_spec_col = None
-        
         for col in source_df.columns:
             if col.upper() in [c.upper() for c in candidates]:
                 found_spec_col = col
                 break
                 
         if found_spec_col:
-            # Nếu tìm thấy, đổi tên để dùng chung
             source_df.rename(columns={found_spec_col: "SPEC_CODE_INTERNAL"}, inplace=True)
         else:
-            # Nếu KHÔNG tìm thấy, tạo cột giả để giữ App sống sót và hiển thị bảng
-            source_df["SPEC_CODE_INTERNAL"] = "Not Found (Check Raw File)"
-            st.warning("⚠️ Không tìm thấy cột Mã Quy Cách trong dữ liệu nguồn. Đang hiển thị với giá trị 'Not Found'.")
+            source_df["SPEC_CODE_INTERNAL"] = "N/A"
 
-        # 3. Đổi tên các cột cơ tính
         source_df.rename(columns={"TENSILE_TENSILE": "TS", "TENSILE_YIELD": "YS", "TENSILE_ELONG": "EL"}, inplace=True)
 
         if "Hardness_LINE" not in source_df.columns:
@@ -315,7 +307,6 @@ if view_mode == "👑 Master Dictionary Export":
                     source_df["Hardness_LINE"] = source_df[c]
                     break
 
-        # 4. Ép kiểu số & Lọc dữ liệu
         req_cols = ['Hardness_LINE', 'TS', 'YS', 'EL']
         for c in req_cols:
             if c in source_df.columns:
@@ -323,11 +314,11 @@ if view_mode == "👑 Master Dictionary Export":
 
         clean_master_df = source_df.dropna(subset=req_cols).copy()
         clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
-        
-        clean_master_df["SPEC_CODE_INTERNAL"] = clean_master_df["SPEC_CODE_INTERNAL"].astype(str).replace(['nan', 'None', ''], 'Unknown')
+        clean_master_df["SPEC_CODE_INTERNAL"] = clean_master_df["SPEC_CODE_INTERNAL"].astype(str).replace(['nan', 'None', ''], 'N/A')
         
         master_data = []
-        group_cols = ['SPEC_CODE_INTERNAL', 'Material', 'Gauge_Range', 'Rolling_Type', 'Metallic_Type', 'Quality_Group']
+        # Group by Material và các thuộc tính lõi (Không đưa Specs vào group key nữa để gom được nhiều Specs vào 1 dòng)
+        group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
         
         with st.spinner("Processing Data..."):
             for keys, group in clean_master_df.groupby(group_cols, observed=True):
@@ -358,10 +349,15 @@ if view_mode == "👑 Master Dictionary Export":
                 s_ys_min = group["Standard YS min"].max() if "Standard YS min" in group.columns else 0
                 s_el_min = group["Standard EL min"].max() if "Standard EL min" in group.columns else 0
                 
+                # --- GOM CÁC MÃ SPECS NHƯ TRONG ẢNH ---
+                unique_specs = group["SPEC_CODE_INTERNAL"].dropna().unique()
+                valid_specs = [s for s in unique_specs if s != 'N/A' and s != 'Unknown']
+                specs_str = ", ".join(valid_specs) if valid_specs else "N/A"
+                
                 row = {
-                    "PRODUCT SPECIFICATION CODE": keys[0], 
-                    "Material": keys[1],
-                    "Gauge Range": keys[2],
+                    "Specs": specs_str, 
+                    "Material": keys[3],
+                    "Gauge Range": keys[4],
                     "N Coils": len(group),
                     f"🎯 Target ({target_k}σ)": f"{t_min:.1f}~{t_max:.1f}",
                     "TS Spec": f"≥{s_ts_min:.0f}",
@@ -379,14 +375,18 @@ if view_mode == "👑 Master Dictionary Export":
         if master_data:
             df_out = pd.DataFrame(master_data)
             
+            # --- KHÔI PHỤC CỘT SỐ THỨ TỰ (NO.) ---
+            df_out.insert(0, "No.", range(1, len(df_out) + 1))
+            
             target_col = f"🎯 Target ({target_k}σ)"
-            styled_df = df_out.style.set_properties(**{'background-color': '#fff2cc', 'color': '#000', 'font-weight': 'bold'}, subset=["PRODUCT SPECIFICATION CODE"]) \
+            styled_df = df_out.style.set_properties(**{'background-color': '#fff2cc', 'color': '#000', 'font-weight': 'bold'}, subset=["Specs"]) \
                                      .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, 
                                                    subset=[target_col, "Exp. TS", "Exp. YS", "Exp. EL"]) \
                                      .set_properties(**{'background-color': '#e8f0fe', 'color': '#1a73e8', 'font-weight': 'bold'}, 
                                                    subset=["Actual TS", "Actual YS", "Actual EL"]) \
                                      .set_properties(**{'background-color': '#f8f9fa', 'color': '#6c757d'}, 
-                                                   subset=["TS Spec", "YS Spec", "EL Spec"])
+                                                   subset=["TS Spec", "YS Spec", "EL Spec"]) \
+                                     .set_properties(**{'text-align': 'center', 'font-weight': 'bold'}, subset=["No."])
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
