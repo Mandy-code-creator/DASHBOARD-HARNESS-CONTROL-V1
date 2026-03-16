@@ -1726,165 +1726,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     key=f"dl_indiv_{i}_{uuid.uuid4().hex[:4]}" 
                 )
 
-                # --- VISUALIZATION: 2 CHARTS (TREND & DISTRIBUTION) ---
-                st.markdown(f"### 📈 Control Limits Visualization: {mat_name} {safe_gauge_name}")
-                tab_trend, tab_dist = st.tabs(["📉 Trend Chart (Run Sequence)", "📊 Distribution Chart (Histogram)"])
-
-                with tab_trend:
-                    # BIỂU ĐỒ 1: XU HƯỚNG THEO THỨ TỰ CUỘN (TREND CHART)
-                    fig1, ax1 = plt.subplots(figsize=(11, 5))
-                    fig1.patch.set_facecolor('white')
-                    ax1.set_facecolor('white')
-
-                    x_seq = np.arange(1, len(data) + 1)
-                    ax1.plot(x_seq, data.values, marker='o', color='#7fb3d5', linewidth=2, markersize=5, label='LINE Hardness')
-
-                    # Old Target
-                    if spec_min > 0: ax1.axhline(spec_min, color='black', linestyle='-', lw=2, label=f'Old Target ({spec_min:.1f}~{display_max:.1f})')
-                    if display_max > 0: ax1.axhline(display_max, color='black', linestyle='-', lw=2)
-
-                    # 4 Phương pháp
-                    ax1.axhline(m1_min, color='#d62728', linestyle='--', lw=1.5, label=f'M1: Std ({m1_min:.1f}~{m1_max:.1f})')
-                    ax1.axhline(m1_max, color='#d62728', linestyle='--', lw=1.5)
-
-                    ax1.axhline(m2_min, color='#007acc', linestyle='-.', lw=1.5, label=f'M2: IQR ({m2_min:.1f}~{m2_max:.1f})')
-                    ax1.axhline(m2_max, color='#007acc', linestyle='-.', lw=1.5)
-
-                    ax1.axhline(m3_min, color='#28a745', linestyle=':', lw=2, label=f'M3: Hybrid ({m3_min:.1f}~{m3_max:.1f})')
-                    ax1.axhline(m3_max, color='#28a745', linestyle=':', lw=2)
-
-                    ax1.axhline(m4_min, color='#9467bd', linestyle='-', lw=2.5, label=f'M4: I-MR ({m4_min:.1f}~{m4_max:.1f})')
-                    ax1.axhline(m4_max, color='#9467bd', linestyle='-', lw=2.5)
-                    
-                    # Highlight vùng an toàn của M4
-                    ax1.fill_between(x_seq, m4_min, m4_max, color='#9467bd', alpha=0.1)
-
-                    ax1.set_title("Hardness Trend by Coil Sequence vs 4 Control Methods", fontweight='bold', color='#333333')
-                    ax1.set_xlabel("Coil Sequence", fontweight='bold')
-                    ax1.set_ylabel("Hardness (HRB)", fontweight='bold')
-                    ax1.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=9)
-                    ax1.grid(alpha=0.3)
-
-                    st.pyplot(fig1)
-                    plt.close(fig1)
-
-                with tab_dist:
-                    # BIỂU ĐỒ 2: PHÂN BỐ CHUÔNG (DISTRIBUTION CHART)
-                    fig2, ax2 = plt.subplots(figsize=(11, 5))
-                    fig2.patch.set_facecolor('white')
-                    ax2.set_facecolor('white')
-
-                    sns.histplot(data, stat='density', bins=15, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax2)
-                    
-                    if not data_lab.empty:
-                        sns.histplot(data_lab, stat='density', bins=15, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax2)
-
-                    min_cands = [m1_min, m2_min, m3_min, m4_min, data.min()]
-                    max_cands = [m1_max, m2_max, m3_max, m4_max, data.max()]
-                    if spec_min > 0: min_cands.append(spec_min)
-                    if display_max > 0: max_cands.append(display_max)
-                    
-                    min_limit = min(min_cands) - 4
-                    max_limit = max(max_cands) + 4
-                    x_axis = np.linspace(min_limit, max_limit, 500)
-                    
-                    ax2.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color='#1f77b4', lw=2.5, label='Normal Curve (LINE)')
-
-                    if not data_lab.empty and len(data_lab) > 1:
-                        mu_lab, std_lab = data_lab.mean(), data_lab.std()
-                        ax2.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab), color='#d62728', lw=2.5, linestyle='-.', label='Normal Curve (LAB)')
-
-                    if spec_min > 0:
-                        ax2.axvline(spec_min, color='black', linestyle='-', linewidth=2.5, label=f'Old Target ({spec_min:.1f}~{display_max:.1f})')
-                        if display_max > 0: ax2.axvline(display_max, color='black', linestyle='-', linewidth=2.5)
-
-                    ax2.axvline(m1_min, color='#d62728', linestyle='--', linewidth=2, label=f'M1: Std ({m1_min:.1f}~{m1_max:.1f})')
-                    ax2.axvline(m1_max, color='#d62728', linestyle='--', linewidth=2)
-
-                    ax2.axvline(m2_min, color='#007acc', linestyle='-.', linewidth=2, label=f'M2: IQR ({m2_min:.1f}~{m2_max:.1f})')
-                    ax2.axvline(m2_max, color='#007acc', linestyle='-.', linewidth=2)
-
-                    ax2.axvline(m3_min, color='#28a745', linestyle=':', linewidth=2.5, label=f'M3: Hybrid ({m3_min:.1f}~{m3_max:.1f})')
-                    ax2.axvline(m3_max, color='#28a745', linestyle=':', linewidth=2.5)
-
-                    ax2.axvline(m4_min, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4: I-MR ({m4_min:.1f}~{m4_max:.1f})')
-                    ax2.axvline(m4_max, color='#9467bd', linestyle='-', linewidth=2.5)
-                    ax2.axvspan(m4_min, m4_max, color='#9467bd', alpha=0.1)
-                    
-                    ax2.set_xlim(min_limit, max_limit)
-                    ax2.set_title(f"Limits Comparison: 4 Methods vs Target - {mat_name} {safe_gauge_name}", fontsize=12, fontweight='bold', color='#333333')
-                    ax2.set_xlabel("Hardness (HRB)", fontweight='bold')
-                    ax2.set_ylabel("Density", fontweight='bold')
-                    
-                    ax2.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=9)
-                    ax2.grid(axis='y', linestyle=':', alpha=0.5)
-
-                    st.pyplot(fig2)
-                    plt.close(fig2)
-
-            else:
-                st.warning("⚠️ Insufficient clean mechanical data (N<5) to run AI Linear Regression.")
-
-            spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}" if display_max > 0 else f"Ctrl: ≥{spec_min:.0f}"
-            col_spec = "Product_Spec"
-            unique_specs = sub_clean[col_spec].dropna().unique() if col_spec in sub_clean.columns else []
-            specs_val = f"Specs: {', '.join(str(x) for x in unique_specs)}" if len(unique_specs) > 0 else "Specs: N/A"
-
-            all_groups_summary.append({
-                "Specification List": specs_val, "Material": mat_name, "Gauge": gauge_name,
-                "N Coils": len(data), "Current Spec": spec_str,
-                "🎯 Core Target (±1.0σ)": f"{new_target_min:.1f} ~ {new_target_max:.1f}", 
-                "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
-                "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
-                "M3: Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
-                "M4: I-MR (Opt)": f"{m4_min:.1f} ~ {m4_max:.1f}",
-                "🚧 Control Limit Rec.": best_control_limit 
-            })
-            
-            st.markdown("---") 
-
-        # ==============================================================================
-        # DISPLAY FACTORY-WIDE SUMMARY (OUTSIDE INDIVIDUAL LOOP)
-        # ==============================================================================
-        if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
-            st.markdown(f"## 📊 Factory-wide Operation & Control Limits Summary: {qgroup}")
-            df_total = pd.DataFrame(all_groups_summary)
-            
-            def style_recommendation(val):
-                if 'M4' in str(val) or 'M3' in str(val) or 'M2' in str(val) or 'M1' in str(val): return 'color: #155724; background-color: #d4edda; font-weight: bold'
-                elif 'Keep' in str(val): return 'color: #856404; background-color: #fff3cd; font-weight: bold'
-                else: return 'color: #721c24; background-color: #f8d7da; font-weight: bold'
-
-            styled_df_total = df_total.style
-            if hasattr(styled_df_total, "map"):
-                styled_df_total = styled_df_total.map(style_recommendation, subset=['🚧 Control Limit Rec.'])\
-                                                 .set_properties(**{'background-color': '#e6f4ea', 'font-weight': 'bold', 'color': '#0d5302'}, subset=['🎯 Core Target (±1.0σ)'])
-            else:
-                styled_df_total = styled_df_total.applymap(style_recommendation, subset=['🚧 Control Limit Rec.'])\
-                                                 .set_properties(**{'background-color': '#e6f4ea', 'font-weight': 'bold', 'color': '#0d5302'}, subset=['🎯 Core Target (±1.0σ)'])
-            
-            st.dataframe(styled_df_total, use_container_width=True, hide_index=True)
-
-            # EXCEL DOWNLOAD BUTTON FOR SUMMARY
-            total_buffer = io.BytesIO()
-            with pd.ExcelWriter(total_buffer, engine='xlsxwriter') as writer:
-                df_total.to_excel(writer, index=False, sheet_name='Factory_Summary')
-                workbook = writer.book
-                worksheet = writer.sheets['Factory_Summary']
-                
-                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center'})
-                for col_num, value in enumerate(df_total.columns.values):
-                    worksheet.write(0, col_num, value, header_fmt)
-                    worksheet.set_column(col_num, col_num, 18)
-            
-            st.download_button(
-                    label=f"📥 Download Excel Comparison: {mat_name}",
-                    data=indiv_buffer.getvalue(),
-                    file_name=f"Comparison_{mat_name}_vs_Target.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    key=f"dl_indiv_{i}_{uuid.uuid4().hex[:4]}" 
-                )
-
                 # --- VISUALIZATION: 2 DISTRIBUTION CHARTS ---
                 st.markdown(f"### 📈 Distribution Analysis: {mat_name} {safe_gauge_name}")
                 tab_all, tab_m1m4 = st.tabs(["📊 All 4 Methods", "📊 M1 vs M4 Only"])
@@ -1972,6 +1813,72 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     ax_m1m4.set_ylabel("Density", fontweight='bold')
                     ax_m1m4.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=9)
                     ax_m1m4.grid(axis='y', linestyle=':', alpha=0.5)
+
+                    st.pyplot(fig_m1m4)
+                    plt.close(fig_m1m4)
+
+            else:
+                st.warning("⚠️ Insufficient clean mechanical data (N<5) to run AI Linear Regression.")
+
+            spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}" if display_max > 0 else f"Ctrl: ≥{spec_min:.0f}"
+            col_spec = "Product_Spec"
+            unique_specs = sub_clean[col_spec].dropna().unique() if col_spec in sub_clean.columns else []
+            specs_val = f"Specs: {', '.join(str(x) for x in unique_specs)}" if len(unique_specs) > 0 else "Specs: N/A"
+
+            all_groups_summary.append({
+                "Specification List": specs_val, "Material": mat_name, "Gauge": gauge_name,
+                "N Coils": len(data), "Current Spec": spec_str,
+                "🎯 Core Target (±1.0σ)": f"{new_target_min:.1f} ~ {new_target_max:.1f}", 
+                "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
+                "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
+                "M3: Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
+                "M4: I-MR (Opt)": f"{m4_min:.1f} ~ {m4_max:.1f}",
+                "🚧 Control Limit Rec.": best_control_limit 
+            })
+            
+            st.markdown("---") 
+
+        # ==============================================================================
+        # DISPLAY FACTORY-WIDE SUMMARY (OUTSIDE INDIVIDUAL LOOP)
+        # ==============================================================================
+        if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
+            st.markdown(f"## 📊 Factory-wide Operation & Control Limits Summary: {qgroup}")
+            df_total = pd.DataFrame(all_groups_summary)
+            
+            def style_recommendation(val):
+                if 'M4' in str(val) or 'M3' in str(val) or 'M2' in str(val) or 'M1' in str(val): return 'color: #155724; background-color: #d4edda; font-weight: bold'
+                elif 'Keep' in str(val): return 'color: #856404; background-color: #fff3cd; font-weight: bold'
+                else: return 'color: #721c24; background-color: #f8d7da; font-weight: bold'
+
+            styled_df_total = df_total.style
+            if hasattr(styled_df_total, "map"):
+                styled_df_total = styled_df_total.map(style_recommendation, subset=['🚧 Control Limit Rec.'])\
+                                                 .set_properties(**{'background-color': '#e6f4ea', 'font-weight': 'bold', 'color': '#0d5302'}, subset=['🎯 Core Target (±1.0σ)'])
+            else:
+                styled_df_total = styled_df_total.applymap(style_recommendation, subset=['🚧 Control Limit Rec.'])\
+                                                 .set_properties(**{'background-color': '#e6f4ea', 'font-weight': 'bold', 'color': '#0d5302'}, subset=['🎯 Core Target (±1.0σ)'])
+            
+            st.dataframe(styled_df_total, use_container_width=True, hide_index=True)
+
+            # EXCEL DOWNLOAD BUTTON FOR SUMMARY
+            total_buffer = io.BytesIO()
+            with pd.ExcelWriter(total_buffer, engine='xlsxwriter') as writer:
+                df_total.to_excel(writer, index=False, sheet_name='Factory_Summary')
+                workbook = writer.book
+                worksheet = writer.sheets['Factory_Summary']
+                
+                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center'})
+                for col_num, value in enumerate(df_total.columns.values):
+                    worksheet.write(0, col_num, value, header_fmt)
+                    worksheet.set_column(col_num, col_num, 18)
+            
+            st.download_button(
+                label="📥 Download Factory-wide Summary (Excel)",
+                data=total_buffer.getvalue(),
+                file_name=f"Factory_Summary_{qgroup}_{datetime.datetime.now().strftime('%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_total_summary_final"
+            )                  ax_m1m4.grid(axis='y', linestyle=':', alpha=0.5)
 
                     st.pyplot(fig_m1m4)
                     plt.close(fig_m1m4)
