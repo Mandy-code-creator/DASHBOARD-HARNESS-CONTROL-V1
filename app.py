@@ -1958,7 +1958,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         ax_m1m4.axvline(spec_min, color='black', linestyle='-', linewidth=2.5, label=f'Old Target ({spec_min:.1f}~{display_max:.1f})')
                         if display_max > 0: ax_m1m4.axvline(display_max, color='black', linestyle='-', linewidth=2.5)
 
-                    # Biểu đồ M1 vs M4 có highlight nền như thiết kế gốc của bạn
                     ax_m1m4.axvline(m1_min, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Min ({m1_min:.1f})')
                     ax_m1m4.axvline(m1_max, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Max ({m1_max:.1f})')
                     ax_m1m4.axvspan(m1_min, m1_max, color='#d62728', alpha=0.05)
