@@ -1877,8 +1877,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 data=total_buffer.getvalue(),
                 file_name=f"Factory_Summary_{qgroup}_{datetime.datetime.now().strftime('%H%M')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key="dl_total_summary_final"
-            )                  
+                key="dl_total_summary_final")                  
                 ax_m1m4.grid(axis='y', linestyle=':', alpha=0.5)
 
                     st.pyplot(fig_m1m4)
