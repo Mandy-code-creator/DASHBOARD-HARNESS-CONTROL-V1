@@ -975,8 +975,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
                         ax2.plot(xs, ys_line, linewidth=2.5, color="#b25e00", label="LINE Fit")
                     
-                    ax2.axvline(lo, linestyle="--", linewidth=2, color="red", label="Control LSL")
-                    ax2.axvline(hi, linestyle="--", linewidth=2, color="red", label="Control USL")
+                    ax2.axvline(lo, linestyle="--", linewidth=2, color="red", label="Target LSL")
+                    ax2.axvline(hi, linestyle="--", linewidth=2, color="red", label="Target USL")
                     if l_lo > 0 and l_hi > 0:
                         ax2.axvline(l_lo, linestyle="-.", linewidth=2, color="purple", label="Lab LSL")
                         ax2.axvline(l_hi, linestyle="-.", linewidth=2, color="purple", label="Lab USL")
