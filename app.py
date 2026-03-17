@@ -1778,7 +1778,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     st.pyplot(fig_all)
                     plt.close(fig_all)
 
-               with tab_m1m4:
+                with tab_m1m4:
                     st.markdown("**2. Distribution vs M1 (Standard) & M4 (I-MR)**")
                     fig_m1m4, ax_m1m4 = plt.subplots(figsize=(11, 5))
                     fig_m1m4.patch.set_facecolor('white')
