@@ -1778,7 +1778,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     st.pyplot(fig_all)
                     plt.close(fig_all)
 
-                with tab_m1m4:
+               with tab_m1m4:
                     st.markdown("**2. Distribution vs M1 (Standard) & M4 (I-MR)**")
                     fig_m1m4, ax_m1m4 = plt.subplots(figsize=(11, 5))
                     fig_m1m4.patch.set_facecolor('white')
@@ -1798,11 +1798,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                     ax_m1m4.axvline(m1_min, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Min ({m1_min:.1f})')
                     ax_m1m4.axvline(m1_max, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Max ({m1_max:.1f})')
-                    ax_m1m4.axvspan(m1_min, m1_max, color='#d62728', alpha=0.05)
+                    # Đã xóa dòng: ax_m1m4.axvspan(m1_min, m1_max, color='#d62728', alpha=0.05)
 
                     ax_m1m4.axvline(m4_min, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Min ({m4_min:.1f})')
                     ax_m1m4.axvline(m4_max, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Max ({m4_max:.1f})')
-                    ax_m1m4.axvspan(m4_min, m4_max, color='#9467bd', alpha=0.15)
+                    # Đã xóa dòng: ax_m1m4.axvspan(m4_min, m4_max, color='#9467bd', alpha=0.15)
                     
                     ax_m1m4.set_xlim(min_limit, max_limit)
                     ax_m1m4.set_title(f"Limits Comparison: M1 vs M4 - {mat_name} {safe_gauge_name}", fontsize=12, fontweight='bold', color='#333333')
@@ -1813,7 +1813,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                     st.pyplot(fig_m1m4)
                     plt.close(fig_m1m4)
-
             else:
                 st.warning("⚠️ Insufficient clean mechanical data (N<5) to run AI Linear Regression.")
 
