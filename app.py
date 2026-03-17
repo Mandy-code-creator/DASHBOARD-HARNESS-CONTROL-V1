@@ -1766,7 +1766,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                     ax_all.axvline(m4_min, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4: I-MR ({m4_min:.1f}~{m4_max:.1f})')
                     ax_all.axvline(m4_max, color='#9467bd', linestyle='-', linewidth=2.5)
-                    ax_all.axvspan(m4_min, m4_max, color='#9467bd', alpha=0.1)
+                    # Đã xóa dòng lệnh: ax_all.axvspan(m4_min, m4_max, color='#9467bd', alpha=0.1)
                     
                     ax_all.set_xlim(min_limit, max_limit)
                     ax_all.set_title(f"Limits Comparison: All 4 Methods - {mat_name} {safe_gauge_name}", fontsize=12, fontweight='bold', color='#333333')
