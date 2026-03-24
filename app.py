@@ -941,7 +941,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         else:
             tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
 
-            with tab_trend:
+with tab_trend:
                 x = np.arange(1, len(df_valid)+1)
                 fig, ax = plt.subplots(figsize=(12, 5))
                 
@@ -953,8 +953,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 ax.axhline(lo, linestyle="--", linewidth=2, color="red", label=f"Std LSL={lo:.1f}")
                 ax.axhline(hi, linestyle="--", linewidth=2, color="red", label=f"Std USL={hi:.1f}")
                 
-                ax.plot(x, df_valid["Hardness_LAB"], marker="o", linewidth=2, color="#7fb3d5", markersize=6, label="LAB")
-                ax.plot(x, df_valid["Hardness_LINE"], marker="s", linewidth=2, color="#f5871f", markersize=6, label="LINE") 
+                # ĐỒNG NHẤT MÀU: LAB màu Cam, LINE màu Xanh
+                ax.plot(x, df_valid["Hardness_LAB"], marker="o", linewidth=2, color="#ff7f0e", markersize=6, label="LAB")
+                ax.plot(x, df_valid["Hardness_LINE"], marker="s", linewidth=2, color="#1f77b4", markersize=6, label="LINE") 
                 
                 ng_line_mask = (df_valid["Hardness_LINE"] < lo) | (df_valid["Hardness_LINE"] > hi)
                 if ng_line_mask.any():
@@ -994,31 +995,29 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     spc_line = calc_spc_metrics(line, lo, hi)
                     mean_line, std_line = line.mean(), line.std(ddof=1)
                     
-                    vals = [line.min(), line.max(), lo, hi]
-                    if l_lo > 0: vals.extend([l_lo, l_hi])
-                    if not lab.empty: vals.extend([lab.min(), lab.max()])
-                    x_min = min(vals) - 2
-                    x_max = max(vals) + 2
-                    bins = np.linspace(x_min, x_max, 30)
+                    # TÍNH TOÁN TRỤC X ĐỒNG BỘ CHO CẢ 2 VIEW
+                    x_min_sync = mean_line - 5 * std_line
+                    x_max_sync = mean_line + 5 * std_line
+                    if lo > 0: x_min_sync = min(x_min_sync, lo - 2)
+                    if hi > 0: x_max_sync = max(x_max_sync, hi + 2)
                     
-                    range_curve = max(5 * std_line, (x_max - x_min)/2)
-                    xs = np.linspace(mean_line - range_curve, mean_line + range_curve, 400)
-                    
-                    # TÍNH TOÁN ĐỘ RỘNG CỘT
+                    bins = np.linspace(x_min_sync, x_max_sync, 30)
                     bin_width = bins[1] - bins[0]
+                    
+                    range_curve = max(5 * std_line, (x_max_sync - x_min_sync)/2)
+                    xs = np.linspace(mean_line - range_curve, mean_line + range_curve, 400)
                     
                     fig2, ax2 = plt.subplots(figsize=(10, 5))
                     
-                    # SỬA density=False ĐỂ HIỂN THỊ SỐ LƯỢNG
-                    ax2.hist(line, bins=bins, density=False, alpha=0.6, color="#ff7f0e", edgecolor="white", label="LINE Hist")
+                    # ĐỒNG NHẤT MÀU & HIỂN THỊ SỐ LƯỢNG (COUNT)
+                    ax2.hist(line, bins=bins, density=False, alpha=0.6, color="#1f77b4", edgecolor="white", label="LINE Hist")
                     if not lab.empty: 
-                        ax2.hist(lab, bins=bins, density=False, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
+                        ax2.hist(lab, bins=bins, density=False, alpha=0.4, color="#ff7f0e", edgecolor="white", label="LAB Hist")
                     
                     if std_line > 0:
-                        # TÍNH ĐƯỜNG CONG VÀ NHÂN TỶ LỆ (SCALING)
                         ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
                         ys_line_scaled = ys_line * len(line) * bin_width
-                        ax2.plot(xs, ys_line_scaled, linewidth=2.5, color="#b25e00", label="LINE Fit")
+                        ax2.plot(xs, ys_line_scaled, linewidth=2.5, color="#004085", label="LINE Fit") # Xanh đậm
                     
                     ax2.axvline(lo, linestyle="--", linewidth=2, color="red", label="Target LSL")
                     ax2.axvline(hi, linestyle="--", linewidth=2, color="red", label="Target USL")
@@ -1026,9 +1025,9 @@ for i, (_, g) in enumerate(valid.iterrows()):
                         ax2.axvline(l_lo, linestyle="-.", linewidth=2, color="purple", label="Lab LSL")
                         ax2.axvline(l_hi, linestyle="-.", linewidth=2, color="purple", label="Lab USL")
                     
-                    ax2.set_xlim(x_min, x_max)
+                    ax2.set_xlim(x_min_sync, x_max_sync)
                     ax2.set_title(f"Hardness Distribution (LINE vs LAB) - {g['Material']}", weight="bold")
-                    ax2.set_ylabel("Number of Coils", fontweight="bold") # ĐỔI TÊN TRỤC Y
+                    ax2.set_ylabel("Number of Coils", fontweight="bold")
                     ax2.legend()
                     ax2.grid(alpha=0.3)
                     st.pyplot(fig2)
