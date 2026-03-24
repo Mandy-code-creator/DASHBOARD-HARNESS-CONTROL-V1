@@ -397,7 +397,7 @@ if view_mode == "👑 Master Dictionary Export":
             target_col = f"🎯 Target ({target_k}σ)"
             control_col = f"🚧 Proposed Control Limit ({control_k}σ)"
             
-            # 2. Định nghĩa danh sách các cột theo đúng thứ tự
+            # 2. Định nghĩa danh sách các cột theo đúng thứ tự (Đã chèn thêm YS Spec, TS Spec, EL Spec)
             desired_columns = [
                 "Material", 
                 "Quality Group", 
@@ -407,8 +407,11 @@ if view_mode == "👑 Master Dictionary Export":
                 "Current Control Spec", 
                 control_col, 
                 target_col, 
+                "YS Spec",
                 "Actual YS", 
+                "TS Spec",
                 "Actual TS", 
+                "EL Spec",
                 "Actual EL"
             ]
             
@@ -423,6 +426,7 @@ if view_mode == "👑 Master Dictionary Export":
                 .set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Target Spec", "Current Control Spec"]) \
                 .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[control_col]) \
                 .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[target_col]) \
+                .set_properties(**{'background-color': '#f8f9fa', 'color': '#6c757d'}, subset=["YS Spec", "TS Spec", "EL Spec"]) \
                 .set_properties(**{'background-color': '#e8f0fe', 'color': '#1a73e8', 'font-weight': 'bold'}, subset=["Actual YS", "Actual TS", "Actual EL"]) \
                 .set_properties(**{'text-align': 'center', 'font-weight': 'bold'}, subset=["No."])
             
@@ -436,7 +440,7 @@ if view_mode == "👑 Master Dictionary Export":
                 # Auto-fit độ rộng cột sơ bộ cho Excel
                 worksheet = writer.sheets['Master_Dictionary']
                 worksheet.set_column('A:A', 5)
-                worksheet.set_column('B:L', 15)
+                worksheet.set_column('B:O', 15)
 
             st.download_button("📥 Download Master Dictionary", output.getvalue(), "Master_Dictionary.xlsx")
         else:
