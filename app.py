@@ -356,11 +356,14 @@ if view_mode == "👑 Master Dictionary Export":
                 # --- PHỤC HỒI: LẤY GIỚI HẠN ĐỘ CỨNG HIỆN TẠI TỪ DATA GỐC ---
                 cur_t_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
                 cur_t_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
-                cur_target = f"{cur_t_min:.1f}~{cur_t_max:.1f}" if cur_t_max > 0 else f"≥{cur_t_min:.1f}" if cur_t_min > 0 else "N/A"
 
                 cur_c_min = group['Lab_Min'].max() if 'Lab_Min' in group.columns else 0
                 cur_c_max = group['Lab_Max'].min() if 'Lab_Max' in group.columns else 0
-                cur_control = f"{cur_c_min:.1f}~{cur_c_max:.1f}" if cur_c_max > 0 else f"≥{cur_c_min:.1f}" if cur_c_min > 0 else "N/A"
+
+                # LÔGIC MỚI: Nếu Control Spec không có (hoặc bằng 0), thì lấy Target Spec đắp vào
+                if cur_c_min <= 0 and cur_c_max <= 0:
+                    cur_c_min = cur_t_min
+                    cur_c_max = cur_t_max
 
                 row = {
                     "Specs": specs_str, 
@@ -370,19 +373,18 @@ if view_mode == "👑 Master Dictionary Export":
                     "Material": keys[3],
                     "Gauge Range": keys[4],
                     "N Coils": len(group),
-                    # Đã thêm lại 2 cột Current Limits ở đây!
-                    "Current Target Spec": cur_target,
-                    "Current Control Spec": cur_control,
-                    f"🚧 Proposed Control Limit ({control_k}σ)": f"{c_min_p:.1f}~{c_max_p:.1f}",
-                    f"🎯 Target ({target_k}σ)": f"{t_min:.1f}~{t_max:.1f}",
-                    "TS Spec": f"≥{s_ts_min:.0f}",
-                    "Exp. TS": f"{int(ts_p[0])}~{int(ts_p[1])}",
-                    "Actual TS": act_ts,
+                    
+                    # Chỉ giữ lại Current Control Spec, áp dụng hàm format_range (sẽ tự làm tròn lên số nguyên)
+                    "Current Control Spec": format_range(cur_c_min, cur_c_max),
+                    
+                    f"🚧 Proposed Control Limit ({control_k}σ)": format_range(c_min_p, c_max_p),
+                    f"🎯 Target ({target_k}σ)": format_range(t_min, t_max),
+                    
                     "YS Spec": f"≥{s_ys_min:.0f}",
-                    "Exp. YS": f"{int(ys_p[0])}~{int(ys_p[1])}",
                     "Actual YS": act_ys,
+                    "TS Spec": f"≥{s_ts_min:.0f}",
+                    "Actual TS": act_ts,
                     "EL Spec": f"≥{s_el_min:.0f}",
-                    "Exp. EL": f"{el_p[0]:.1f}~{el_p[1]:.1f}",
                     "Actual EL": act_el
                 }
                 master_data.append(row)
@@ -397,13 +399,12 @@ if view_mode == "👑 Master Dictionary Export":
             target_col = f"🎯 Target ({target_k}σ)"
             control_col = f"🚧 Proposed Control Limit ({control_k}σ)"
             
-            # 2. Định nghĩa danh sách các cột theo đúng thứ tự (Đã chèn thêm YS Spec, TS Spec, EL Spec)
+            # 2. Định nghĩa danh sách cột xuất ra (ĐÃ XÓA "Current Target Spec")
             desired_columns = [
                 "Material", 
                 "Quality Group", 
                 "Metallic Type", 
                 "Gauge Range", 
-                "Current Target Spec", 
                 "Current Control Spec", 
                 control_col, 
                 target_col, 
@@ -423,7 +424,7 @@ if view_mode == "👑 Master Dictionary Export":
             
             # 5. Khởi tạo lại màu sắc cho bảng hiển thị trên web
             styled_df = df_out.style \
-                .set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Target Spec", "Current Control Spec"]) \
+                .set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Control Spec"]) \
                 .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[control_col]) \
                 .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[target_col]) \
                 .set_properties(**{'background-color': '#f8f9fa', 'color': '#6c757d'}, subset=["YS Spec", "TS Spec", "EL Spec"]) \
@@ -431,6 +432,20 @@ if view_mode == "👑 Master Dictionary Export":
                 .set_properties(**{'text-align': 'center', 'font-weight': 'bold'}, subset=["No."])
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            
+            # 6. Chuẩn bị file Excel để download
+            output = BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df_out.to_excel(writer, index=False, sheet_name='Master_Dictionary')
+                
+                # Auto-fit độ rộng cột sơ bộ cho Excel
+                worksheet = writer.sheets['Master_Dictionary']
+                worksheet.set_column('A:A', 5)
+                worksheet.set_column('B:N', 15)  # Phạm vi thu lại B:N vì đã xóa bớt 1 cột
+
+            st.download_button("📥 Download Master Dictionary", output.getvalue(), "Master_Dictionary.xlsx")
+        else:
+            st.warning("⚠️ No groups matched the criteria (Check Min Coils or Hardness data).")
             
             # 6. Chuẩn bị file Excel để download
             output = BytesIO()
