@@ -927,6 +927,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         )
 
     # ==============================================================================
+    # ==============================================================================
     # 4. HARDNESS ANALYSIS
     # ==============================================================================
     elif view_mode == "📉 Hardness Analysis (Trend & Dist)":
@@ -941,7 +942,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         else:
             tab_trend, tab_dist = st.tabs(["📈 Trend Analysis", "📊 Distribution & SPC"])
 
-with tab_trend:
+            with tab_trend:
                 x = np.arange(1, len(df_valid)+1)
                 fig, ax = plt.subplots(figsize=(12, 5))
                 
@@ -1032,6 +1033,7 @@ with tab_trend:
                     ax2.grid(alpha=0.3)
                     st.pyplot(fig2)
                     plt.close(fig2)
+
                     st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
                     if spc_line:
                         mean_val, std_val, cp_val, ca_val, cpk_val = spc_line
@@ -1771,17 +1773,15 @@ with tab_trend:
                 st.markdown(f"### 📈 Distribution Analysis: {mat_name} {safe_gauge_name}")
                 tab_all, tab_m1m4 = st.tabs(["📊 All 4 Methods", "📊 M1 vs M4 Only"])
 
-                min_cands = [m1_min, m2_min, m3_min, m4_min, data.min()]
-                max_cands = [m1_max, m2_max, m3_max, m4_max, data.max()]
-                if spec_min > 0: min_cands.append(spec_min)
-                if display_max > 0: max_cands.append(display_max)
+                # TÍNH TOÁN TRỤC X ĐỒNG BỘ NHƯ VIEW 4
+                x_min_sync = mu - 5 * std_dev
+                x_max_sync = mu + 5 * std_dev
+                if spec_min > 0: x_min_sync = min(x_min_sync, spec_min - 2)
+                if display_max > 0: x_max_sync = max(x_max_sync, display_max + 2)
                 
-                min_limit = min(min_cands) - 2 
-                max_limit = max(max_cands) + 2 
-                x_axis = np.linspace(min_limit, max_limit, 500)
+                x_axis = np.linspace(x_min_sync, x_max_sync, 500)
                 
-                # TÍNH ĐỘ RỘNG CỘT ĐỂ NHÂN SCALING CHO ĐƯỜNG CONG
-                shared_bins = np.linspace(min_limit, max_limit, 30)
+                shared_bins = np.linspace(x_min_sync, x_max_sync, 30)
                 bin_width = shared_bins[1] - shared_bins[0] 
 
                 with tab_all:
@@ -1790,16 +1790,15 @@ with tab_trend:
                     fig_all.patch.set_facecolor('white')
                     ax_all.set_facecolor('white')
 
-                    # ĐỔI stat='density' THÀNH stat='count'
-                    sns.histplot(data, stat='count', bins=shared_bins, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_all)
+                    # ĐỒNG NHẤT MÀU & HIỂN THỊ COUNT
+                    sns.histplot(data, stat='count', bins=shared_bins, color='#1f77b4', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_all)
                     if not data_lab.empty:
                         sns.histplot(data_lab, stat='count', bins=shared_bins, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax_all)
 
-                    # NHÂN TỶ LỆ CHO ĐƯỜNG CONG Normal Curve
-                    ax_all.plot(x_axis, norm.pdf(x_axis, mu, std_dev) * len(data) * bin_width, color='#1f77b4', lw=2.5, label='Normal Curve (LINE)')
+                    ax_all.plot(x_axis, norm.pdf(x_axis, mu, std_dev) * len(data) * bin_width, color='#004085', lw=2.5, label='Normal Curve (LINE)')
                     if not data_lab.empty and len(data_lab) > 1:
                         mu_lab, std_lab = data_lab.mean(), data_lab.std()
-                        ax_all.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab) * len(data_lab) * bin_width, color='#d62728', lw=2.5, linestyle='-.', label='Normal Curve (LAB)')
+                        ax_all.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab) * len(data_lab) * bin_width, color='#b33c00', lw=2.5, linestyle='-.', label='Normal Curve (LAB)')
 
                     if spec_min > 0:
                         ax_all.axvline(spec_min, color='black', linestyle='-', linewidth=2.5, label=f'Old Target ({spec_min:.1f}~{display_max:.1f})')
@@ -1814,10 +1813,10 @@ with tab_trend:
                     ax_all.axvline(m4_min, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4: I-MR ({m4_min:.1f}~{m4_max:.1f})')
                     ax_all.axvline(m4_max, color='#9467bd', linestyle='-', linewidth=2.5)
                     
-                    ax_all.set_xlim(min_limit, max_limit)
+                    ax_all.set_xlim(x_min_sync, x_max_sync)
                     ax_all.set_title(f"Limits Comparison: All 4 Methods - {mat_name} {safe_gauge_name}", fontsize=12, fontweight='bold', color='#333333')
                     ax_all.set_xlabel("Hardness (HRB)", fontweight='bold')
-                    ax_all.set_ylabel("Number of Coils", fontweight='bold') # ĐỔI NHÃN TRỤC Y
+                    ax_all.set_ylabel("Number of Coils", fontweight='bold')
                     ax_all.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=9)
                     ax_all.grid(axis='y', linestyle=':', alpha=0.5)
 
@@ -1830,15 +1829,13 @@ with tab_trend:
                     fig_m1m4.patch.set_facecolor('white')
                     ax_m1m4.set_facecolor('white')
 
-                    # ĐỔI stat='count'
-                    sns.histplot(data, stat='count', bins=shared_bins, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_m1m4)
+                    sns.histplot(data, stat='count', bins=shared_bins, color='#1f77b4', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_m1m4)
                     if not data_lab.empty:
                         sns.histplot(data_lab, stat='count', bins=shared_bins, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax_m1m4)
 
-                    # NHÂN TỶ LỆ CHO ĐƯỜNG CONG
-                    ax_m1m4.plot(x_axis, norm.pdf(x_axis, mu, std_dev) * len(data) * bin_width, color='#1f77b4', lw=2.5, label='Normal Curve (LINE)')
+                    ax_m1m4.plot(x_axis, norm.pdf(x_axis, mu, std_dev) * len(data) * bin_width, color='#004085', lw=2.5, label='Normal Curve (LINE)')
                     if not data_lab.empty and len(data_lab) > 1:
-                        ax_m1m4.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab) * len(data_lab) * bin_width, color='#d62728', lw=2.5, linestyle='-.', label='Normal Curve (LAB)')
+                        ax_m1m4.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab) * len(data_lab) * bin_width, color='#b33c00', lw=2.5, linestyle='-.', label='Normal Curve (LAB)')
 
                     if spec_min > 0:
                         ax_m1m4.axvline(spec_min, color='black', linestyle='-', linewidth=2.5, label=f'Old Target ({spec_min:.1f}~{display_max:.1f})')
@@ -1849,10 +1846,10 @@ with tab_trend:
                     ax_m1m4.axvline(m4_min, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Min ({m4_min:.1f})')
                     ax_m1m4.axvline(m4_max, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Max ({m4_max:.1f})')
                     
-                    ax_m1m4.set_xlim(min_limit, max_limit)
+                    ax_m1m4.set_xlim(x_min_sync, x_max_sync)
                     ax_m1m4.set_title(f"Limits Comparison: M1 vs M4 - {mat_name} {safe_gauge_name}", fontsize=12, fontweight='bold', color='#333333')
                     ax_m1m4.set_xlabel("Hardness (HRB)", fontweight='bold')
-                    ax_m1m4.set_ylabel("Number of Coils", fontweight='bold') # ĐỔI NHÃN TRỤC Y
+                    ax_m1m4.set_ylabel("Number of Coils", fontweight='bold')
                     ax_m1m4.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=9)
                     ax_m1m4.grid(axis='y', linestyle=':', alpha=0.5)
 
