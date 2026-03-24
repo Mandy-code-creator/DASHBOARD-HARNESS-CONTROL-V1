@@ -1727,25 +1727,30 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.markdown(f"### 📈 Distribution Analysis: {mat_name} {safe_gauge_name}")
                 tab_all, tab_m1m4 = st.tabs(["📊 All 4 Methods", "📊 M1 vs M4 Only"])
 
+                # SỬA LỖI ĐỒNG BỘ: Tính toán giới hạn trục X (±2) và Bins (30) giống hệt view Hardness Analysis
+                min_cands = [m1_min, m2_min, m3_min, m4_min, data.min()]
+                max_cands = [m1_max, m2_max, m3_max, m4_max, data.max()]
+                if spec_min > 0: min_cands.append(spec_min)
+                if display_max > 0: max_cands.append(display_max)
+                
+                min_limit = min(min_cands) - 2  # Đổi từ - 4 thành - 2
+                max_limit = max(max_cands) + 2  # Đổi từ + 4 thành + 2
+                x_axis = np.linspace(min_limit, max_limit, 500)
+                
+                # Tạo dải bin cố định 30 cột
+                shared_bins = np.linspace(min_limit, max_limit, 30)
+
                 with tab_all:
                     st.markdown("**1. Distribution vs ALL 4 Control Methods & Old Target**")
                     fig_all, ax_all = plt.subplots(figsize=(11, 5))
                     fig_all.patch.set_facecolor('white')
                     ax_all.set_facecolor('white')
 
-                    sns.histplot(data, stat='density', bins=15, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_all)
+                    # Truyền shared_bins vào thay vì bins=15
+                    sns.histplot(data, stat='density', bins=shared_bins, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_all)
                     if not data_lab.empty:
-                        sns.histplot(data_lab, stat='density', bins=15, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax_all)
+                        sns.histplot(data_lab, stat='density', bins=shared_bins, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax_all)
 
-                    min_cands = [m1_min, m2_min, m3_min, m4_min, data.min()]
-                    max_cands = [m1_max, m2_max, m3_max, m4_max, data.max()]
-                    if spec_min > 0: min_cands.append(spec_min)
-                    if display_max > 0: max_cands.append(display_max)
-                    
-                    min_limit = min(min_cands) - 4
-                    max_limit = max(max_cands) + 4
-                    x_axis = np.linspace(min_limit, max_limit, 500)
-                    
                     ax_all.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color='#1f77b4', lw=2.5, label='Normal Curve (LINE)')
                     if not data_lab.empty and len(data_lab) > 1:
                         mu_lab, std_lab = data_lab.mean(), data_lab.std()
@@ -1757,16 +1762,12 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                     ax_all.axvline(m1_min, color='#d62728', linestyle='--', linewidth=2, label=f'M1: Std ({m1_min:.1f}~{m1_max:.1f})')
                     ax_all.axvline(m1_max, color='#d62728', linestyle='--', linewidth=2)
-
                     ax_all.axvline(m2_min, color='#007acc', linestyle='-.', linewidth=2, label=f'M2: IQR ({m2_min:.1f}~{m2_max:.1f})')
                     ax_all.axvline(m2_max, color='#007acc', linestyle='-.', linewidth=2)
-
                     ax_all.axvline(m3_min, color='#28a745', linestyle=':', linewidth=2.5, label=f'M3: Hybrid ({m3_min:.1f}~{m3_max:.1f})')
                     ax_all.axvline(m3_max, color='#28a745', linestyle=':', linewidth=2.5)
-
                     ax_all.axvline(m4_min, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4: I-MR ({m4_min:.1f}~{m4_max:.1f})')
                     ax_all.axvline(m4_max, color='#9467bd', linestyle='-', linewidth=2.5)
-                    # Đã xóa dòng lệnh: ax_all.axvspan(m4_min, m4_max, color='#9467bd', alpha=0.1)
                     
                     ax_all.set_xlim(min_limit, max_limit)
                     ax_all.set_title(f"Limits Comparison: All 4 Methods - {mat_name} {safe_gauge_name}", fontsize=12, fontweight='bold', color='#333333')
@@ -1784,9 +1785,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     fig_m1m4.patch.set_facecolor('white')
                     ax_m1m4.set_facecolor('white')
 
-                    sns.histplot(data, stat='density', bins=15, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_m1m4)
+                    # Tương tự, dùng shared_bins ở đây
+                    sns.histplot(data, stat='density', bins=shared_bins, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_m1m4)
                     if not data_lab.empty:
-                        sns.histplot(data_lab, stat='density', bins=15, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax_m1m4)
+                        sns.histplot(data_lab, stat='density', bins=shared_bins, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax_m1m4)
 
                     ax_m1m4.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color='#1f77b4', lw=2.5, label='Normal Curve (LINE)')
                     if not data_lab.empty and len(data_lab) > 1:
@@ -1798,11 +1800,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                     ax_m1m4.axvline(m1_min, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Min ({m1_min:.1f})')
                     ax_m1m4.axvline(m1_max, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Max ({m1_max:.1f})')
-                    # Đã xóa dòng: ax_m1m4.axvspan(m1_min, m1_max, color='#d62728', alpha=0.05)
-
                     ax_m1m4.axvline(m4_min, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Min ({m4_min:.1f})')
                     ax_m1m4.axvline(m4_max, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Max ({m4_max:.1f})')
-                    # Đã xóa dòng: ax_m1m4.axvspan(m4_min, m4_max, color='#9467bd', alpha=0.15)
                     
                     ax_m1m4.set_xlim(min_limit, max_limit)
                     ax_m1m4.set_title(f"Limits Comparison: M1 vs M4 - {mat_name} {safe_gauge_name}", fontsize=12, fontweight='bold', color='#333333')
@@ -1813,26 +1812,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                     st.pyplot(fig_m1m4)
                     plt.close(fig_m1m4)
-            else:
-                st.warning("⚠️ Insufficient clean mechanical data (N<5) to run AI Linear Regression.")
-
-            spec_str = f"Ctrl: {spec_min:.0f}~{display_max:.0f}" if display_max > 0 else f"Ctrl: ≥{spec_min:.0f}"
-            col_spec = "Product_Spec"
-            unique_specs = sub_clean[col_spec].dropna().unique() if col_spec in sub_clean.columns else []
-            specs_val = f"Specs: {', '.join(str(x) for x in unique_specs)}" if len(unique_specs) > 0 else "Specs: N/A"
-
-            all_groups_summary.append({
-                "Specification List": specs_val, "Material": mat_name, "Gauge": gauge_name,
-                "N Coils": len(data), "Current Spec": spec_str,
-                "🎯 Core Target (±1.0σ)": f"{new_target_min:.1f} ~ {new_target_max:.1f}", 
-                "M1: Standard": f"{m1_min:.1f} ~ {m1_max:.1f}",
-                "M2: IQR (Robust)": f"{m2_min:.1f} ~ {m2_max:.1f}",
-                "M3: Hybrid": f"{m3_min:.1f} ~ {m3_max:.1f}", 
-                "M4: I-MR (Opt)": f"{m4_min:.1f} ~ {m4_max:.1f}",
-                "🚧 Control Limit Rec.": best_control_limit 
-            })
-            
-            st.markdown("---") 
 
         # ==============================================================================
         # DISPLAY FACTORY-WIDE SUMMARY (OUTSIDE INDIVIDUAL LOOP)
