@@ -319,6 +319,17 @@ if view_mode == "👑 Master Dictionary Export":
         master_data = []
         group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
         
+        # --- HÀM XỬ LÝ LÀM TRÒN SỐ (Làm tròn nguyên, >= .5 thì lên) ---
+        def format_hrb(val):
+            if pd.isna(val): return "0"
+            return str(int(float(val) + 0.5))
+
+        def format_range(vmin, vmax):
+            if vmax > 0 and vmin > 0: return f"{format_hrb(vmin)}~{format_hrb(vmax)}"
+            if vmin > 0: return f"≥{format_hrb(vmin)}"
+            if vmax > 0: return f"≤{format_hrb(vmax)}"
+            return "N/A"
+
         with st.spinner("Processing Data with Control Limits..."):
             for keys, group in clean_master_df.groupby(group_cols, observed=True):
                 if len(group) < min_coils_req: continue 
@@ -353,7 +364,6 @@ if view_mode == "👑 Master Dictionary Export":
                 valid_specs = [s for s in unique_specs if s != 'N/A' and s != 'Unknown']
                 specs_str = ", ".join(valid_specs) if valid_specs else "N/A"
                 
-                # --- PHỤC HỒI: LẤY GIỚI HẠN ĐỘ CỨNG HIỆN TẠI TỪ DATA GỐC ---
                 cur_t_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
                 cur_t_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
 
@@ -373,13 +383,9 @@ if view_mode == "👑 Master Dictionary Export":
                     "Material": keys[3],
                     "Gauge Range": keys[4],
                     "N Coils": len(group),
-                    
-                    # Chỉ giữ lại Current Control Spec, áp dụng hàm format_range (sẽ tự làm tròn lên số nguyên)
                     "Current Control Spec": format_range(cur_c_min, cur_c_max),
-                    
                     f"🚧 Proposed Control Limit ({control_k}σ)": format_range(c_min_p, c_max_p),
                     f"🎯 Target ({target_k}σ)": format_range(t_min, t_max),
-                    
                     "YS Spec": f"≥{s_ys_min:.0f}",
                     "Actual YS": act_ys,
                     "TS Spec": f"≥{s_ts_min:.0f}",
@@ -395,11 +401,10 @@ if view_mode == "👑 Master Dictionary Export":
             # 1. Sắp xếp ưu tiên: Loại mạ (Metallic Type) -> Vật liệu (Material) -> Độ dày (Gauge Range)
             df_out = df_out.sort_values(by=["Metallic Type", "Material", "Gauge Range"]).reset_index(drop=True)
             
-            # Xác định tên cột động
             target_col = f"🎯 Target ({target_k}σ)"
             control_col = f"🚧 Proposed Control Limit ({control_k}σ)"
             
-            # 2. Định nghĩa danh sách cột xuất ra (ĐÃ XÓA "Current Target Spec")
+            # 2. Định nghĩa danh sách cột xuất ra
             desired_columns = [
                 "Material", 
                 "Quality Group", 
@@ -416,13 +421,9 @@ if view_mode == "👑 Master Dictionary Export":
                 "Actual EL"
             ]
             
-            # 3. Cắt df_out chỉ giữ lại các cột này
             df_out = df_out[desired_columns]
-            
-            # 4. Thêm số thứ tự No. vào vị trí đầu tiên
             df_out.insert(0, "No.", range(1, len(df_out) + 1))
             
-            # 5. Khởi tạo lại màu sắc cho bảng hiển thị trên web
             styled_df = df_out.style \
                 .set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Control Spec"]) \
                 .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[control_col]) \
@@ -433,34 +434,17 @@ if view_mode == "👑 Master Dictionary Export":
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
-            # 6. Chuẩn bị file Excel để download
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_out.to_excel(writer, index=False, sheet_name='Master_Dictionary')
-                
-                # Auto-fit độ rộng cột sơ bộ cho Excel
                 worksheet = writer.sheets['Master_Dictionary']
                 worksheet.set_column('A:A', 5)
-                worksheet.set_column('B:N', 15)  # Phạm vi thu lại B:N vì đã xóa bớt 1 cột
+                worksheet.set_column('B:N', 15)
 
             st.download_button("📥 Download Master Dictionary", output.getvalue(), "Master_Dictionary.xlsx")
         else:
             st.warning("⚠️ No groups matched the criteria (Check Min Coils or Hardness data).")
             
-            # 6. Chuẩn bị file Excel để download
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                df_out.to_excel(writer, index=False, sheet_name='Master_Dictionary')
-                
-                # Auto-fit độ rộng cột sơ bộ cho Excel
-                worksheet = writer.sheets['Master_Dictionary']
-                worksheet.set_column('A:A', 5)
-                worksheet.set_column('B:O', 15)
-
-            st.download_button("📥 Download Master Dictionary", output.getvalue(), "Master_Dictionary.xlsx")
-        else:
-            st.warning("⚠️ No groups matched the criteria (Check Min Coils or Hardness data).")
-    
     st.stop()
 # ==============================================================================
 # 1. EXECUTIVE KPI DASHBOARD (OVERVIEW) - STANDALONE BLOCK
