@@ -389,27 +389,55 @@ if view_mode == "👑 Master Dictionary Export":
 
         if master_data:
             df_out = pd.DataFrame(master_data)
-            df_out.insert(0, "No.", range(1, len(df_out) + 1))
             
+            # 1. Sắp xếp dữ liệu theo Material và Gauge Range để gom nhóm "cùng vật liệu, cùng độ dày"
+            df_out = df_out.sort_values(by=["Material", "Gauge Range"]).reset_index(drop=True)
+            
+            # Xác định tên cột động
             target_col = f"🎯 Target ({target_k}σ)"
             control_col = f"🚧 Proposed Control Limit ({control_k}σ)"
             
-            styled_df = df_out.style.set_properties(**{'background-color': '#fff2cc', 'color': '#000', 'font-weight': 'bold'}, subset=["Specs"]) \
-                                     .set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Target Spec", "Current Control Spec"]) \
-                                     .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[control_col]) \
-                                     .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, 
-                                                   subset=[target_col, "Exp. TS", "Exp. YS", "Exp. EL"]) \
-                                     .set_properties(**{'background-color': '#e8f0fe', 'color': '#1a73e8', 'font-weight': 'bold'}, 
-                                                   subset=["Actual TS", "Actual YS", "Actual EL"]) \
-                                     .set_properties(**{'background-color': '#f8f9fa', 'color': '#6c757d'}, 
-                                                   subset=["TS Spec", "YS Spec", "EL Spec"]) \
-                                     .set_properties(**{'text-align': 'center', 'font-weight': 'bold'}, subset=["No."])
+            # 2. Định nghĩa danh sách các cột theo đúng thứ tự bạn yêu cầu
+            desired_columns = [
+                "Material", 
+                "Quality Group", 
+                "Metallic Type", 
+                "Gauge Range", 
+                "Current Target Spec", 
+                "Current Control Spec", 
+                control_col, 
+                target_col, 
+                "Actual YS", 
+                "Actual TS", 
+                "Actual EL"
+            ]
+            
+            # 3. Cắt df_out chỉ giữ lại các cột này
+            df_out = df_out[desired_columns]
+            
+            # 4. Thêm số thứ tự No. vào vị trí đầu tiên
+            df_out.insert(0, "No.", range(1, len(df_out) + 1))
+            
+            # 5. Khởi tạo lại màu sắc cho bảng mới (đã loại bỏ các cột không còn hiển thị)
+            styled_df = df_out.style \
+                .set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Target Spec", "Current Control Spec"]) \
+                .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[control_col]) \
+                .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[target_col]) \
+                .set_properties(**{'background-color': '#e8f0fe', 'color': '#1a73e8', 'font-weight': 'bold'}, subset=["Actual YS", "Actual TS", "Actual EL"]) \
+                .set_properties(**{'text-align': 'center', 'font-weight': 'bold'}, subset=["No."])
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
+            # 6. Chuẩn bị file Excel để download (Giữ nguyên cấu trúc đã sắp xếp)
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_out.to_excel(writer, index=False, sheet_name='Master_Dictionary')
+                
+                # Auto-fit độ rộng cột sơ bộ cho Excel
+                worksheet = writer.sheets['Master_Dictionary']
+                worksheet.set_column('A:A', 5)
+                worksheet.set_column('B:L', 15)
+
             st.download_button("📥 Download Master Dictionary", output.getvalue(), "Master_Dictionary.xlsx")
         else:
             st.warning("⚠️ No groups matched the criteria (Check Min Coils or Hardness data).")
