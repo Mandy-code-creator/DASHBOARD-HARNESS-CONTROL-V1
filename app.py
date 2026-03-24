@@ -1772,18 +1772,18 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 st.markdown(f"### 📈 Distribution Analysis: {mat_name} {safe_gauge_name}")
                 tab_all, tab_m1m4 = st.tabs(["📊 All 4 Methods", "📊 M1 vs M4 Only"])
 
-                # SỬA LỖI ĐỒNG BỘ: Tính toán giới hạn trục X (±2) và Bins (30) giống hệt view Hardness Analysis
                 min_cands = [m1_min, m2_min, m3_min, m4_min, data.min()]
                 max_cands = [m1_max, m2_max, m3_max, m4_max, data.max()]
                 if spec_min > 0: min_cands.append(spec_min)
                 if display_max > 0: max_cands.append(display_max)
                 
-                min_limit = min(min_cands) - 2  # Đổi từ - 4 thành - 2
-                max_limit = max(max_cands) + 2  # Đổi từ + 4 thành + 2
+                min_limit = min(min_cands) - 2 
+                max_limit = max(max_cands) + 2 
                 x_axis = np.linspace(min_limit, max_limit, 500)
                 
-                # Tạo dải bin cố định 30 cột
+                # TÍNH ĐỘ RỘNG CỘT ĐỂ NHÂN SCALING CHO ĐƯỜNG CONG
                 shared_bins = np.linspace(min_limit, max_limit, 30)
+                bin_width = shared_bins[1] - shared_bins[0] 
 
                 with tab_all:
                     st.markdown("**1. Distribution vs ALL 4 Control Methods & Old Target**")
@@ -1791,15 +1791,16 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     fig_all.patch.set_facecolor('white')
                     ax_all.set_facecolor('white')
 
-                    # Truyền shared_bins vào thay vì bins=15
-                    sns.histplot(data, stat='density', bins=shared_bins, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_all)
+                    # ĐỔI stat='density' THÀNH stat='count'
+                    sns.histplot(data, stat='count', bins=shared_bins, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_all)
                     if not data_lab.empty:
-                        sns.histplot(data_lab, stat='density', bins=shared_bins, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax_all)
+                        sns.histplot(data_lab, stat='count', bins=shared_bins, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax_all)
 
-                    ax_all.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color='#1f77b4', lw=2.5, label='Normal Curve (LINE)')
+                    # NHÂN TỶ LỆ CHO ĐƯỜNG CONG Normal Curve
+                    ax_all.plot(x_axis, norm.pdf(x_axis, mu, std_dev) * len(data) * bin_width, color='#1f77b4', lw=2.5, label='Normal Curve (LINE)')
                     if not data_lab.empty and len(data_lab) > 1:
                         mu_lab, std_lab = data_lab.mean(), data_lab.std()
-                        ax_all.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab), color='#d62728', lw=2.5, linestyle='-.', label='Normal Curve (LAB)')
+                        ax_all.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab) * len(data_lab) * bin_width, color='#d62728', lw=2.5, linestyle='-.', label='Normal Curve (LAB)')
 
                     if spec_min > 0:
                         ax_all.axvline(spec_min, color='black', linestyle='-', linewidth=2.5, label=f'Old Target ({spec_min:.1f}~{display_max:.1f})')
@@ -1817,7 +1818,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     ax_all.set_xlim(min_limit, max_limit)
                     ax_all.set_title(f"Limits Comparison: All 4 Methods - {mat_name} {safe_gauge_name}", fontsize=12, fontweight='bold', color='#333333')
                     ax_all.set_xlabel("Hardness (HRB)", fontweight='bold')
-                    ax_all.set_ylabel("Density", fontweight='bold')
+                    ax_all.set_ylabel("Number of Coils", fontweight='bold') # ĐỔI NHÃN TRỤC Y
                     ax_all.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=9)
                     ax_all.grid(axis='y', linestyle=':', alpha=0.5)
 
@@ -1830,14 +1831,15 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     fig_m1m4.patch.set_facecolor('white')
                     ax_m1m4.set_facecolor('white')
 
-                    # Tương tự, dùng shared_bins ở đây
-                    sns.histplot(data, stat='density', bins=shared_bins, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_m1m4)
+                    # ĐỔI stat='count'
+                    sns.histplot(data, stat='count', bins=shared_bins, color='#aec7e8', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_m1m4)
                     if not data_lab.empty:
-                        sns.histplot(data_lab, stat='density', bins=shared_bins, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax_m1m4)
+                        sns.histplot(data_lab, stat='count', bins=shared_bins, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax_m1m4)
 
-                    ax_m1m4.plot(x_axis, norm.pdf(x_axis, mu, std_dev), color='#1f77b4', lw=2.5, label='Normal Curve (LINE)')
+                    # NHÂN TỶ LỆ CHO ĐƯỜNG CONG
+                    ax_m1m4.plot(x_axis, norm.pdf(x_axis, mu, std_dev) * len(data) * bin_width, color='#1f77b4', lw=2.5, label='Normal Curve (LINE)')
                     if not data_lab.empty and len(data_lab) > 1:
-                        ax_m1m4.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab), color='#d62728', lw=2.5, linestyle='-.', label='Normal Curve (LAB)')
+                        ax_m1m4.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab) * len(data_lab) * bin_width, color='#d62728', lw=2.5, linestyle='-.', label='Normal Curve (LAB)')
 
                     if spec_min > 0:
                         ax_m1m4.axvline(spec_min, color='black', linestyle='-', linewidth=2.5, label=f'Old Target ({spec_min:.1f}~{display_max:.1f})')
@@ -1851,7 +1853,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     ax_m1m4.set_xlim(min_limit, max_limit)
                     ax_m1m4.set_title(f"Limits Comparison: M1 vs M4 - {mat_name} {safe_gauge_name}", fontsize=12, fontweight='bold', color='#333333')
                     ax_m1m4.set_xlabel("Hardness (HRB)", fontweight='bold')
-                    ax_m1m4.set_ylabel("Density", fontweight='bold')
+                    ax_m1m4.set_ylabel("Number of Coils", fontweight='bold') # ĐỔI NHÃN TRỤC Y
                     ax_m1m4.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=9)
                     ax_m1m4.grid(axis='y', linestyle=':', alpha=0.5)
 
