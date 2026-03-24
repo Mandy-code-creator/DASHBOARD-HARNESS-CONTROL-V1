@@ -390,14 +390,14 @@ if view_mode == "👑 Master Dictionary Export":
         if master_data:
             df_out = pd.DataFrame(master_data)
             
-            # 1. Sắp xếp dữ liệu theo Material và Gauge Range để gom nhóm "cùng vật liệu, cùng độ dày"
-            df_out = df_out.sort_values(by=["Material", "Gauge Range"]).reset_index(drop=True)
+            # 1. Sắp xếp ưu tiên: Loại mạ (Metallic Type) -> Vật liệu (Material) -> Độ dày (Gauge Range)
+            df_out = df_out.sort_values(by=["Metallic Type", "Material", "Gauge Range"]).reset_index(drop=True)
             
             # Xác định tên cột động
             target_col = f"🎯 Target ({target_k}σ)"
             control_col = f"🚧 Proposed Control Limit ({control_k}σ)"
             
-            # 2. Định nghĩa danh sách các cột theo đúng thứ tự bạn yêu cầu
+            # 2. Định nghĩa danh sách các cột theo đúng thứ tự
             desired_columns = [
                 "Material", 
                 "Quality Group", 
@@ -418,7 +418,7 @@ if view_mode == "👑 Master Dictionary Export":
             # 4. Thêm số thứ tự No. vào vị trí đầu tiên
             df_out.insert(0, "No.", range(1, len(df_out) + 1))
             
-            # 5. Khởi tạo lại màu sắc cho bảng mới (đã loại bỏ các cột không còn hiển thị)
+            # 5. Khởi tạo lại màu sắc cho bảng hiển thị trên web
             styled_df = df_out.style \
                 .set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Target Spec", "Current Control Spec"]) \
                 .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[control_col]) \
@@ -428,7 +428,7 @@ if view_mode == "👑 Master Dictionary Export":
             
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
-            # 6. Chuẩn bị file Excel để download (Giữ nguyên cấu trúc đã sắp xếp)
+            # 6. Chuẩn bị file Excel để download
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_out.to_excel(writer, index=False, sheet_name='Master_Dictionary')
