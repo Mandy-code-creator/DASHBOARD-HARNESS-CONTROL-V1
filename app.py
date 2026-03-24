@@ -1018,7 +1018,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     if std_line > 0:
                         ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
                         ys_line_scaled = ys_line * len(line) * bin_width
-                        ax2.plot(xs, ys_line_scaled, linewidth=2.5, color="#004085", label="LINE Fit") # Xanh đậm
+                        ax2.plot(xs, ys_line_scaled, linewidth=2.5, color="#004085", label="LINE Fit") 
                     
                     ax2.axvline(lo, linestyle="--", linewidth=2, color="red", label="Target LSL")
                     ax2.axvline(hi, linestyle="--", linewidth=2, color="red", label="Target USL")
@@ -1029,15 +1029,41 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     ax2.set_xlim(x_min_sync, x_max_sync)
                     ax2.set_title(f"Hardness Distribution (LINE vs LAB) - {g['Material']}", weight="bold")
                     ax2.set_ylabel("Number of Coils", fontweight="bold")
-                    ax2.legend()
+                    ax2.legend(loc='upper right') # Cố định legend ở góc phải để nhường góc trái cho TextBox
                     ax2.grid(alpha=0.3)
-                    st.pyplot(fig2)
-                    plt.close(fig2)
-
-                    st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
+                    
+                    # ==========================================
+                    # THÊM TEXT BOX CHỨA CHỈ SỐ SPC LÊN BIỂU ĐỒ
+                    # ==========================================
                     if spc_line:
                         mean_val, std_val, cp_val, ca_val, cpk_val = spc_line
                         eval_msg = "Excellent" if cpk_val >= 1.33 else ("Good" if cpk_val >= 1.0 else "Poor")
+                        
+                        # Định dạng nội dung chuỗi Text
+                        spc_text = (
+                            f"SPC Indices (LINE):\n"
+                            f"N = {len(line)}\n"
+                            f"Mean = {mean_val:.2f}\n"
+                            f"Std = {std_val:.2f}\n"
+                            f"Cp = {cp_val:.2f}\n"
+                            f"Ca = {ca_val:.2f}%\n"
+                            f"Cpk = {cpk_val:.2f}\n"
+                            f"Rating: {eval_msg}"
+                        )
+                        
+                        # Cấu hình khung viền (bbox) cho Text
+                        props = dict(boxstyle='round,pad=0.5', facecolor='#f8f9fa', alpha=0.9, edgecolor='#ced4da')
+                        
+                        # Đặt Text ở tọa độ góc trên bên trái (x=0.02, y=0.95 so với khung hình)
+                        ax2.text(0.02, 0.96, spc_text, transform=ax2.transAxes, fontsize=10,
+                                 verticalalignment='top', bbox=props, family='monospace')
+                    
+                    st.pyplot(fig2)
+                    plt.close(fig2)
+
+                    # BẢNG DỮ LIỆU CHI TIẾT BÊN DƯỚI (Vẫn giữ lại để dễ copy/nhìn)
+                    st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
+                    if spc_line:
                         color_code = "green" if cpk_val >= 1.33 else ("orange" if cpk_val >= 1.0 else "red")
                         df_spc = pd.DataFrame([{"N": len(line), "Mean": mean_val, "Std": std_val, "Cp": cp_val, "Ca (%)": ca_val, "Cpk": cpk_val, "Rating": eval_msg}])
                         
@@ -1051,7 +1077,6 @@ for i, (_, g) in enumerate(valid.iterrows()):
                             styled_spc = styled_spc.applymap(style_rating, subset=['Rating'])
                             
                         st.dataframe(styled_spc, hide_index=True)
-
     # ==============================================================================
     # 5. CORRELATION
     # ==============================================================================
