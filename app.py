@@ -370,10 +370,14 @@ if view_mode == "👑 Master Dictionary Export":
                 cur_c_min = group['Lab_Min'].max() if 'Lab_Min' in group.columns else 0
                 cur_c_max = group['Lab_Max'].min() if 'Lab_Max' in group.columns else 0
 
-                # LÔGIC MỚI: Nếu Control Spec không có (hoặc bằng 0), thì lấy Target Spec đắp vào
+                # LÔGIC MỚI ĐÃ SỬA CHỮA:
+                # Nếu không có giới hạn Control riêng (chỉ có 1 giới hạn từ Excel)
                 if cur_c_min <= 0 and cur_c_max <= 0:
-                    cur_c_min = cur_t_min
-                    cur_c_max = cur_t_max
+                    str_control = format_range(cur_t_min, cur_t_max)
+                    str_target = "N/A"
+                else:
+                    str_control = format_range(cur_c_min, cur_c_max)
+                    str_target = format_range(cur_t_min, cur_t_max)
 
                 row = {
                     "Specs": specs_str, 
@@ -383,7 +387,8 @@ if view_mode == "👑 Master Dictionary Export":
                     "Material": keys[3],
                     "Gauge Range": keys[4],
                     "N Coils": len(group),
-                    "Current Control Spec": format_range(cur_c_min, cur_c_max),
+                    "Current Target Spec": str_target,
+                    "Current Control Spec": str_control,
                     f"🚧 Proposed Control Limit ({control_k}σ)": format_range(c_min_p, c_max_p),
                     f"🎯 Target ({target_k}σ)": format_range(t_min, t_max),
                     "YS Spec": f"≥{s_ys_min:.0f}",
@@ -404,12 +409,13 @@ if view_mode == "👑 Master Dictionary Export":
             target_col = f"🎯 Target ({target_k}σ)"
             control_col = f"🚧 Proposed Control Limit ({control_k}σ)"
             
-            # 2. Định nghĩa danh sách cột xuất ra
+            # 2. Định nghĩa danh sách cột xuất ra (Đã phục hồi Current Target Spec)
             desired_columns = [
                 "Material", 
                 "Quality Group", 
                 "Metallic Type", 
                 "Gauge Range", 
+                "Current Target Spec",
                 "Current Control Spec", 
                 control_col, 
                 target_col, 
@@ -425,7 +431,7 @@ if view_mode == "👑 Master Dictionary Export":
             df_out.insert(0, "No.", range(1, len(df_out) + 1))
             
             styled_df = df_out.style \
-                .set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Control Spec"]) \
+                .set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Target Spec", "Current Control Spec"]) \
                 .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[control_col]) \
                 .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[target_col]) \
                 .set_properties(**{'background-color': '#f8f9fa', 'color': '#6c757d'}, subset=["YS Spec", "TS Spec", "EL Spec"]) \
@@ -439,7 +445,7 @@ if view_mode == "👑 Master Dictionary Export":
                 df_out.to_excel(writer, index=False, sheet_name='Master_Dictionary')
                 worksheet = writer.sheets['Master_Dictionary']
                 worksheet.set_column('A:A', 5)
-                worksheet.set_column('B:N', 15)
+                worksheet.set_column('B:O', 15)
 
             st.download_button("📥 Download Master Dictionary", output.getvalue(), "Master_Dictionary.xlsx")
         else:
@@ -998,13 +1004,21 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     range_curve = max(5 * std_line, (x_max - x_min)/2)
                     xs = np.linspace(mean_line - range_curve, mean_line + range_curve, 400)
                     
+                    # TÍNH TOÁN ĐỘ RỘNG CỘT
+                    bin_width = bins[1] - bins[0]
+                    
                     fig2, ax2 = plt.subplots(figsize=(10, 5))
-                    ax2.hist(line, bins=bins, density=True, alpha=0.6, color="#ff7f0e", edgecolor="white", label="LINE Hist")
-                    if not lab.empty: ax2.hist(lab, bins=bins, density=True, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
+                    
+                    # SỬA density=False ĐỂ HIỂN THỊ SỐ LƯỢNG
+                    ax2.hist(line, bins=bins, density=False, alpha=0.6, color="#ff7f0e", edgecolor="white", label="LINE Hist")
+                    if not lab.empty: 
+                        ax2.hist(lab, bins=bins, density=False, alpha=0.3, color="#1f77b4", edgecolor="None", label="LAB Hist")
                     
                     if std_line > 0:
+                        # TÍNH ĐƯỜNG CONG VÀ NHÂN TỶ LỆ (SCALING)
                         ys_line = (1/(std_line*np.sqrt(2*np.pi))) * np.exp(-0.5*((xs-mean_line)/std_line)**2)
-                        ax2.plot(xs, ys_line, linewidth=2.5, color="#b25e00", label="LINE Fit")
+                        ys_line_scaled = ys_line * len(line) * bin_width
+                        ax2.plot(xs, ys_line_scaled, linewidth=2.5, color="#b25e00", label="LINE Fit")
                     
                     ax2.axvline(lo, linestyle="--", linewidth=2, color="red", label="Target LSL")
                     ax2.axvline(hi, linestyle="--", linewidth=2, color="red", label="Target USL")
@@ -1014,11 +1028,11 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     
                     ax2.set_xlim(x_min, x_max)
                     ax2.set_title(f"Hardness Distribution (LINE vs LAB) - {g['Material']}", weight="bold")
+                    ax2.set_ylabel("Number of Coils", fontweight="bold") # ĐỔI TÊN TRỤC Y
                     ax2.legend()
                     ax2.grid(alpha=0.3)
                     st.pyplot(fig2)
                     plt.close(fig2)
-
                     st.markdown("#### 📐 SPC Capability Indices (LINE ONLY)")
                     if spc_line:
                         mean_val, std_val, cp_val, ca_val, cpk_val = spc_line
