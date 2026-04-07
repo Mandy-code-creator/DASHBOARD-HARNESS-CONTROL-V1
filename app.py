@@ -255,202 +255,129 @@ valid = cnt[cnt["N_Coils"] >= 30]
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (RESTORED ALL HARDNESS CONTROL LIMITS)
+# 9. MASTER DICTIONARY EXPORT (FINAL LAYOUT AS PER IMAGE_319B6B)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
     from io import BytesIO
-    import numpy as np
-    import pandas as pd
-    from sklearn.linear_model import LinearRegression
 
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary")
+    st.caption("Bảng thống kê danh sách giới hạn kiểm soát dựa trên điều kiện lọc và năng lực quy trình thực tế.")
     
     col_sig1, col_sig2, col_sig3 = st.columns(3)
     with col_sig1:
-        target_k = st.number_input("🎯 Proposed Target Zone (σ)", value=1.0, step=0.1, key="k_target")
+        target_k = st.number_input("🎯 Target Zone (σ)", value=1.0, step=0.1, key="k_target")
     with col_sig2:
         control_k = st.number_input("🚧 Proposed Control Limit (σ)", value=2.0, step=0.5, key="k_control")
     with col_sig3:
         min_coils_req = st.number_input("📦 Min Coils Required", value=30, step=1, key="min_coils")
 
     if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
-        if 'df_master_full' in locals() and not df_master_full.empty:
-            raw_source = df_master_full.copy()
-        elif 'df' in locals() and not df.empty:
-            raw_source = df.copy()
-        else:
-            st.error("❌ Source data not found.")
-            st.stop()
-
-        source_df = raw_source.loc[:, ~raw_source.columns.duplicated()].copy()
-        source_df.columns = source_df.columns.astype(str).str.strip()
+        # Lấy nguồn dữ liệu từ df_master_full (đã được định nghĩa ở phần đầu App)
+        source_df = df_master_full.copy()
         
-        candidates = ["Product_Spec", "PRODUCT SPECIFICATION CODE", "PRODUCT_SPEC", "SPEC CODE", "SPECIFICATION CODE"]
-        found_spec_col = None
-        for col in source_df.columns:
-            if col.upper() in [c.upper() for c in candidates]:
-                found_spec_col = col
-                break
-                
-        if found_spec_col:
-            source_df.rename(columns={found_spec_col: "SPEC_CODE_INTERNAL"}, inplace=True)
-        else:
-            source_df["SPEC_CODE_INTERNAL"] = "N/A"
-
-        source_df.rename(columns={"TENSILE_TENSILE": "TS", "TENSILE_YIELD": "YS", "TENSILE_ELONG": "EL"}, inplace=True)
-
-        if "Hardness_LINE" not in source_df.columns:
-            for c in ["HARDNESS 鍍鋅線 N", "HARDNESS 鍍鋅線 C", "HARDNESS 鍍鋅線 S"]:
-                if c in source_df.columns:
-                    source_df["Hardness_LINE"] = source_df[c]
-                    break
-
+        # Tiền xử lý dữ liệu để tính toán
         req_cols = ['Hardness_LINE', 'TS', 'YS', 'EL']
-        for c in req_cols:
-            if c in source_df.columns:
-                source_df[c] = pd.to_numeric(source_df[c], errors='coerce')
-
         clean_master_df = source_df.dropna(subset=req_cols).copy()
         clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
-        clean_master_df["SPEC_CODE_INTERNAL"] = clean_master_df["SPEC_CODE_INTERNAL"].astype(str).replace(['nan', 'None', ''], 'N/A')
         
         master_data = []
-        group_cols = ['Rolling_Type', 'Metallic_Type', 'Quality_Group', 'Material', 'Gauge_Range']
+        # Nhóm theo các điều kiện lọc chính
+        group_cols = ['Quality_Group', 'Metallic_Type', 'Material', 'Gauge_Range']
         
-        # --- HÀM XỬ LÝ LÀM TRÒN SỐ (Làm tròn nguyên, >= .5 thì lên) ---
-        def format_hrb(val):
-            if pd.isna(val): return "0"
+        def format_hrb_val(val):
+            if pd.isna(val) or val <= 0: return ""
             return str(int(float(val) + 0.5))
 
-        def format_range(vmin, vmax):
-            if vmax > 0 and vmin > 0: return f"{format_hrb(vmin)}~{format_hrb(vmax)}"
-            if vmin > 0: return f"≥{format_hrb(vmin)}"
-            if vmax > 0: return f"≤{format_hrb(vmax)}"
+        def format_hrb_range(vmin, vmax):
+            v_min_str = format_hrb_val(vmin)
+            v_max_str = format_hrb_val(vmax)
+            if v_min_str and v_max_str: return f"{v_min_str}~{v_max_str}"
+            if v_min_str: return f"≥{v_min_str}"
+            if v_max_str: return f"≤{v_max_str}"
             return "N/A"
 
-        with st.spinner("Processing Data with Control Limits..."):
+        with st.spinner("Đang tính toán giới hạn kiểm soát..."):
+            # Duyệt qua từng nhóm sản phẩm
             for keys, group in clean_master_df.groupby(group_cols, observed=True):
                 if len(group) < min_coils_req: continue 
                 
+                # --- Tính toán SPC (M4: I-MR Logic) ---
                 hrb = group["Hardness_LINE"]
                 mu = hrb.mean()
-                sigma_imr = np.mean(np.abs(np.diff(hrb.values))) / 1.128 if len(hrb) > 1 else 1.0
-                if pd.isna(sigma_imr) or sigma_imr <= 0: sigma_imr = 1.0
+                mrs = np.abs(np.diff(hrb.values))
+                sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else hrb.std()
                 
-                c_min_p, c_max_p = mu - control_k * sigma_imr, mu + control_k * sigma_imr
-                t_min, t_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
-                
-                X = group[["Hardness_LINE"]].values
-                m_ts = LinearRegression().fit(X, group["TS"].values)
-                m_ys = LinearRegression().fit(X, group["YS"].values)
-                m_el = LinearRegression().fit(X, group["EL"].values)
+                # Tính Proposed Limits
+                p_ctrl_min, p_ctrl_max = mu - control_k * sigma_imr, mu + control_k * sigma_imr
+                p_target_min, p_target_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
 
-                ts_p = sorted([m_ts.predict([[t_min]])[0], m_ts.predict([[t_max]])[0]])
-                ys_p = sorted([m_ys.predict([[t_min]])[0], m_ys.predict([[t_max]])[0]])
-                el_p = sorted([m_el.predict([[t_min]])[0], m_el.predict([[t_max]])[0]])
+                # --- Lấy Spec hiện tại ---
+                cur_target_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
+                cur_target_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
+                cur_control_min = group['Lab_Min'].max() if 'Lab_Min' in group.columns else 0
+                cur_control_max = group['Lab_Max'].min() if 'Lab_Max' in group.columns else 0
 
-                actual_in = group[(group['Hardness_LINE'] >= t_min) & (group['Hardness_LINE'] <= t_max)]
+                # --- Lấy Cơ tính Tiêu chuẩn ---
+                s_ts_min = group["Standard TS min"].max() if "Standard TS min" in group.columns else 0
+                s_ys_min = group["Standard YS min"].max() if "Standard YS min" in group.columns else 0
+                s_el_min = group["Standard EL min"].max() if "Standard EL min" in group.columns else 0
+
+                # --- Lấy Cơ tính Thực tế (Trong vùng Target Zone mới) ---
+                actual_in = group[(group['Hardness_LINE'] >= p_target_min) & (group['Hardness_LINE'] <= p_target_max)]
                 act_ts = f"{actual_in['TS'].min():.0f}~{actual_in['TS'].max():.0f}" if not actual_in.empty else "N/A"
                 act_ys = f"{actual_in['YS'].min():.0f}~{actual_in['YS'].max():.0f}" if not actual_in.empty else "N/A"
                 act_el = f"{actual_in['EL'].min():.1f}~{actual_in['EL'].max():.1f}" if not actual_in.empty else "N/A"
 
-                s_ts_min = group["Standard TS min"].max() if "Standard TS min" in group.columns else 0
-                s_ys_min = group["Standard YS min"].max() if "Standard YS min" in group.columns else 0
-                s_el_min = group["Standard EL min"].max() if "Standard EL min" in group.columns else 0
-                
-                unique_specs = group["SPEC_CODE_INTERNAL"].dropna().unique()
-                valid_specs = [s for s in unique_specs if s != 'N/A' and s != 'Unknown']
-                specs_str = ", ".join(valid_specs) if valid_specs else "N/A"
-                
-                cur_t_min = group['Limit_Min'].max() if 'Limit_Min' in group.columns else 0
-                cur_t_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
-
-                cur_c_min = group['Lab_Min'].max() if 'Lab_Min' in group.columns else 0
-                cur_c_max = group['Lab_Max'].min() if 'Lab_Max' in group.columns else 0
-
-                # LÔGIC MỚI ĐÃ SỬA CHỮA:
-                # Nếu không có giới hạn Control riêng (chỉ có 1 giới hạn từ Excel)
-                if cur_c_min <= 0 and cur_c_max <= 0:
-                    str_control = format_range(cur_t_min, cur_t_max)
-                    str_target = "N/A"
-                else:
-                    str_control = format_range(cur_c_min, cur_c_max)
-                    str_target = format_range(cur_t_min, cur_t_max)
-
-                row = {
-                    "Specs": specs_str, 
-                    "Rolling Type": keys[0],
+                master_data.append({
+                    "Quality Group": keys[0],
                     "Metallic Type": keys[1],
-                    "Quality Group": keys[2],
-                    "Material": keys[3],
-                    "Gauge Range": keys[4],
-                    "N Coils": len(group),
-                    "Current Target Spec": str_target,
-                    "Current Control Spec": str_control,
-                    f"🚧 Proposed Control Limit ({control_k}σ)": format_range(c_min_p, c_max_p),
-                    f"🎯 Target ({target_k}σ)": format_range(t_min, t_max),
+                    "Material": keys[2],
+                    "Gauge Range": keys[3],
+                    "Current Target Spec": format_hrb_range(cur_target_min, cur_target_max),
+                    "Current Control Spec": format_hrb_range(cur_control_min, cur_control_max),
+                    f"Proposed Control Limit ({control_k}σ)": format_hrb_range(p_ctrl_min, p_ctrl_max),
+                    f"Target ({target_k}σ)": format_hrb_range(p_target_min, p_target_max),
                     "YS Spec": f"≥{s_ys_min:.0f}",
                     "Actual YS": act_ys,
                     "TS Spec": f"≥{s_ts_min:.0f}",
                     "Actual TS": act_ts,
                     "EL Spec": f"≥{s_el_min:.0f}",
                     "Actual EL": act_el
-                }
-                master_data.append(row)
+                })
 
         if master_data:
             df_out = pd.DataFrame(master_data)
-            
-            # 1. Sắp xếp ưu tiên: Loại mạ (Metallic Type) -> Vật liệu (Material) -> Độ dày (Gauge Range)
-            df_out = df_out.sort_values(by=["Metallic Type", "Material", "Gauge Range"]).reset_index(drop=True)
-            
-            target_col = f"🎯 Target ({target_k}σ)"
-            control_col = f"🚧 Proposed Control Limit ({control_k}σ)"
-            
-            # 2. Định nghĩa danh sách cột xuất ra (Đã phục hồi Current Target Spec)
-            desired_columns = [
-                "Material", 
-                "Quality Group", 
-                "Metallic Type", 
-                "Gauge Range", 
-                "Current Target Spec",
-                "Current Control Spec", 
-                control_col, 
-                target_col, 
-                "YS Spec",
-                "Actual YS", 
-                "TS Spec",
-                "Actual TS", 
-                "EL Spec",
-                "Actual EL"
-            ]
-            
-            df_out = df_out[desired_columns]
             df_out.insert(0, "No.", range(1, len(df_out) + 1))
             
+            # --- Hiển thị bảng với màu sắc phân biệt ---
             styled_df = df_out.style \
-                .set_properties(**{'background-color': '#FFF2CC', 'color': '#856404'}, subset=["Current Target Spec", "Current Control Spec"]) \
-                .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[control_col]) \
-                .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724', 'font-weight': 'bold'}, subset=[target_col]) \
-                .set_properties(**{'background-color': '#f8f9fa', 'color': '#6c757d'}, subset=["YS Spec", "TS Spec", "EL Spec"]) \
-                .set_properties(**{'background-color': '#e8f0fe', 'color': '#1a73e8', 'font-weight': 'bold'}, subset=["Actual YS", "Actual TS", "Actual EL"]) \
-                .set_properties(**{'text-align': 'center', 'font-weight': 'bold'}, subset=["No."])
-            
+                .set_properties(**{'background-color': '#f8f9fa', 'color': '#333', 'border': '1px solid #ddd'}) \
+                .set_properties(**{'background-color': '#FFF2CC', 'font-weight': 'bold'}, subset=["Current Target Spec", "Current Control Spec"]) \
+                .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724'}, subset=[f"Target ({target_k}σ)"]) \
+                .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[f"Proposed Control Limit ({control_k}σ)"]) \
+                .set_properties(**{'text-align': 'center'}, subset=df_out.columns)
+
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
+            # --- Xuất file Excel ---
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_out.to_excel(writer, index=False, sheet_name='Master_Dictionary')
+                workbook = writer.book
                 worksheet = writer.sheets['Master_Dictionary']
+                # Định dạng Header
+                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#EFEFEF', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                for col_num, value in enumerate(df_out.columns.values):
+                    worksheet.write(0, col_num, value, header_fmt)
                 worksheet.set_column('A:A', 5)
-                worksheet.set_column('B:O', 15)
+                worksheet.set_column('B:O', 18)
 
-            st.download_button("📥 Download Master Dictionary", output.getvalue(), "Master_Dictionary.xlsx")
+            st.download_button("📥 Download Master Dictionary (Excel)", output.getvalue(), "Master_Dictionary_SPC.xlsx")
         else:
-            st.warning("⚠️ No groups matched the criteria (Check Min Coils or Hardness data).")
-            
+            st.warning("⚠️ Không tìm thấy dữ liệu phù hợp với điều kiện N >= 30. Thử giảm số lượng cuộn yêu cầu.")
+
     st.stop()
 # ==============================================================================
 # 1. EXECUTIVE KPI DASHBOARD (OVERVIEW) - STANDALONE BLOCK
