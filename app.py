@@ -254,7 +254,8 @@ valid = cnt[cnt["N_Coils"] >= 30]
 
 # ==============================================================================
 # ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (ULTIMATE FIX - EXACT LAYOUT)
+# ==============================================================================
+# 9. MASTER DICTIONARY EXPORT (ULTIMATE FIX - EXACT LAYOUT + A108/A108G MERGE)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
@@ -262,7 +263,7 @@ if view_mode == "👑 Master Dictionary Export":
 
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary")
-    st.caption("Bảng thống kê danh sách giới hạn kiểm soát: Gom nhóm thông minh theo Quality, Vật liệu và Độ dày (Tự động gộp GI/GM/GL).")
+    st.caption("Bảng thống kê danh sách giới hạn kiểm soát: Gom nhóm thông minh theo Quality, Vật liệu (Gộp chung A108 & A108G) và Độ dày (Tự động gộp GI/GM/GL).")
     
     col_sig1, col_sig2, col_sig3 = st.columns(3)
     with col_sig1:
@@ -288,6 +289,12 @@ if view_mode == "👑 Master Dictionary Export":
         clean_master_df['Material'] = clean_master_df['Material'].astype(str).str.strip()
         clean_master_df['Gauge_Range'] = clean_master_df['Gauge_Range'].astype(str).str.strip()
         
+        # --- ĐIỀU KIỆN MỚI: GỘP A108 VÀ A108G THÀNH CHUNG 1 NHÓM ---
+        clean_master_df['Material'] = clean_master_df['Material'].replace({
+            'A108': 'A108 / A108G',
+            'A108G': 'A108 / A108G'
+        })
+        
         # --- LOGIC GOM NHÓM: CHỈ GROUP THEO 3 CỘT NÀY ---
         master_group_cols = ['Quality_Group', 'Material', 'Gauge_Range']
         
@@ -304,7 +311,7 @@ if view_mode == "👑 Master Dictionary Export":
             for keys, group in clean_master_df.groupby(master_group_cols, observed=True):
                 if len(group) < min_coils_req: continue 
                 
-                # Tự động gom tên các loại mạ (VD: "GI / GM / GL")
+                # Tự động gom tên các loại mạ (VD: "GI / GL / GM")
                 metals = [str(m).strip() for m in group["Metallic_Type"].unique() if str(m).strip() not in ['nan', 'None', '']]
                 metals_included = " / ".join(sorted(metals)) if metals else "N/A"
                 
@@ -383,7 +390,6 @@ if view_mode == "👑 Master Dictionary Export":
             st.warning("⚠️ Không tìm thấy dữ liệu. Vui lòng giảm số lượng 'Min Coils Required' xuống.")
 
     st.stop()
-
 
 # ==============================================================================
 # 1. EXECUTIVE KPI DASHBOARD (OVERVIEW) - STANDALONE BLOCK
