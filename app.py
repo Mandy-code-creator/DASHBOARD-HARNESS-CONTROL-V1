@@ -279,17 +279,35 @@ if view_mode == "👑 Master Dictionary Export":
     if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
         source_df = df_master_full.copy()
         
-        # --- NEW FUNCTION: Separate and Map Specs for each metallic type ---
+        # --- ENHANCED FUNCTION: Extract pure numbers & map specs cleanly ---
         def get_mapped_spec(group_df, spec_col):
+            # Check if column exists in the source data
+            if spec_col not in group_df.columns:
+                return "-"
+                
             temp_df = group_df[['Metallic_Type', spec_col]].copy()
-            temp_df[spec_col] = pd.to_numeric(temp_df[spec_col], errors='coerce')
-            valid_df = temp_df[temp_df[spec_col] > 0].dropna()
+            
+            # Use Regex to extract ONLY the numeric part (ignores '≥', 'Min', spaces)
+            # e.g., '≥ 270' becomes '270'
+            temp_df['numeric_spec'] = temp_df[spec_col].astype(str).str.extract(r'(\d+\.?\d*)')[0]
+            temp_df['numeric_spec'] = pd.to_numeric(temp_df['numeric_spec'], errors='coerce')
+            
+            # Filter valid specs
+            valid_df = temp_df[temp_df['numeric_spec'] > 0].dropna(subset=['numeric_spec'])
             
             if valid_df.empty:
                 return "-"
                 
-            mapping = valid_df.groupby('Metallic_Type')[spec_col].max().to_dict()
+            # Get max spec for each metallic type
+            mapping = valid_df.groupby('Metallic_Type')['numeric_spec'].max().to_dict()
             
+            # Smart display: If all metallic types share the exact same spec, display simply "≥XXX"
+            unique_specs = set(mapping.values())
+            if len(unique_specs) == 1:
+                val = list(unique_specs)[0]
+                return f"≥{val:.0f}"
+            
+            # If they differ, display mapped text "GL: ≥450 | GM: ≥500"
             spec_to_metals = {}
             for metal, spec_val in mapping.items():
                 if spec_val not in spec_to_metals:
