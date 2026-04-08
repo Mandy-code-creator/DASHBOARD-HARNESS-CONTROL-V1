@@ -449,7 +449,7 @@ if view_mode == "👑 Master Dictionary Export":
 
         if master_data:
             df_out = pd.DataFrame(master_data)
-            df_out = df_out.sort_values(by=["Quality Group", "Material", "Gauge Range"]).reset_index(drop=True)
+            df_out = df_out.sort_values(by=["Quality Group", "Metallic Type", "Material", "Gauge Range"]).reset_index(drop=True)
             df_out.insert(0, "No.", range(1, len(df_out) + 1))
             
             # --- DISPLAY TABLE ---
