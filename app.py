@@ -283,13 +283,26 @@ if view_mode == "👑 Master Dictionary Export":
         # --- 1. REMOVE GF (Out of production) ---
         source_df = source_df[source_df['Metallic_Type'].astype(str).str.strip().str.upper() != 'GF']
         
-        # --- 2. CREATE METAL GROUPING LOGIC ---
+        # --- 2. MERGE QUALITY GROUPS: GE00 & GE01 ---
+        # Chuyển GE01 thành GE00 / GE01 để chúng về cùng 1 nhóm khi groupby
+        source_df['Quality_Group'] = source_df['Quality_Group'].astype(str).str.strip()
+        source_df['Quality_Group'] = source_df['Quality_Group'].replace({
+            'GE00': 'GE00 / GE01',
+            'GE01': 'GE00 / GE01'
+        })
+
+        # --- 3. MERGE MATERIALS: A108 & A108G ---
+        source_df['Material'] = source_df['Material'].astype(str).str.strip()
+        source_df['Material'] = source_df['Material'].replace({
+            'A108': 'A108 / A108G',
+            'A108G': 'A108 / A108G'
+        })
+        
+        # --- 4. CREATE METAL GROUPING LOGIC (GI/GM vs GL) ---
         def map_metallic_group(m):
             m_str = str(m).strip().upper()
-            if 'GL' in m_str: 
-                return 'GL'
-            if any(x in m_str for x in ['GI', 'GM']): 
-                return 'GI / GM'
+            if 'GL' in m_str: return 'GL'
+            if any(x in m_str for x in ['GI', 'GM']): return 'GI / GM'
             return m_str
 
         source_df['Metal_Category'] = source_df['Metallic_Type'].apply(map_metallic_group)
