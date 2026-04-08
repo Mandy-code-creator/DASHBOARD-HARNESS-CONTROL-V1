@@ -255,7 +255,8 @@ valid = cnt[cnt["N_Coils"] >= 30]
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (ULTIMATE FIX - EXACT LAYOUT + A108/A108G MERGE)
+# ==============================================================================
+# 9. MASTER DICTIONARY EXPORT (ULTIMATE FIX - REMOVE GF + GI/GM MERGE + GL SEPARATE)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
@@ -266,7 +267,7 @@ if view_mode == "👑 Master Dictionary Export":
 
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary")
-    st.caption("Control limits summary: Smart grouping by Quality and Material (A108 & A108G merged). Detailed Specs are mapped by metallic type within a single cell to prevent false warnings.")
+    st.caption("Control limits summary: Smart grouping by Quality, Material, and Metallic Category (GI/GM grouped together, GL separated). GF is excluded from production data.")
     
     col_sig1, col_sig2, col_sig3 = st.columns(3)
     with col_sig1:
@@ -279,68 +280,76 @@ if view_mode == "👑 Master Dictionary Export":
     if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
         source_df = df_master_full.copy()
         
-        # --- ULTIMATE FUNCTION: Quét cả Min & Max, tự động định dạng dấu ---
+        # --- 1. REMOVE GF (Out of production) ---
+        source_df = source_df[source_df['Metallic_Type'].str.strip().upper() != 'GF']
+        
+        # --- 2. CREATE METAL GROUPING LOGIC ---
+        def map_metallic_group(m):
+            m_str = str(m).strip().upper()
+            if 'GL' in m_str: 
+                return 'GL'
+            if any(x in m_str for x in ['GI', 'GM']): 
+                return 'GI / GM'
+            return m_str
+
+        source_df['Metal_Category'] = source_df['Metallic_Type'].apply(map_metallic_group)
+
+        # --- 3. ULTIMATE FUNCTION 2.0: Range Display & Smart Prefix ---
         def get_mapped_spec_range(group_df, min_col, max_col):
             temp_df = group_df[['Metallic_Type']].copy()
             
-            # Lấy và làm sạch cột Min (Nếu không có cột này trong file thì mặc định là 0)
+            # Extract Min
             if min_col in group_df.columns:
                 temp_df['min_val'] = group_df[min_col].astype(str).str.extract(r'(\d+\.?\d*)')[0]
                 temp_df['min_val'] = pd.to_numeric(temp_df['min_val'], errors='coerce').fillna(0)
             else:
                 temp_df['min_val'] = 0
                 
-            # Lấy và làm sạch cột Max (Nếu không có cột này trong file thì mặc định là 0)
+            # Extract Max
             if max_col in group_df.columns:
                 temp_df['max_val'] = group_df[max_col].astype(str).str.extract(r'(\d+\.?\d*)')[0]
                 temp_df['max_val'] = pd.to_numeric(temp_df['max_val'], errors='coerce').fillna(0)
             else:
                 temp_df['max_val'] = 0
 
-            # Hàm con để quyết định định dạng cho từng dòng
-            def format_range(row):
-                min_v = row['min_val']
-                max_v = row['max_val']
-                if min_v > 0 and max_v > 0:
-                    return f"{min_v:.0f}~{max_v:.0f}"
-                elif min_v > 0:
-                    return f"≥{min_v:.0f}"
-                elif max_v > 0:
-                    return f"≤{max_v:.0f}"
-                else:
-                    return None
-
-            temp_df['spec_str'] = temp_df.apply(format_range, axis=1)
-            
-            # Lọc bỏ những dòng không có spec nào cả
-            valid_df = temp_df.dropna(subset=['spec_str'])
-            
+            valid_df = temp_df[(temp_df['min_val'] > 0) | (temp_df['max_val'] > 0)]
             if valid_df.empty:
                 return "-"
                 
-            # Gom nhóm theo loại mạ (Metallic Type)
             mapping = {}
             for _, row in valid_df.iterrows():
                 metal = str(row['Metallic_Type']).strip()
-                spec = row['spec_str']
                 if metal not in mapping:
-                    mapping[metal] = set()
-                mapping[metal].add(spec)
-                
-            # Đảo ngược Dict để gộp các loại mạ có chung spec (VD: GI và GL đều có spec ≥270)
+                    mapping[metal] = {'mins': set(), 'maxs': set()}
+                if row['min_val'] > 0: mapping[metal]['mins'].add(row['min_val'])
+                if row['max_val'] > 0: mapping[metal]['maxs'].add(row['max_val'])
+
             spec_to_metals = {}
-            for metal, specs in mapping.items():
-                # Nếu 1 loại mạ có nhiều mác với spec khác nhau, nối bằng 'or'
-                spec_joined = " or ".join(sorted(list(specs))) 
-                if spec_joined not in spec_to_metals:
-                    spec_to_metals[spec_joined] = []
-                spec_to_metals[spec_joined].append(metal)
+            for metal, vals in mapping.items():
+                mins = sorted(list(vals['mins']))
+                maxs = sorted(list(vals['maxs']))
                 
-            # Hiển thị thông minh: Nếu tất cả các loại mạ dùng chung 1 chuẩn
+                # Format smartly
+                spec_str = ""
+                if mins and not maxs:
+                    spec_str = f"≥{mins[0]:.0f}" if len(mins) == 1 else f"≥{mins[0]:.0f}~{mins[-1]:.0f}"
+                elif maxs and not mins:
+                    spec_str = f"≤{maxs[0]:.0f}" if len(maxs) == 1 else f"≤{maxs[0]:.0f}~{maxs[-1]:.0f}"
+                elif mins and maxs:
+                    if len(mins) == 1 and len(maxs) == 1:
+                        spec_str = f"{mins[0]:.0f}~{maxs[0]:.0f}"
+                    else:
+                        min_disp = f"{mins[0]:.0f}" if len(mins)==1 else f"{mins[0]:.0f}~{mins[-1]:.0f}"
+                        max_disp = f"{maxs[0]:.0f}" if len(maxs)==1 else f"{maxs[0]:.0f}~{maxs[-1]:.0f}"
+                        spec_str = f"Min {min_disp} | Max {max_disp}"
+                        
+                if spec_str not in spec_to_metals:
+                    spec_to_metals[spec_str] = []
+                spec_to_metals[spec_str].append(metal)
+                
             if len(spec_to_metals) == 1:
                 return list(spec_to_metals.keys())[0]
-            
-            # Nếu khác biệt, gộp chi tiết trên 1 dòng
+                
             parts = []
             for spec_val, metals in spec_to_metals.items():
                 metal_str = "/".join(sorted(metals))
@@ -348,7 +357,7 @@ if view_mode == "👑 Master Dictionary Export":
                 
             return " | ".join(parts)
             
-        # Data Pre-processing
+        # --- 4. DATA PRE-PROCESSING ---
         req_cols = ['Hardness_LINE', 'TS', 'YS', 'EL']
         for c in req_cols:
             source_df[c] = pd.to_numeric(source_df[c], errors='coerce')
@@ -356,19 +365,17 @@ if view_mode == "👑 Master Dictionary Export":
         clean_master_df = source_df.dropna(subset=req_cols).copy()
         clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
         
-        # Force string standardization to prevent grouping issues due to whitespaces
         clean_master_df['Quality_Group'] = clean_master_df['Quality_Group'].astype(str).str.strip()
         clean_master_df['Material'] = clean_master_df['Material'].astype(str).str.strip()
         clean_master_df['Gauge_Range'] = clean_master_df['Gauge_Range'].astype(str).str.strip()
         
-        # --- NEW CONDITION: Merge A108 and A108G ---
         clean_master_df['Material'] = clean_master_df['Material'].replace({
             'A108': 'A108 / A108G',
             'A108G': 'A108 / A108G'
         })
         
-        # --- GROUPING LOGIC ---
-        master_group_cols = ['Quality_Group', 'Material', 'Gauge_Range']
+        # --- 5. GROUPING LOGIC (Added Metal_Category) ---
+        master_group_cols = ['Quality_Group', 'Material', 'Gauge_Range', 'Metal_Category']
         
         master_data = []
 
@@ -383,11 +390,10 @@ if view_mode == "👑 Master Dictionary Export":
             for keys, group in clean_master_df.groupby(master_group_cols, observed=True):
                 if len(group) < min_coils_req: continue 
                 
-                # Auto-group metallic types (e.g., "GI / GL / GM")
-                metals = [str(m).strip() for m in group["Metallic_Type"].unique() if str(m).strip() not in ['nan', 'None', '']]
-                metals_included = " / ".join(sorted(metals)) if metals else "N/A"
+                # Display category (e.g., "GI / GM" or "GL")
+                metals_included = keys[3]
                 
-                # Calculate SPC for the combined metallic types
+                # Calculate SPC
                 hrb = group["Hardness_LINE"]
                 mu = hrb.mean()
                 mrs = np.abs(np.diff(hrb.values))
@@ -396,21 +402,21 @@ if view_mode == "👑 Master Dictionary Export":
                 p_ctrl_min, p_ctrl_max = mu - control_k * sigma_imr, mu + control_k * sigma_imr
                 p_target_min, p_target_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
 
-                # Get standard specs (for Hardness)
+                # Hardness Specs
                 cur_t_min = get_safe_max(group['Limit_Min'])
                 cur_t_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
                 cur_c_min = get_safe_max(group['Lab_Min'])
                 cur_c_max = group['Lab_Max'].min() if 'Lab_Max' in group.columns else 0
 
-                # Actual mechanical properties within target zone
+                # Actual properties in target zone
                 actual_in = group[(group['Hardness_LINE'] >= p_target_min) & (group['Hardness_LINE'] <= p_target_max)]
                 
-                # Get mapped specs
+                # Mapped Specs
                 s_ys_spec = get_mapped_spec_range(group, "Standard YS min", "Standard YS max")
                 s_ts_spec = get_mapped_spec_range(group, "Standard TS min", "Standard TS max")
                 s_el_spec = get_mapped_spec_range(group, "Standard EL min", "Standard EL max")
 
-                # Assemble data row
+                # Assemble row
                 master_data.append({
                     "Quality Group": keys[0],
                     "Metallic Type": metals_included, 
@@ -430,7 +436,6 @@ if view_mode == "👑 Master Dictionary Export":
 
         if master_data:
             df_out = pd.DataFrame(master_data)
-            # Sort for clean presentation
             df_out = df_out.sort_values(by=["Quality Group", "Material", "Gauge Range"]).reset_index(drop=True)
             df_out.insert(0, "No.", range(1, len(df_out) + 1))
             
@@ -450,12 +455,10 @@ if view_mode == "👑 Master Dictionary Export":
                 workbook = writer.book
                 worksheet = writer.sheets['Master_Dictionary']
                 
-                # Header formatting
                 header_fmt = workbook.add_format({'bold': True, 'bg_color': '#EFEFEF', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
                 for col_num, value in enumerate(df_out.columns.values):
                     worksheet.write(0, col_num, value, header_fmt)
                 worksheet.set_column('A:A', 5)
-                # Expand column width to fit the mapped text strings
                 worksheet.set_column('B:O', 22) 
 
             st.download_button("📥 Download Master Dictionary (Excel)", output.getvalue(), "Master_Dictionary_SPC_Grouped.xlsx")
