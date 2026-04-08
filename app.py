@@ -281,7 +281,7 @@ if view_mode == "👑 Master Dictionary Export":
         source_df = df_master_full.copy()
         
         # --- 1. REMOVE GF (Out of production) ---
-        source_df = source_df[source_df['Metallic_Type'].str.strip().upper() != 'GF']
+        source_df = source_df[source_df['Metallic_Type'].astype(str).str.strip().str.upper() != 'GF']
         
         # --- 2. CREATE METAL GROUPING LOGIC ---
         def map_metallic_group(m):
