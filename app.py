@@ -406,9 +406,9 @@ if view_mode == "👑 Master Dictionary Export":
                 actual_in = group[(group['Hardness_LINE'] >= p_target_min) & (group['Hardness_LINE'] <= p_target_max)]
                 
                 # Get mapped specs
-                s_ts_spec = get_mapped_spec(group, "Standard TS min")
-                s_ys_spec = get_mapped_spec(group, "Standard YS min")
-                s_el_spec = get_mapped_spec(group, "Standard EL min")
+                s_ys_spec = get_mapped_spec_range(group, "Standard YS min", "Standard YS max")
+                s_ts_spec = get_mapped_spec_range(group, "Standard TS min", "Standard TS max")
+                s_el_spec = get_mapped_spec_range(group, "Standard EL min", "Standard EL max")
 
                 # Assemble data row
                 master_data.append({
