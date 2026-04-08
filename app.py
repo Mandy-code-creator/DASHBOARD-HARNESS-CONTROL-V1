@@ -260,10 +260,13 @@ valid = cnt[cnt["N_Coils"] >= 30]
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
     from io import BytesIO
+    import pandas as pd
+    import numpy as np
+    import streamlit as st
 
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary")
-    st.caption("Bảng thống kê danh sách giới hạn kiểm soát: Gom nhóm thông minh theo Quality, Vật liệu (Gộp chung A108 & A108G) và Độ dày (Tự động gộp GI/GM/GL).")
+    st.caption("Control limits summary: Smart grouping by Quality and Material (A108 & A108G merged). Detailed Specs are mapped by metallic type within a single cell to prevent false warnings.")
     
     col_sig1, col_sig2, col_sig3 = st.columns(3)
     with col_sig1:
@@ -276,7 +279,31 @@ if view_mode == "👑 Master Dictionary Export":
     if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
         source_df = df_master_full.copy()
         
-        # Tiền xử lý dữ liệu
+        # --- NEW FUNCTION: Separate and Map Specs for each metallic type ---
+        def get_mapped_spec(group_df, spec_col):
+            temp_df = group_df[['Metallic_Type', spec_col]].copy()
+            temp_df[spec_col] = pd.to_numeric(temp_df[spec_col], errors='coerce')
+            valid_df = temp_df[temp_df[spec_col] > 0].dropna()
+            
+            if valid_df.empty:
+                return "-"
+                
+            mapping = valid_df.groupby('Metallic_Type')[spec_col].max().to_dict()
+            
+            spec_to_metals = {}
+            for metal, spec_val in mapping.items():
+                if spec_val not in spec_to_metals:
+                    spec_to_metals[spec_val] = []
+                spec_to_metals[spec_val].append(str(metal).strip())
+                
+            parts = []
+            for spec_val, metals in spec_to_metals.items():
+                metal_str = "/".join(sorted(metals))
+                parts.append(f"{metal_str}: ≥{spec_val:.0f}")
+                
+            return " | ".join(parts)
+            
+        # Data Pre-processing
         req_cols = ['Hardness_LINE', 'TS', 'YS', 'EL']
         for c in req_cols:
             source_df[c] = pd.to_numeric(source_df[c], errors='coerce')
@@ -284,18 +311,18 @@ if view_mode == "👑 Master Dictionary Export":
         clean_master_df = source_df.dropna(subset=req_cols).copy()
         clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
         
-        # ÉP BUỘC CHUẨN HÓA CHỮ ĐỂ KHÔNG BỊ TÁCH NHÓM DO KHOẢNG TRẮNG
+        # Force string standardization to prevent grouping issues due to whitespaces
         clean_master_df['Quality_Group'] = clean_master_df['Quality_Group'].astype(str).str.strip()
         clean_master_df['Material'] = clean_master_df['Material'].astype(str).str.strip()
         clean_master_df['Gauge_Range'] = clean_master_df['Gauge_Range'].astype(str).str.strip()
         
-        # --- ĐIỀU KIỆN MỚI: GỘP A108 VÀ A108G THÀNH CHUNG 1 NHÓM ---
+        # --- NEW CONDITION: Merge A108 and A108G ---
         clean_master_df['Material'] = clean_master_df['Material'].replace({
             'A108': 'A108 / A108G',
             'A108G': 'A108 / A108G'
         })
         
-        # --- LOGIC GOM NHÓM: CHỈ GROUP THEO 3 CỘT NÀY ---
+        # --- GROUPING LOGIC ---
         master_group_cols = ['Quality_Group', 'Material', 'Gauge_Range']
         
         master_data = []
@@ -307,15 +334,15 @@ if view_mode == "👑 Master Dictionary Export":
             s = pd.to_numeric(series, errors='coerce').dropna()
             return s.max() if not s.empty else 0
 
-        with st.spinner("Đang thực hiện gom nhóm và tính toán giới hạn..."):
+        with st.spinner("Grouping and calculating statistical limits..."):
             for keys, group in clean_master_df.groupby(master_group_cols, observed=True):
                 if len(group) < min_coils_req: continue 
                 
-                # Tự động gom tên các loại mạ (VD: "GI / GL / GM")
+                # Auto-group metallic types (e.g., "GI / GL / GM")
                 metals = [str(m).strip() for m in group["Metallic_Type"].unique() if str(m).strip() not in ['nan', 'None', '']]
                 metals_included = " / ".join(sorted(metals)) if metals else "N/A"
                 
-                # Tính toán SPC trên TỔNG DATA CỦA CẢ 3 LOẠI MẠ KẾT HỢP
+                # Calculate SPC for the combined metallic types
                 hrb = group["Hardness_LINE"]
                 mu = hrb.mean()
                 mrs = np.abs(np.diff(hrb.values))
@@ -324,45 +351,45 @@ if view_mode == "👑 Master Dictionary Export":
                 p_ctrl_min, p_ctrl_max = mu - control_k * sigma_imr, mu + control_k * sigma_imr
                 p_target_min, p_target_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
 
-                # Lấy Spec chuẩn của nhóm
+                # Get standard specs (for Hardness)
                 cur_t_min = get_safe_max(group['Limit_Min'])
                 cur_t_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
                 cur_c_min = get_safe_max(group['Lab_Min'])
                 cur_c_max = group['Lab_Max'].min() if 'Lab_Max' in group.columns else 0
 
-                # Cơ tính thực tế trong vùng Target mới
+                # Actual mechanical properties within target zone
                 actual_in = group[(group['Hardness_LINE'] >= p_target_min) & (group['Hardness_LINE'] <= p_target_max)]
                 
-                # Lấy cơ tính tiêu chuẩn
-                s_ts_min = get_safe_max(group["Standard TS min"]) if "Standard TS min" in group.columns else 0
-                s_ys_min = get_safe_max(group["Standard YS min"]) if "Standard YS min" in group.columns else 0
-                s_el_min = get_safe_max(group["Standard EL min"]) if "Standard EL min" in group.columns else 0
+                # Get mapped specs
+                s_ts_spec = get_mapped_spec(group, "Standard TS min")
+                s_ys_spec = get_mapped_spec(group, "Standard YS min")
+                s_el_spec = get_mapped_spec(group, "Standard EL min")
 
-                # Lắp ráp dòng dữ liệu ĐÚNG FORMAT HÌNH ẢNH YÊU CẦU
+                # Assemble data row
                 master_data.append({
                     "Quality Group": keys[0],
-                    "Metallic Type": metals_included, # Sẽ hiển thị chung GI / GM / GL
+                    "Metallic Type": metals_included, 
                     "Material": keys[1],
                     "Gauge Range": keys[2],
                     "Current Target Spec": f"{format_hrb(cur_t_min)}~{format_hrb(cur_t_max)}" if cur_t_max < 9000 else f"≥{format_hrb(cur_t_min)}",
                     "Current Control Spec": f"{format_hrb(cur_c_min)}~{format_hrb(cur_c_max)}" if cur_c_max > 0 else "N/A",
                     f"Proposed Control Limit ({control_k}σ)": f"{format_hrb(p_ctrl_min)}~{format_hrb(p_ctrl_max)}",
                     f"Target ({target_k}σ)": f"{format_hrb(p_target_min)}~{format_hrb(p_target_max)}",
-                    "YS Spec": f"≥{s_ys_min:.0f}",
+                    "YS Spec": s_ys_spec,
                     "Actual YS": f"{actual_in['YS'].min():.0f}~{actual_in['YS'].max():.0f}" if not actual_in.empty else "N/A",
-                    "TS Spec": f"≥{s_ts_min:.0f}",
+                    "TS Spec": s_ts_spec,
                     "Actual TS": f"{actual_in['TS'].min():.0f}~{actual_in['TS'].max():.0f}" if not actual_in.empty else "N/A",
-                    "EL Spec": f"≥{s_el_min:.0f}",
+                    "EL Spec": s_el_spec,
                     "Actual EL": f"{actual_in['EL'].min():.1f}~{actual_in['EL'].max():.1f}" if not actual_in.empty else "N/A"
                 })
 
         if master_data:
             df_out = pd.DataFrame(master_data)
-            # Sắp xếp cho gọn gàng đẹp mắt
+            # Sort for clean presentation
             df_out = df_out.sort_values(by=["Quality Group", "Material", "Gauge Range"]).reset_index(drop=True)
             df_out.insert(0, "No.", range(1, len(df_out) + 1))
             
-            # --- HIỂN THỊ BẢNG TRÊN APP ---
+            # --- DISPLAY TABLE ---
             styled_df = df_out.style \
                 .set_properties(**{'background-color': '#f8f9fa', 'color': '#333', 'border': '1px solid #ddd', 'text-align': 'center'}) \
                 .set_properties(**{'background-color': '#FFF2CC', 'font-weight': 'bold'}, subset=["Current Target Spec", "Current Control Spec"]) \
@@ -371,26 +398,26 @@ if view_mode == "👑 Master Dictionary Export":
 
             st.dataframe(styled_df, use_container_width=True, hide_index=True)
             
-            # --- XUẤT EXCEL CHUẨN XÁC ---
+            # --- EXPORT EXCEL ---
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                 df_out.to_excel(writer, index=False, sheet_name='Master_Dictionary')
                 workbook = writer.book
                 worksheet = writer.sheets['Master_Dictionary']
                 
-                # Định dạng Header
+                # Header formatting
                 header_fmt = workbook.add_format({'bold': True, 'bg_color': '#EFEFEF', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
                 for col_num, value in enumerate(df_out.columns.values):
                     worksheet.write(0, col_num, value, header_fmt)
                 worksheet.set_column('A:A', 5)
-                worksheet.set_column('B:O', 18)
+                # Expand column width to fit the mapped text strings
+                worksheet.set_column('B:O', 22) 
 
             st.download_button("📥 Download Master Dictionary (Excel)", output.getvalue(), "Master_Dictionary_SPC_Grouped.xlsx")
         else:
-            st.warning("⚠️ Không tìm thấy dữ liệu. Vui lòng giảm số lượng 'Min Coils Required' xuống.")
+            st.warning("⚠️ No data found. Please reduce the 'Min Coils Required' value.")
 
     st.stop()
-
 # ==============================================================================
 # 1. EXECUTIVE KPI DASHBOARD (OVERVIEW) - STANDALONE BLOCK
 # ==============================================================================
