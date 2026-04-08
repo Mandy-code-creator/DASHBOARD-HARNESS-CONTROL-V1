@@ -279,45 +279,72 @@ if view_mode == "👑 Master Dictionary Export":
     if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
         source_df = df_master_full.copy()
         
-        # --- ENHANCED FUNCTION: Extract pure numbers & map specs cleanly ---
-        def get_mapped_spec(group_df, spec_col):
-            # Check if column exists in the source data
-            if spec_col not in group_df.columns:
-                return "-"
+        # --- ULTIMATE FUNCTION: Quét cả Min & Max, tự động định dạng dấu ---
+        def get_mapped_spec_range(group_df, min_col, max_col):
+            temp_df = group_df[['Metallic_Type']].copy()
+            
+            # Lấy và làm sạch cột Min (Nếu không có cột này trong file thì mặc định là 0)
+            if min_col in group_df.columns:
+                temp_df['min_val'] = group_df[min_col].astype(str).str.extract(r'(\d+\.?\d*)')[0]
+                temp_df['min_val'] = pd.to_numeric(temp_df['min_val'], errors='coerce').fillna(0)
+            else:
+                temp_df['min_val'] = 0
                 
-            temp_df = group_df[['Metallic_Type', spec_col]].copy()
+            # Lấy và làm sạch cột Max (Nếu không có cột này trong file thì mặc định là 0)
+            if max_col in group_df.columns:
+                temp_df['max_val'] = group_df[max_col].astype(str).str.extract(r'(\d+\.?\d*)')[0]
+                temp_df['max_val'] = pd.to_numeric(temp_df['max_val'], errors='coerce').fillna(0)
+            else:
+                temp_df['max_val'] = 0
+
+            # Hàm con để quyết định định dạng cho từng dòng
+            def format_range(row):
+                min_v = row['min_val']
+                max_v = row['max_val']
+                if min_v > 0 and max_v > 0:
+                    return f"{min_v:.0f}~{max_v:.0f}"
+                elif min_v > 0:
+                    return f"≥{min_v:.0f}"
+                elif max_v > 0:
+                    return f"≤{max_v:.0f}"
+                else:
+                    return None
+
+            temp_df['spec_str'] = temp_df.apply(format_range, axis=1)
             
-            # Use Regex to extract ONLY the numeric part (ignores '≥', 'Min', spaces)
-            # e.g., '≥ 270' becomes '270'
-            temp_df['numeric_spec'] = temp_df[spec_col].astype(str).str.extract(r'(\d+\.?\d*)')[0]
-            temp_df['numeric_spec'] = pd.to_numeric(temp_df['numeric_spec'], errors='coerce')
-            
-            # Filter valid specs
-            valid_df = temp_df[temp_df['numeric_spec'] > 0].dropna(subset=['numeric_spec'])
+            # Lọc bỏ những dòng không có spec nào cả
+            valid_df = temp_df.dropna(subset=['spec_str'])
             
             if valid_df.empty:
                 return "-"
                 
-            # Get max spec for each metallic type
-            mapping = valid_df.groupby('Metallic_Type')['numeric_spec'].max().to_dict()
-            
-            # Smart display: If all metallic types share the exact same spec, display simply "≥XXX"
-            unique_specs = set(mapping.values())
-            if len(unique_specs) == 1:
-                val = list(unique_specs)[0]
-                return f"≥{val:.0f}"
-            
-            # If they differ, display mapped text "GL: ≥450 | GM: ≥500"
-            spec_to_metals = {}
-            for metal, spec_val in mapping.items():
-                if spec_val not in spec_to_metals:
-                    spec_to_metals[spec_val] = []
-                spec_to_metals[spec_val].append(str(metal).strip())
+            # Gom nhóm theo loại mạ (Metallic Type)
+            mapping = {}
+            for _, row in valid_df.iterrows():
+                metal = str(row['Metallic_Type']).strip()
+                spec = row['spec_str']
+                if metal not in mapping:
+                    mapping[metal] = set()
+                mapping[metal].add(spec)
                 
+            # Đảo ngược Dict để gộp các loại mạ có chung spec (VD: GI và GL đều có spec ≥270)
+            spec_to_metals = {}
+            for metal, specs in mapping.items():
+                # Nếu 1 loại mạ có nhiều mác với spec khác nhau, nối bằng 'or'
+                spec_joined = " or ".join(sorted(list(specs))) 
+                if spec_joined not in spec_to_metals:
+                    spec_to_metals[spec_joined] = []
+                spec_to_metals[spec_joined].append(metal)
+                
+            # Hiển thị thông minh: Nếu tất cả các loại mạ dùng chung 1 chuẩn
+            if len(spec_to_metals) == 1:
+                return list(spec_to_metals.keys())[0]
+            
+            # Nếu khác biệt, gộp chi tiết trên 1 dòng
             parts = []
             for spec_val, metals in spec_to_metals.items():
                 metal_str = "/".join(sorted(metals))
-                parts.append(f"{metal_str}: ≥{spec_val:.0f}")
+                parts.append(f"{metal_str}: {spec_val}")
                 
             return " | ".join(parts)
             
