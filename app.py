@@ -463,14 +463,13 @@ if view_mode == "👑 Master Dictionary Export":
                 cur_t_max_ng = valid_lim_max.min() if not valid_lim_max.empty else 0
 
                 if cur_c_max_ng > 0 or cur_c_min_ng > 0:
-                    cur_mill_str = f"{format_hrb(cur_t_min_ng)}~{format_hrb(cur_t_max_ng)}" if cur_t_max_ng > 0 else f"≥{format_hrb(cur_t_min_ng)}"
-                    cur_rel_str = f"{format_hrb(cur_c_min_ng)}~{format_hrb(cur_c_max_ng)}" if cur_c_max_ng > 0 else f"≥{format_hrb(cur_c_min_ng)}"
+                    cur_mill_str = f"{format_hrb(cur_t_min_ng)}~{format_hrb(cur_t_max_ng)}" if cur_t_max_ng > 0 else (f"≥{format_hrb(cur_t_min_ng)}" if cur_t_min_ng > 0 else "-")
+                    cur_rel_str = f"{format_hrb(cur_c_min_ng)}~{format_hrb(cur_c_max_ng)}" if cur_c_max_ng > 0 else (f"≥{format_hrb(cur_c_min_ng)}" if cur_c_min_ng > 0 else "-")
                 else:
                     cur_mill_str = "-"
-                    cur_rel_str = f"{format_hrb(cur_t_min_ng)}~{format_hrb(cur_t_max_ng)}" if cur_t_max_ng > 0 else f"≥{format_hrb(cur_t_min_ng)}"
+                    cur_rel_str = f"{format_hrb(cur_t_min_ng)}~{format_hrb(cur_t_max_ng)}" if cur_t_max_ng > 0 else (f"≥{format_hrb(cur_t_min_ng)}" if cur_t_min_ng > 0 else "-")
 
-                # 3. FIX QUAN TRỌNG: Lọc Distribution theo TỪNG CUỘN (Row-by-Row)
-                # Đảm bảo cuộn nào so chiếu đúng Spec của cuộn đó (giải quyết triệt để lỗi "Min 550~570 | Max 750~850")
+                # 3. Lọc Row-by-Row: Ép từng cuộn phải đạt Spec của chính nó
                 ts_min_col = pd.to_numeric(group_ng['Standard TS min'], errors='coerce').fillna(0)
                 ts_max_col = pd.to_numeric(group_ng['Standard TS max'], errors='coerce').fillna(9999).replace(0, 9999)
                 ys_min_col = pd.to_numeric(group_ng['Standard YS min'], errors='coerce').fillna(0)
@@ -487,14 +486,35 @@ if view_mode == "👑 Master Dictionary Export":
                     (group_ng['EL'] >= el_min_col)
                 ]
 
-                def get_safe_mech_range(df, col, is_el=False):
+                # 4. FIX QUAN TRỌNG (CAPPING LOGIC): Khóa dải hiển thị không cho vượt ngưỡng Max của Spec
+                def get_safe_mech_range(df, col, grp_df, spec_min_col, spec_max_col, is_el=False):
                     if df.empty or df[col].dropna().empty: return "-"
                     val_min = df[col].min()
                     val_max = df[col].max()
-                    if is_el: return f"{val_min:.1f}~{val_max:.1f}"
-                    return f"{val_min:.0f}~{val_max:.0f}"
+                    
+                    # Tìm giới hạn Absolute Min và Absolute Max của cột Spec đang hiển thị
+                    valid_mins = pd.to_numeric(grp_df[spec_min_col], errors='coerce').replace(0, np.nan).dropna()
+                    valid_maxs = pd.to_numeric(grp_df[spec_max_col], errors='coerce').replace(0, np.nan).dropna()
+                    
+                    abs_min_spec = valid_mins.min() if not valid_mins.empty else np.nan
+                    abs_max_spec = valid_maxs.max() if not valid_maxs.empty else np.nan
+                    
+                    final_min, final_max = val_min, val_max
+                    
+                    # Áp dụng chặn Min/Max
+                    if pd.notna(abs_min_spec) and final_min < abs_min_spec:
+                        final_min = abs_min_spec
+                    if pd.notna(abs_max_spec) and final_max > abs_max_spec:
+                        final_max = abs_max_spec
+                        
+                    # Backup an toàn: Nếu chặn xong làm Min bị lớn hơn Max thì trả về gốc (bảo vệ data)
+                    if final_min > final_max: 
+                        final_min, final_max = val_min, val_max
+                        
+                    if is_el: return f"{final_min:.1f}~{final_max:.1f}"
+                    return f"{final_min:.0f}~{final_max:.0f}"
 
-                # Lấy text hiển thị Spec (để nguyên hàm thông minh cũ)
+                # Lấy text hiển thị Spec
                 s_ys_spec_txt = get_mapped_spec_range(group_ng, "Standard YS min", "Standard YS max")
                 s_ts_spec_txt = get_mapped_spec_range(group_ng, "Standard TS min", "Standard TS max")
                 s_el_spec_txt = get_mapped_spec_range(group_ng, "Standard EL min", "Standard EL max")
@@ -508,11 +528,11 @@ if view_mode == "👑 Master Dictionary Export":
                     "Proposed Release Range (2.0σ)": f"{format_hrb(p_rel_min)}~{format_hrb(p_rel_max)}",
                     "Proposed Mill Range (1.0σ)": f"{format_hrb(p_mill_min)}~{format_hrb(p_mill_max)}",
                     "YS Spec": s_ys_spec_txt,
-                    "YS Distribution": get_safe_mech_range(actual_safe_coils, 'YS'),
+                    "YS Distribution": get_safe_mech_range(actual_safe_coils, 'YS', group_ng, 'Standard YS min', 'Standard YS max'),
                     "TS Spec": s_ts_spec_txt,
-                    "TS Distribution": get_safe_mech_range(actual_safe_coils, 'TS'),
+                    "TS Distribution": get_safe_mech_range(actual_safe_coils, 'TS', group_ng, 'Standard TS min', 'Standard TS max'),
                     "EL Spec": s_el_spec_txt,
-                    "EL Distribution": get_safe_mech_range(actual_safe_coils, 'EL', is_el=True)
+                    "EL Distribution": get_safe_mech_range(actual_safe_coils, 'EL', group_ng, 'Standard EL min', 'Standard EL max', is_el=True)
                 })
         if master_data:
             df_out = pd.DataFrame(master_data)
