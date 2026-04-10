@@ -1905,8 +1905,8 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 # ==========================================
                 # THÊM MỚI 1: LƯU DỮ LIỆU SAU KHI TÍNH TOÁN
                 # ==========================================
-                quality_group = g.get('Quality Group', "CQ") if 'Quality Group' in g.columns else "CQ"
-                metallic_type = g.get('Metallic Type', "GI / GM") if 'Metallic Type' in g.columns else "GI / GM"
+                quality_group = g['Quality Group'] if 'Quality Group' in g else "CQ"
+                metallic_type = g['Metallic Type'] if 'Metallic Type' in g else "GI / GM"
 
                 summary_row = {
                     "Quality Group": quality_group,
