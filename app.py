@@ -453,6 +453,22 @@ if view_mode == "👑 Master Dictionary Export":
                 cur_t_min_ng = get_safe_max(group_ng['Limit_Min'])
                 cur_t_max_ng = group_ng['Limit_Max'].min() if 'Limit_Max' in group_ng.columns else 0
 
+                # 1. FIX: Lấy chuẩn Giới hạn kiểm soát LAB (Current Release Range)
+                cur_c_min_ng = get_safe_max(group_ng['Lab_Min'])
+                cur_c_max_ng = group_ng['Lab_Max'].min() if 'Lab_Max' in group_ng.columns else 0
+                cur_rel_str_ng = f"{format_hrb(cur_c_min_ng)}~{format_hrb(cur_c_max_ng)}" if cur_c_max_ng > 0 else (f"≥{format_hrb(cur_c_min_ng)}" if cur_c_min_ng > 0 else "-")
+
+                # 2. FIX: Chỉ lọc những cuộn NẰM TRONG Proposed Release Range để tính Cơ tính
+                actual_in_proposed_ng = group_ng[
+                    (group_ng['Hardness_LINE'] >= p_rel_min) & 
+                    (group_ng['Hardness_LINE'] <= p_rel_max)
+                ]
+
+                def get_mech_range_ng(df, col, is_el=False):
+                    if df.empty or df[col].dropna().empty: return "-"
+                    if is_el: return f"{df[col].min():.1f}~{df[col].max():.1f}"
+                    return f"{df[col].min():.0f}~{df[col].max():.0f}"
+
                 s_ys_spec_ng = get_mapped_spec_range(group_ng, "Standard YS min", "Standard YS max")
                 s_ts_spec_ng = get_mapped_spec_range(group_ng, "Standard TS min", "Standard TS max")
                 s_el_spec_ng = get_mapped_spec_range(group_ng, "Standard EL min", "Standard EL max")
@@ -462,15 +478,15 @@ if view_mode == "👑 Master Dictionary Export":
                     "Metallic Type": metal_cat,
                     "Material": mat,
                     "Current Mill Range": f"{format_hrb(cur_t_min_ng)}~{format_hrb(cur_t_max_ng)}" if cur_t_max_ng > 0 else "-",
-                    "Current Release Range": f"{format_hrb(hrb_ng.min())}~{format_hrb(hrb_ng.max())}",
+                    "Current Release Range": cur_rel_str_ng, # <-- Đã sửa đúng Lab limits
                     "Proposed Release Range (2.0σ)": f"{format_hrb(p_rel_min)}~{format_hrb(p_rel_max)}",
                     "Proposed Mill Range (1.0σ)": f"{format_hrb(p_mill_min)}~{format_hrb(p_mill_max)}",
                     "YS Spec": s_ys_spec_ng,
-                    "YS Distribution": f"{group_ng['YS'].min():.0f}~{group_ng['YS'].max():.0f}" if not group_ng['YS'].dropna().empty else "-",
+                    "YS Distribution": get_mech_range_ng(actual_in_proposed_ng, 'YS'), # <-- Đã sửa
                     "TS Spec": s_ts_spec_ng,
-                    "TS Distribution": f"{group_ng['TS'].min():.0f}~{group_ng['TS'].max():.0f}" if not group_ng['TS'].dropna().empty else "-",
+                    "TS Distribution": get_mech_range_ng(actual_in_proposed_ng, 'TS'), # <-- Đã sửa
                     "EL Spec": s_el_spec_ng,
-                    "EL Distribution": f"{group_ng['EL'].min():.1f}~{group_ng['EL'].max():.1f}" if not group_ng['EL'].dropna().empty else "-"
+                    "EL Distribution": get_mech_range_ng(actual_in_proposed_ng, 'EL', is_el=True) # <-- Đã sửa
                 })
 
 
