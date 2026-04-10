@@ -1902,6 +1902,63 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     st.pyplot(fig_m1m4)
                     plt.close(fig_m1m4)
 
+                # ==========================================
+                # THÊM MỚI 1: LƯU DỮ LIỆU SAU KHI TÍNH TOÁN
+                # ==========================================
+                quality_group = g.get('Quality Group', "CQ") if 'Quality Group' in g.columns else "CQ"
+                metallic_type = g.get('Metallic Type', "GI / GM") if 'Metallic Type' in g.columns else "GI / GM"
+
+                summary_row = {
+                    "Quality Group": quality_group,
+                    "Metallic Type": metallic_type,
+                    "Material": mat_name,
+                    "Current Mill Range": f"{spec_min:.0f}~{display_max:.0f}" if display_max > 0 else "-",
+                    "Current Release Range": f"{data.min():.0f}~{data.max():.0f}",
+                    "Proposed Release Range (2.0σ)": f"{new_target_min:.0f}~{new_target_max:.0f}",
+                    "Proposed Mill Range (1.0σ)": f"{mu - 1.0*sigma_imr:.0f}~{mu + 1.0*sigma_imr:.0f}", 
+                    "YS Spec": f"≤{s_ys_max}" if s_ys_max > 0 else f"≥{s_ys_min}",
+                    "YS Distribution Range": f"{sub_mech['YS'].min():.0f}~{sub_mech['YS'].max():.0f}" if not sub_mech.empty else "-",
+                    "TS Spec": f"{s_ts_min}~{s_ts_max}" if (0 < s_ts_max < 9000) else f"≥{s_ts_min}",
+                    "TS Distribution Range": f"{sub_mech['TS'].min():.0f}~{sub_mech['TS'].max():.0f}" if not sub_mech.empty else "-",
+                    "EL Spec": f"≥{s_el_min}",
+                    "EL Distribution Range": f"{sub_mech['EL'].min():.1f}~{sub_mech['EL'].max():.1f}" if not sub_mech.empty else "-"
+                }
+                all_groups_summary.append(summary_row)
+
+        # ==========================================
+        # THÊM MỚI 2: HIỂN THỊ BẢNG TỔNG HỢP (CUỐI VÒNG LẶP)
+        # ==========================================
+        is_last_item = False
+        try:
+            if i == total_groups - 1: is_last_item = True
+        except NameError:
+            try:
+                if i == len(grouped_data) - 1: is_last_item = True
+            except NameError:
+                pass 
+
+        if is_last_item and len(all_groups_summary) > 0:
+            st.markdown("---")
+            st.markdown("### 📑 BẢNG TỔNG HỢP GIỚI HẠN KIỂM SOÁT (CONTROL LIMIT SUMMARY)")
+            
+            df_final = pd.DataFrame(all_groups_summary)
+            
+            # Gom nhóm Multi-Index tạo cấu trúc giống hình ảnh
+            df_display = df_final.set_index(['Quality Group', 'Metallic Type', 'Material'])
+            
+            st.dataframe(df_display, use_container_width=True)
+            
+            summary_buffer = io.BytesIO()
+            with pd.ExcelWriter(summary_buffer, engine='xlsxwriter') as writer:
+                df_final.to_excel(writer, index=False, sheet_name='Summary')
+            
+            st.download_button(
+                label="📥 Download Full Summary Table (Excel)",
+                data=summary_buffer.getvalue(),
+                file_name="Control_Limit_Summary_All.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_summary_all_final"
+            )
         # ==============================================================================
         # DISPLAY FACTORY-WIDE SUMMARY (OUTSIDE INDIVIDUAL LOOP)
         # ==============================================================================
