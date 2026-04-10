@@ -1952,25 +1952,46 @@ for i, (_, g) in enumerate(valid.iterrows()):
                     plt.close(fig_m1m4)
 
                 # ==========================================
+                # ==========================================
                 # THU THẬP DỮ LIỆU ĐỂ LÀM BẢNG TỔNG HỢP (CUỐI VÒNG LẶP)
                 # ==========================================
                 quality_group = g.get('Quality_Group', "CQ") if 'Quality_Group' in g else "CQ"
                 metallic_type = g.get('Metallic_Type', "GI / GM") if 'Metallic_Type' in g else "GI / GM"
 
+                # 1. FIX: Lấy đúng Giới hạn kiểm soát hiện tại (Mill & Lab)
+                cur_mill_str = f"{spec_min:.0f}~{display_max:.0f}" if display_max > 0 else (f"≥{spec_min:.0f}" if spec_min > 0 else "-")
+                cur_rel_str = f"{lab_min:.0f}~{display_lab_max:.0f}" if display_lab_max > 0 else (f"≥{lab_min:.0f}" if lab_min > 0 else "-")
+
+                # 2. Tính toán các mốc đề xuất mới
+                p_rel_min, p_rel_max = mu - 2.0 * sigma_imr, mu + 2.0 * sigma_imr
+                p_mill_min, p_mill_max = mu - 1.0 * sigma_imr, mu + 1.0 * sigma_imr
+
+                # 3. FIX: Chỉ lọc các cuộn có độ cứng NẰM TRONG GIỚI HẠN ĐỀ XUẤT MỚI (2.0 sigma)
+                actual_in_proposed = sub_mech[
+                    (sub_mech['Hardness_LINE'] >= p_rel_min) & 
+                    (sub_mech['Hardness_LINE'] <= p_rel_max)
+                ]
+
+                # Hàm phụ trợ lấy min/max an toàn cho nhóm đã lọc
+                def get_mech_range(df, col, is_el=False):
+                    if df.empty or df[col].dropna().empty: return "-"
+                    if is_el: return f"{df[col].min():.1f}~{df[col].max():.1f}"
+                    return f"{df[col].min():.0f}~{df[col].max():.0f}"
+
                 summary_row = {
                     "Quality Group": quality_group,
                     "Metallic Type": metallic_type,
                     "Material": mat_name,
-                    "Current Mill Range": f"{spec_min:.0f}~{display_max:.0f}" if display_max > 0 else "-",
-                    "Current Release Range": f"{data.min():.0f}~{data.max():.0f}",
-                    "Proposed Release Range (2.0σ)": f"{new_target_min:.0f}~{new_target_max:.0f}",
-                    "Proposed Mill Range (1.0σ)": f"{mu - 1.0*sigma_imr:.0f}~{mu + 1.0*sigma_imr:.0f}", 
+                    "Current Mill Range": cur_mill_str,
+                    "Current Release Range": cur_rel_str,
+                    "Proposed Release Range (2.0σ)": f"{p_rel_min:.0f}~{p_rel_max:.0f}",
+                    "Proposed Mill Range (1.0σ)": f"{p_mill_min:.0f}~{p_mill_max:.0f}", 
                     "YS Spec": f"≤{s_ys_max}" if s_ys_max > 0 else f"≥{s_ys_min}",
-                    "YS Distribution Range": f"{sub_mech['YS'].min():.0f}~{sub_mech['YS'].max():.0f}" if not sub_mech.empty else "-",
+                    "YS Distribution Range": get_mech_range(actual_in_proposed, 'YS'),
                     "TS Spec": f"{s_ts_min}~{s_ts_max}" if (0 < s_ts_max < 9000) else f"≥{s_ts_min}",
-                    "TS Distribution Range": f"{sub_mech['TS'].min():.0f}~{sub_mech['TS'].max():.0f}" if not sub_mech.empty else "-",
+                    "TS Distribution Range": get_mech_range(actual_in_proposed, 'TS'),
                     "EL Spec": f"≥{s_el_min}",
-                    "EL Distribution Range": f"{sub_mech['EL'].min():.1f}~{sub_mech['EL'].max():.1f}" if not sub_mech.empty else "-"
+                    "EL Distribution Range": get_mech_range(actual_in_proposed, 'EL', is_el=True)
                 }
                 all_groups_summary.append(summary_row)
 
