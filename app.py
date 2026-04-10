@@ -1586,7 +1586,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c3.caption(f"🎯 **R² Score:** {model_metrics['EL']['r2']:.2f} | **RMSE:** ±{model_metrics['EL']['rmse']:.1f}")
 
     # ==============================================================================
-    # 10. CONTROL LIMIT CALCULATOR
+# 10. CONTROL LIMIT CALCULATOR
     # ==============================================================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
         
@@ -1601,6 +1601,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
         from scipy.stats import norm
         from sklearn.linear_model import LinearRegression
 
+        # Khởi tạo list lưu dữ liệu tổng hợp ở đầu vòng lặp
         if i == 0:
             all_groups_summary = []
             st.markdown("### 📘 Control Limit Calculation Methods")
@@ -1904,9 +1905,10 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
                 # ==========================================
                 # THÊM MỚI 1: LƯU DỮ LIỆU SAU KHI TÍNH TOÁN
+                # Sửa dụng .get() để tránh AttributeError với Series/Dict
                 # ==========================================
-                quality_group = g['Quality Group'] if 'Quality Group' in g else "CQ"
-                metallic_type = g['Metallic Type'] if 'Metallic Type' in g else "GI / GM"
+                quality_group = g.get('Quality Group', "CQ00/CQ06") 
+                metallic_type = g.get('Metallic Type', "GI / GM")
 
                 summary_row = {
                     "Quality Group": quality_group,
@@ -1927,6 +1929,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
 
         # ==========================================
         # THÊM MỚI 2: HIỂN THỊ BẢNG TỔNG HỢP (CUỐI VÒNG LẶP)
+        # Bỏ qua styling ở cột bị Index để không sinh ra KeyError
         # ==========================================
         is_last_item = False
         try:
@@ -1943,14 +1946,16 @@ for i, (_, g) in enumerate(valid.iterrows()):
             
             df_final = pd.DataFrame(all_groups_summary)
             
-            # Gom nhóm Multi-Index tạo cấu trúc giống hình ảnh
+            # Gom nhóm Multi-Index tạo cấu trúc giống y hệt hình ảnh
             df_display = df_final.set_index(['Quality Group', 'Metallic Type', 'Material'])
             
+            # Chỉ hiển thị bảng thô, không áp dụng style thủ công để tránh KeyError
             st.dataframe(df_display, use_container_width=True)
             
             summary_buffer = io.BytesIO()
             with pd.ExcelWriter(summary_buffer, engine='xlsxwriter') as writer:
-                df_final.to_excel(writer, index=False, sheet_name='Summary')
+                # Ghi bảng có Index ra Excel
+                df_display.to_excel(writer, sheet_name='Summary')
             
             st.download_button(
                 label="📥 Download Full Summary Table (Excel)",
