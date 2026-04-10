@@ -436,7 +436,7 @@ if view_mode == "👑 Master Dictionary Export":
                     "Actual EL": f"{actual_in['EL'].min():.1f}~{actual_in['EL'].max():.1f}" if not actual_in.empty else "N/A"
                 })
 
-            # --- TÍNH TOÁN BẢNG 2 (KHÔNG ĐỘ DÀY) ---
+           # --- TÍNH TOÁN BẢNG 2 (KHÔNG ĐỘ DÀY) ---
             for keys_ng, group_ng in clean_master_df.groupby(no_gauge_cols, observed=True):
                 if len(group_ng) < min_coils_req: continue
                 
@@ -451,20 +451,7 @@ if view_mode == "👑 Master Dictionary Export":
                 p_rel_min, p_rel_max = mu_ng - 2.0 * sigma_imr_ng, mu_ng + 2.0 * sigma_imr_ng
                 p_mill_min, p_mill_max = mu_ng - 1.0 * sigma_imr_ng, mu_ng + 1.0 * sigma_imr_ng
 
-                # 2. Lấy giới hạn Spec Cơ tính (Số thực) để lọc dữ liệu an toàn (tránh lỗi NaN)
-                s_ts_min_f = pd.to_numeric(group_ng["Standard TS min"], errors='coerce').max()
-                s_ts_max_f = pd.to_numeric(group_ng["Standard TS max"], errors='coerce').min()
-                s_ys_min_f = pd.to_numeric(group_ng["Standard YS min"], errors='coerce').max()
-                s_ys_max_f = pd.to_numeric(group_ng["Standard YS max"], errors='coerce').min()
-                s_el_min_f = pd.to_numeric(group_ng["Standard EL min"], errors='coerce').max()
-
-                s_ts_min_f = s_ts_min_f if pd.notna(s_ts_min_f) else 0
-                s_ts_max_f = s_ts_max_f if pd.notna(s_ts_max_f) else 9999
-                s_ys_min_f = s_ys_min_f if pd.notna(s_ys_min_f) else 0
-                s_ys_max_f = s_ys_max_f if pd.notna(s_ys_max_f) else 9999
-                s_el_min_f = s_el_min_f if pd.notna(s_el_min_f) else 0
-
-                # 3. LẤY GIỚI HẠN HIỆN TẠI (Lọc bỏ số 0)
+                # 2. LẤY GIỚI HẠN HIỆN TẠI (Lọc bỏ số 0)
                 valid_lab_min = group_ng[group_ng['Lab_Min'] > 0]['Lab_Min']
                 valid_lab_max = group_ng[group_ng['Lab_Max'] > 0]['Lab_Max']
                 cur_c_min_ng = valid_lab_min.max() if not valid_lab_min.empty else 0
@@ -482,26 +469,32 @@ if view_mode == "👑 Master Dictionary Export":
                     cur_mill_str = "-"
                     cur_rel_str = f"{format_hrb(cur_t_min_ng)}~{format_hrb(cur_t_max_ng)}" if cur_t_max_ng > 0 else f"≥{format_hrb(cur_t_min_ng)}"
 
-                # 4. FIX QUAN TRỌNG: Lọc Distribution Range dựa trên CẢ Hardness mới VÀ Spec cơ tính
+                # 3. FIX QUAN TRỌNG: Lọc Distribution theo TỪNG CUỘN (Row-by-Row)
+                # Đảm bảo cuộn nào so chiếu đúng Spec của cuộn đó (giải quyết triệt để lỗi "Min 550~570 | Max 750~850")
+                ts_min_col = pd.to_numeric(group_ng['Standard TS min'], errors='coerce').fillna(0)
+                ts_max_col = pd.to_numeric(group_ng['Standard TS max'], errors='coerce').fillna(9999).replace(0, 9999)
+                ys_min_col = pd.to_numeric(group_ng['Standard YS min'], errors='coerce').fillna(0)
+                ys_max_col = pd.to_numeric(group_ng['Standard YS max'], errors='coerce').fillna(9999).replace(0, 9999)
+                el_min_col = pd.to_numeric(group_ng['Standard EL min'], errors='coerce').fillna(0)
+
                 actual_safe_coils = group_ng[
-                    (group_ng['Hardness_LINE'] >= p_rel_min) & (group_ng['Hardness_LINE'] <= p_rel_max) &
-                    (group_ng['TS'] >= s_ts_min_f) & (group_ng['TS'] <= s_ts_max_f) &
-                    (group_ng['YS'] >= s_ys_min_f) & (group_ng['YS'] <= s_ys_max_f) &
-                    (group_ng['EL'] >= s_el_min_f)
+                    (group_ng['Hardness_LINE'] >= p_rel_min) & 
+                    (group_ng['Hardness_LINE'] <= p_rel_max) &
+                    (group_ng['TS'] >= ts_min_col) & 
+                    (group_ng['TS'] <= ts_max_col) &
+                    (group_ng['YS'] >= ys_min_col) & 
+                    (group_ng['YS'] <= ys_max_col) &
+                    (group_ng['EL'] >= el_min_col)
                 ]
 
-                def get_safe_mech_range(df, col, spec_min, spec_max, is_el=False):
+                def get_safe_mech_range(df, col, is_el=False):
                     if df.empty or df[col].dropna().empty: return "-"
                     val_min = df[col].min()
                     val_max = df[col].max()
-                    # Cắt bỏ (clip) những giá trị ngoài spec nếu lỡ có dữ liệu nhiễu
-                    final_min = max(val_min, spec_min)
-                    final_max = min(val_max, spec_max) if spec_max < 9000 else val_max
-                    
-                    if is_el: return f"{final_min:.1f}~{final_max:.1f}"
-                    return f"{final_min:.0f}~{final_max:.0f}"
+                    if is_el: return f"{val_min:.1f}~{val_max:.1f}"
+                    return f"{val_min:.0f}~{val_max:.0f}"
 
-                # Lấy text hiển thị Spec
+                # Lấy text hiển thị Spec (để nguyên hàm thông minh cũ)
                 s_ys_spec_txt = get_mapped_spec_range(group_ng, "Standard YS min", "Standard YS max")
                 s_ts_spec_txt = get_mapped_spec_range(group_ng, "Standard TS min", "Standard TS max")
                 s_el_spec_txt = get_mapped_spec_range(group_ng, "Standard EL min", "Standard EL max")
@@ -515,11 +508,11 @@ if view_mode == "👑 Master Dictionary Export":
                     "Proposed Release Range (2.0σ)": f"{format_hrb(p_rel_min)}~{format_hrb(p_rel_max)}",
                     "Proposed Mill Range (1.0σ)": f"{format_hrb(p_mill_min)}~{format_hrb(p_mill_max)}",
                     "YS Spec": s_ys_spec_txt,
-                    "YS Distribution": get_safe_mech_range(actual_safe_coils, 'YS', s_ys_min_f, s_ys_max_f),
+                    "YS Distribution": get_safe_mech_range(actual_safe_coils, 'YS'),
                     "TS Spec": s_ts_spec_txt,
-                    "TS Distribution": get_safe_mech_range(actual_safe_coils, 'TS', s_ts_min_f, s_ts_max_f),
+                    "TS Distribution": get_safe_mech_range(actual_safe_coils, 'TS'),
                     "EL Spec": s_el_spec_txt,
-                    "EL Distribution": get_safe_mech_range(actual_safe_coils, 'EL', s_el_min_f, 9999, is_el=True)
+                    "EL Distribution": get_safe_mech_range(actual_safe_coils, 'EL', is_el=True)
                 })
         if master_data:
             df_out = pd.DataFrame(master_data)
