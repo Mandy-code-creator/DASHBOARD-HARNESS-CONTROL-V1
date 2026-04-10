@@ -450,15 +450,26 @@ if view_mode == "👑 Master Dictionary Export":
                 p_rel_min, p_rel_max = mu_ng - 2.0 * sigma_imr_ng, mu_ng + 2.0 * sigma_imr_ng
                 p_mill_min, p_mill_max = mu_ng - 1.0 * sigma_imr_ng, mu_ng + 1.0 * sigma_imr_ng
 
-                cur_t_min_ng = get_safe_max(group_ng['Limit_Min'])
-                cur_t_max_ng = group_ng['Limit_Max'].min() if 'Limit_Max' in group_ng.columns else 0
+                # 1. FIX: Lọc bỏ số 0 để lấy Min/Max chuẩn xác
+                valid_lab_min = group_ng[group_ng['Lab_Min'] > 0]['Lab_Min']
+                valid_lab_max = group_ng[group_ng['Lab_Max'] > 0]['Lab_Max']
+                cur_c_min_ng = valid_lab_min.max() if not valid_lab_min.empty else 0
+                cur_c_max_ng = valid_lab_max.min() if not valid_lab_max.empty else 0
 
-                # 1. FIX: Lấy chuẩn Giới hạn kiểm soát LAB (Current Release Range)
-                cur_c_min_ng = get_safe_max(group_ng['Lab_Min'])
-                cur_c_max_ng = group_ng['Lab_Max'].min() if 'Lab_Max' in group_ng.columns else 0
-                cur_rel_str_ng = f"{format_hrb(cur_c_min_ng)}~{format_hrb(cur_c_max_ng)}" if cur_c_max_ng > 0 else (f"≥{format_hrb(cur_c_min_ng)}" if cur_c_min_ng > 0 else "-")
+                valid_lim_min = group_ng[group_ng['Limit_Min'] > 0]['Limit_Min']
+                valid_lim_max = group_ng[group_ng['Limit_Max'] > 0]['Limit_Max']
+                cur_t_min_ng = valid_lim_min.max() if not valid_lim_min.empty else 0
+                cur_t_max_ng = valid_lim_max.min() if not valid_lim_max.empty else 0
 
-                # 2. FIX: Chỉ lọc những cuộn NẰM TRONG Proposed Release Range để tính Cơ tính
+                # 2. FIX: Logic Fallback (Nếu ko có Lab Range thì lấy Mill Range đẩy sang)
+                if cur_c_max_ng > 0 or cur_c_min_ng > 0:
+                    cur_mill_str = f"{format_hrb(cur_t_min_ng)}~{format_hrb(cur_t_max_ng)}" if cur_t_max_ng > 0 else (f"≥{format_hrb(cur_t_min_ng)}" if cur_t_min_ng > 0 else "-")
+                    cur_rel_str = f"{format_hrb(cur_c_min_ng)}~{format_hrb(cur_c_max_ng)}" if cur_c_max_ng > 0 else (f"≥{format_hrb(cur_c_min_ng)}" if cur_c_min_ng > 0 else "-")
+                else:
+                    cur_mill_str = "-"
+                    cur_rel_str = f"{format_hrb(cur_t_min_ng)}~{format_hrb(cur_t_max_ng)}" if cur_t_max_ng > 0 else (f"≥{format_hrb(cur_t_min_ng)}" if cur_t_min_ng > 0 else "-")
+
+                # 3. FIX: Lọc cuộn nằm trong đề xuất mới để tính Cơ tính
                 actual_in_proposed_ng = group_ng[
                     (group_ng['Hardness_LINE'] >= p_rel_min) & 
                     (group_ng['Hardness_LINE'] <= p_rel_max)
@@ -477,18 +488,17 @@ if view_mode == "👑 Master Dictionary Export":
                     "Quality Group": q_grp,
                     "Metallic Type": metal_cat,
                     "Material": mat,
-                    "Current Mill Range": f"{format_hrb(cur_t_min_ng)}~{format_hrb(cur_t_max_ng)}" if cur_t_max_ng > 0 else "-",
-                    "Current Release Range": cur_rel_str_ng, # <-- Đã sửa đúng Lab limits
+                    "Current Mill Range": cur_mill_str,
+                    "Current Release Range": cur_rel_str,
                     "Proposed Release Range (2.0σ)": f"{format_hrb(p_rel_min)}~{format_hrb(p_rel_max)}",
                     "Proposed Mill Range (1.0σ)": f"{format_hrb(p_mill_min)}~{format_hrb(p_mill_max)}",
                     "YS Spec": s_ys_spec_ng,
-                    "YS Distribution": get_mech_range_ng(actual_in_proposed_ng, 'YS'), # <-- Đã sửa
+                    "YS Distribution": get_mech_range_ng(actual_in_proposed_ng, 'YS'),
                     "TS Spec": s_ts_spec_ng,
-                    "TS Distribution": get_mech_range_ng(actual_in_proposed_ng, 'TS'), # <-- Đã sửa
+                    "TS Distribution": get_mech_range_ng(actual_in_proposed_ng, 'TS'),
                     "EL Spec": s_el_spec_ng,
-                    "EL Distribution": get_mech_range_ng(actual_in_proposed_ng, 'EL', is_el=True) # <-- Đã sửa
+                    "EL Distribution": get_mech_range_ng(actual_in_proposed_ng, 'EL', is_el=True)
                 })
-
 
         if master_data:
             df_out = pd.DataFrame(master_data)
