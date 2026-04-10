@@ -2786,11 +2786,23 @@ for i, (_, g) in enumerate(valid.iterrows()):
             c3.metric(f"Elongation (EL) - {el_stat}", f"{round(preds['EL'], 1)} %", f"{get_delta(preds['EL'], last_el)} vs Last")
             c3.caption(f"**Spec:** {el_spec} | **R²:** {model_metrics['EL']['r2']:.2f}")
 
+    # ==============================================================================
+    # 10. CONTROL LIMIT CALCULATOR
+    # ==============================================================================
     elif view_mode == "🎛️ Control Limit Calculator (Compare 3 Methods)":
+        
         import io
-        from scipy.stats import norm
+        import datetime
+        import uuid
+        import re
+        import numpy as np
+        import pandas as pd
+        import matplotlib.pyplot as plt
         import seaborn as sns
+        from scipy.stats import norm
+        from sklearn.linear_model import LinearRegression
 
+        # Khởi tạo list lưu dữ liệu tổng hợp ở đầu vòng lặp
         if i == 0:
             all_groups_summary = []
             st.markdown("### 📘 Control Limit Calculation Methods")
@@ -2804,329 +2816,342 @@ for i, (_, g) in enumerate(valid.iterrows()):
                 | **M4: I-MR (SPC)** | Process Control | **Optimal approach:** Monitors variation between adjacent coils; highly scientific for process stability. |
                 """)
 
-        st.markdown(f"### 🎛️ Control Limits Analysis: {group_title}")
+        mat_name = g['Material'] if 'Material' in g else "Unknown"
+        gauge_name = g['Gauge_Range'] if 'Gauge_Range' in g else "Unknown"
+        safe_gauge_name = re.sub(r'[^\x00-\x7F]+', '<=', str(gauge_name))
+
+        st.markdown(f"### 🎛️ Control Limits Analysis: {mat_name} | {safe_gauge_name}")
+        
         sub_clean = sub[(sub["Hardness_LINE"].notna()) & (sub["Hardness_LINE"] > 0)].copy()
+        
         data = sub_clean["Hardness_LINE"]
         data_lab = sub_clean["Hardness_LAB"].dropna() if "Hardness_LAB" in sub_clean.columns else pd.Series(dtype=float)
-
-        if len(data) < 5:
-            st.warning(f"⚠️ Not enough data for analysis (N={len(data)}). Minimum 5 coils required.")
+        
+        if len(data) < 10: 
+            st.warning(f"⚠️ Not enough data for analysis (N={len(data)}). Minimum 10 coils required.")
         else:
             with st.expander("⚙️ Parameter Settings", expanded=False):
                 c1, c2 = st.columns(2)
-                sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 2.0, 0.5, key=f"sig_{i}")
-                iqr_k = c2.number_input("2. IQR Sensitivity", 0.1, 3.0, 0.5, 0.1, key=f"iqr_{i}")
+                sigma_n = c1.number_input("1. Sigma Multiplier (K)", 1.0, 6.0, 2.0, 0.5, key=f"sig_v5_{i}")
+                iqr_k = c2.number_input("2. IQR Sensitivity", 0.1, 3.0, 0.5, 0.1, key=f"iqr_v5_{i}")
 
-            spec_min = lo
-            spec_max = hi
+            spec_min = sub_clean["Limit_Min"].max() if "Limit_Min" in sub_clean.columns else 0
+            spec_max = sub_clean["Limit_Max"].min() if "Limit_Max" in sub_clean.columns else 0
+            lab_min = sub_clean["Lab_Min"].max() if "Lab_Min" in sub_clean.columns else 0
+            lab_max = sub_clean["Lab_Max"].min() if "Lab_Max" in sub_clean.columns else 0
+            
             display_max = spec_max if (spec_max > 0 and spec_max < 9000) else 0
-
+            display_lab_max = lab_max if (lab_max > 0 and lab_max < 9000) else 0
+            
             mu = data.mean()
             std_dev = data.std() if len(data) > 1 else 1.0
-
-            # M1: Standard
-            m1_min, m1_max = mu - sigma_n * std_dev, mu + sigma_n * std_dev
-
-            # M2: IQR Robust
+            
+            m1_min, m1_max = mu - sigma_n*std_dev, mu + sigma_n*std_dev
+            
             Q1 = data.quantile(0.25); Q3 = data.quantile(0.75); IQR = Q3 - Q1
             clean_data = data[~((data < (Q1 - iqr_k * IQR)) | (data > (Q3 + iqr_k * IQR)))]
             if clean_data.empty or len(clean_data) < 2: clean_data = data
             mu_clean, sigma_clean = clean_data.mean(), clean_data.std()
-            if pd.isna(sigma_clean) or sigma_clean == 0: sigma_clean = std_dev
-            m2_min, m2_max = mu_clean - sigma_n * sigma_clean, mu_clean + sigma_n * sigma_clean
-
-            # M3: Smart Hybrid
+            m2_min, m2_max = mu_clean - sigma_n*sigma_clean, mu_clean + sigma_n*sigma_clean
+            
             m3_min = max(m2_min, spec_min)
             m3_max = min(m2_max, spec_max) if (spec_max > 0 and spec_max < 9000) else m2_max
             if m3_min >= m3_max: m3_min, m3_max = m2_min, m2_max
-
-            # M4: I-MR (SPC)
-            mrs = np.abs(np.diff(data.values))
+            
+            mrs = np.abs(np.diff(data))
             mr_bar = np.mean(mrs) if len(mrs) > 0 else 0
             sigma_imr = mr_bar / 1.128 if mr_bar > 0 else std_dev
             m4_min, m4_max = mu - sigma_n * sigma_imr, mu + sigma_n * sigma_imr
 
-            # New Core Target
-            target_k = 1.0
+            target_k = 1.0 
             new_target_min = mu - target_k * sigma_imr
             new_target_max = mu + target_k * sigma_imr
-
-            # ── Mechanical specs ──────────────────────────────────────────────
-            sub_mech = sub_clean.dropna(subset=["TS", "YS", "EL"]).copy()
+            
+            sub_mech = sub_clean.dropna(subset=['TS', 'YS', 'EL']).copy()
+            
             s_ts_min = sub_mech["Standard TS min"].max() if "Standard TS min" in sub_mech.columns else 0
             s_ts_max = sub_mech["Standard TS max"].min() if "Standard TS max" in sub_mech.columns else 0
             s_ys_min = sub_mech["Standard YS min"].max() if "Standard YS min" in sub_mech.columns else 0
             s_ys_max = sub_mech["Standard YS max"].min() if "Standard YS max" in sub_mech.columns else 0
-            s_el_min = sub_mech["Standard EL min"].max()  if "Standard EL min" in sub_mech.columns else 0
-            for v in [s_ts_min, s_ts_max, s_ys_min, s_ys_max, s_el_min]:
-                if pd.isna(v): v = 0
+            s_el_min = sub_mech["Standard EL min"].max() if "Standard EL min" in sub_mech.columns else 0
 
-            def fmt_spec_cl(mi, ma):
-                if pd.isna(mi): mi = 0
-                if pd.isna(ma): ma = 0
-                if mi > 0 and 0 < ma < 9000: return f"{mi:.0f}~{ma:.0f}"
-                elif mi > 0: return f"≥ {mi:.0f}"
-                elif 0 < ma < 9000: return f"≤ {ma:.0f}"
-                return "-"
+            ts_spec_str = f"{s_ts_min:.0f}~{s_ts_max:.0f}" if (0 < s_ts_max < 9000) else f"≥{s_ts_min:.0f}"
+            ys_spec_str = f"{s_ys_min:.0f}~{s_ys_max:.0f}" if (0 < s_ys_max < 9000) else f"≥{s_ys_min:.0f}"
+            el_spec_str = f"≥ {s_el_min:.0f}"
+            st.info(f"🎯 **Mechanical Specs Target:** TS: **{ts_spec_str}** | YS: **{ys_spec_str}** | EL: **{el_spec_str}**")
 
-            st.info(f"🎯 **Mechanical Specs Target:** TS: **{fmt_spec_cl(s_ts_min, s_ts_max)}** | YS: **{fmt_spec_cl(s_ys_min, s_ys_max)}** | EL: **{fmt_spec_cl(s_el_min, 0)}**")
+            best_control_limit = "⚠️ Manual Review" 
 
-            # ── AI regression models ──────────────────────────────────────────
-            has_model = False
-            if len(sub_mech) >= 3:
-                has_model = True
-                X_tr = sub_mech[["Hardness_LINE"]].values
-                m_ts = LinearRegression().fit(X_tr, sub_mech["TS"].values)
-                m_ys = LinearRegression().fit(X_tr, sub_mech["YS"].values)
-                m_el = LinearRegression().fit(X_tr, sub_mech["EL"].values)
+            if len(sub_mech) >= 5:
+                X_train = sub_mech[['Hardness_LINE']].values
+                model_ts = LinearRegression().fit(X_train, sub_mech['TS'].values)
+                model_ys = LinearRegression().fit(X_train, sub_mech['YS'].values)
+                model_el = LinearRegression().fit(X_train, sub_mech['EL'].values)
 
-            def get_theo(l_min, l_max):
-                if not has_model: return ("-","-"), ("-","-"), ("-","-")
-                calc_max = l_max if l_max > 0 else sub_mech["Hardness_LINE"].max()
-                ts_p = sorted([m_ts.predict([[l_min]])[0], m_ts.predict([[calc_max]])[0]])
-                ys_p = sorted([m_ys.predict([[l_min]])[0], m_ys.predict([[calc_max]])[0]])
-                el_p = sorted([m_el.predict([[l_min]])[0], m_el.predict([[calc_max]])[0]])
-                return ts_p, ys_p, el_p
+                def fmt_lim(vmin, vmax, prefix=""):
+                    if vmax > 0: return f"{prefix}{vmin:.1f}~{vmax:.1f}"
+                    if vmin > 0: return f"{prefix}≥{vmin:.1f}"
+                    return ""
 
-            def get_actual(l_min, l_max):
-                mask = sub_mech["Hardness_LINE"] >= l_min
-                if l_max > 0: mask = mask & (sub_mech["Hardness_LINE"] <= l_max)
-                ac = sub_mech[mask]
-                if ac.empty: return "No Data", "No Data", "No Data"
-                ts_s = f"{ac['TS'].min():.0f}~{ac['TS'].max():.0f} (Avg:{ac['TS'].mean():.0f})"
-                ys_s = f"{ac['YS'].min():.0f}~{ac['YS'].max():.0f} (Avg:{ac['YS'].mean():.0f})"
-                el_s = f"{ac['EL'].min():.1f}~{ac['EL'].max():.1f} (Avg:{ac['EL'].mean():.1f})"
-                return ts_s, ys_s, el_s
+                ctrl_str = fmt_lim(spec_min, display_max, "Ctrl: ")
+                lab_str = fmt_lim(lab_min, display_lab_max, "Lab: ")
+                old_target_str = f"{ctrl_str} | {lab_str}" if lab_str else ctrl_str
 
-            def eval_prop_cl(p_lo, p_hi, sp_min, sp_max, is_el=False):
-                if not has_model: return "N/A"
-                sp_min = sp_min if pd.notna(sp_min) else 0
-                sp_max = sp_max if pd.notna(sp_max) else 0
-                if sp_min > 0 and p_lo < sp_min: return "❌ Fail"
-                if not is_el and 0 < sp_max < 9000 and p_hi > sp_max: return "❌ Fail"
-                return "✅ Pass"
+                rows = []
+                configs = [
+                    ("🎯 Old Target Goal", spec_min, display_max, "-", old_target_str),
+                    ("🔴 M1: Standard (Historical)", m1_min, m1_max, f"σ={std_dev:.2f}", f"{m1_min:.1f} ~ {m1_max:.1f}"),
+                    ("🔵 M2: IQR (Robust)", m2_min, m2_max, f"σ={sigma_clean:.2f}", f"{m2_min:.1f} ~ {m2_max:.1f}"),
+                    ("🟢 M3: Smart Hybrid", m3_min, m3_max, "-", f"{m3_min:.1f} ~ {m3_max:.1f}"),
+                    ("🟣 M4: I-MR (Control Limits)", m4_min, m4_max, f"σ={sigma_imr:.2f}", f"{m4_min:.1f} ~ {m4_max:.1f}"),
+                    (f"🌟 New Core Target (±{target_k}σ)", new_target_min, new_target_max, "-", f"{new_target_min:.1f} ~ {new_target_max:.1f}")
+                ]
 
-            configs_cl = [
-                ("🎯 Old Target Goal",           spec_min,        display_max,     "-"),
-                ("🔴 M1: Standard (Historical)",  m1_min,          m1_max,          f"σ={std_dev:.2f}"),
-                ("🔵 M2: IQR (Robust)",           m2_min,          m2_max,          f"σ={sigma_clean:.2f}"),
-                ("🟢 M3: Smart Hybrid",           m3_min,          m3_max,          "-"),
-                ("🟣 M4: I-MR (Control Limits)",  m4_min,          m4_max,          f"σ={sigma_imr:.2f}"),
-                (f"🌟 New Core Target (±{target_k}σ)", new_target_min, new_target_max, "-"),
-            ]
+                def eval_prop(preds, spec_min, spec_max):
+                    p_min, p_max = preds
+                    if pd.notna(spec_min) and spec_min > 0 and p_min < spec_min: return "Fail"
+                    if pd.notna(spec_max) and 0 < spec_max < 9000 and p_max > spec_max: return "Fail"
+                    return "Pass"
 
-            rows_cl = []
-            passed_methods = []
-            for cat, l_min, l_max, sig in configs_cl:
-                ts_p, ys_p, el_p = get_theo(l_min, l_max)
-                act_ts, act_ys, act_el = get_actual(l_min, l_max)
-                lim_str = f"{l_min:.1f} ~ {l_max:.1f}" if l_max > 0 else f"≥ {l_min:.1f}"
+                passed_control_methods = [] 
 
-                if has_model:
-                    ts_eval = eval_prop_cl(ts_p[0], ts_p[1], s_ts_min, s_ts_max)
-                    ys_eval = eval_prop_cl(ys_p[0], ys_p[1], s_ys_min, s_ys_max)
-                    el_eval = eval_prop_cl(el_p[0], el_p[1], s_el_min, 0, is_el=True)
-                    theo_ts = f"{ts_p[0]:.0f} ~ {ts_p[1]:.0f}"
-                    theo_ys = f"{ys_p[0]:.0f} ~ {ys_p[1]:.0f}"
-                    theo_el = f"{el_p[0]:.1f} ~ {el_p[1]:.1f}"
-                    overall = "✅ Optimal" if all(e == "✅ Pass" for e in [ts_eval, ys_eval, el_eval]) else "⚠️ Warning"
-                else:
-                    ts_eval = ys_eval = el_eval = "N/A"
-                    theo_ts = theo_ys = theo_el = "-"
-                    overall = "N/A"
+                for cat, l_min, l_max, sig, disp_lim in configs:
+                    calc_max = l_max if l_max > 0 else sub_mech['Hardness_LINE'].max()
+                    
+                    ts_preds = sorted([model_ts.predict([[l_min]])[0], model_ts.predict([[calc_max]])[0]])
+                    ys_preds = sorted([model_ys.predict([[l_min]])[0], model_ys.predict([[calc_max]])[0]])
+                    el_preds = sorted([model_el.predict([[l_min]])[0], model_el.predict([[calc_max]])[0]])
+                    
+                    theo_ts = f"{ts_preds[0]:.0f} ~ {ts_preds[1]:.0f}"
+                    theo_ys = f"{ys_preds[0]:.0f} ~ {ys_preds[1]:.0f}"
+                    theo_el = f"{el_preds[0]:.1f} ~ {el_preds[1]:.1f}"
+                    
+                    ts_eval = eval_prop(ts_preds, s_ts_min, s_ts_max)
+                    ys_eval = eval_prop(ys_preds, s_ys_min, s_ys_max)
+                    el_eval = eval_prop(el_preds, s_el_min, 9999) 
 
-                if overall == "✅ Optimal" and "M" in cat: passed_methods.append(cat)
+                    if "Fail" in ts_eval or "Fail" in ys_eval or "Fail" in el_eval:
+                        overall = "⚠️ Warning"
+                    else:
+                        overall = "✅ Optimal"
+                        if "M" in cat: passed_control_methods.append(cat)
+                        elif "Old Target" in cat: passed_control_methods.append("Old Target")
 
-                rows_cl.append({
-                    "Limit Type":          cat,
-                    "Hardness Limits":     lim_str,
-                    "Variation (σ)":       sig,
-                    "Theoretical TS":      theo_ts,
-                    "Actual TS":           act_ts,
-                    "TS Eval":             ts_eval,
-                    "Theoretical YS":      theo_ys,
-                    "Actual YS":           act_ys,
-                    "YS Eval":             ys_eval,
-                    "Theoretical EL (%)":  theo_el,
-                    "Actual EL (%)":       act_el,
-                    "EL Eval":             el_eval,
-                    "Overall":             overall,
-                })
+                    actual_mask = (sub_mech['Hardness_LINE'] >= l_min)
+                    if l_max > 0:
+                        actual_mask = actual_mask & (sub_mech['Hardness_LINE'] <= l_max)
+                        
+                    actual_coils = sub_mech[actual_mask]
+                    
+                    if not actual_coils.empty:
+                        act_ts = f"{actual_coils['TS'].min():.0f}~{actual_coils['TS'].max():.0f} (Avg:{actual_coils['TS'].mean():.0f})"
+                        act_ys = f"{actual_coils['YS'].min():.0f}~{actual_coils['YS'].max():.0f} (Avg:{actual_coils['YS'].mean():.0f})"
+                        act_el = f"{actual_coils['EL'].min():.1f}~{actual_coils['EL'].max():.1f} (Avg:{actual_coils['EL'].mean():.1f})"
+                    else:
+                        act_ts, act_ys, act_el = "No Data", "No Data", "No Data"
 
-            # Best recommendation logic
-            if any("M4" in m for m in passed_methods): best_rec = "🟣 M4: I-MR (Recommended)"
-            elif any("M3" in m for m in passed_methods): best_rec = "🟢 M3: Smart Hybrid"
-            elif any("M2" in m for m in passed_methods): best_rec = "🔵 M2: IQR Robust"
-            elif any("M1" in m for m in passed_methods): best_rec = "🔴 M1: Standard"
-            else: best_rec = "❌ High Risk – Manual Review Required"
+                    rows.append({
+                        "Limit Type": cat, 
+                        "Hardness Limits": disp_lim, 
+                        "Variation (σ)": sig,
+                        "Theoretical TS": theo_ts, 
+                        "Actual TS": act_ts,
+                        "Theoretical YS": theo_ys, 
+                        "Actual YS": act_ys,
+                        "Theoretical EL (%)": theo_el, 
+                        "Actual EL (%)": act_el,
+                        "Overall Proposal": overall
+                    })
 
-            st.success(f"🏆 **Best Recommended Control Limit:** {best_rec}")
+                if any("M4: I-MR" in m for m in passed_control_methods): best_control_limit = "🟣 M4: I-MR"
+                elif any("M3: Smart Hybrid" in m for m in passed_control_methods): best_control_limit = "🟢 M3: Smart Hybrid"
+                elif any("M2: IQR" in m for m in passed_control_methods): best_control_limit = "🔵 M2: IQR"
+                elif any("M1: Standard" in m for m in passed_control_methods): best_control_limit = "🔴 M1: Standard"
+                elif any("Old Target" in m for m in passed_control_methods): best_control_limit = "🎯 Keep Current Spec"
+                else: best_control_limit = "❌ High Risk (All Failed)"
 
-            df_cl = pd.DataFrame(rows_cl)
+                df_summary = pd.DataFrame(rows)
+                
+                def style_table(df):
+                    styles = pd.DataFrame('', index=df.index, columns=df.columns)
+                    for idx, row in df.iterrows():
+                        if "New Core Target" in str(row['Limit Type']):
+                            styles.iloc[idx, :] = 'background-color: #e6f4ea;'
+                        
+                        if "Warning" in str(row['Overall Proposal']): styles.at[idx, 'Overall Proposal'] = 'color: #856404; font-weight: bold;'
+                        elif "Optimal" in str(row['Overall Proposal']): styles.at[idx, 'Overall Proposal'] = 'color: #155724; font-weight: bold;'
+                        
+                        styles.at[idx, 'Actual TS'] = 'background-color: #f8f9fa;'
+                        styles.at[idx, 'Actual YS'] = 'background-color: #f8f9fa;'
+                        styles.at[idx, 'Actual EL (%)'] = 'background-color: #f8f9fa;'
+                    return styles
 
-            eval_cols = ["TS Eval", "YS Eval", "EL Eval", "Overall"]
+                styled_summary = df_summary.style.apply(style_table, axis=None)
+                
+                st.dataframe(styled_summary, use_container_width=True, hide_index=True)
+                st.caption("*(**) Theoretical values are generated by AI Linear Regression. Actual values are the observed min/max of historical coils falling within the specified Hardness limits.*")
+                
+                indiv_buffer = io.BytesIO()
+                with pd.ExcelWriter(indiv_buffer, engine='xlsxwriter') as writer:
+                    df_summary.to_excel(writer, index=False, sheet_name='Comparison')
+                    workbook = writer.book
+                    worksheet = writer.sheets['Comparison']
+                    
+                    header_fmt = workbook.add_format({'bold': True, 'bg_color': '#CFE2F3', 'border': 1, 'align': 'center'})
+                    pass_fmt = workbook.add_format({'font_color': '#155724', 'bg_color': '#D4EDDA', 'bold': True, 'border': 1, 'align': 'center'})
+                    fail_fmt = workbook.add_format({'font_color': '#721C24', 'bg_color': '#F8D7DA', 'bold': True, 'border': 1, 'align': 'center'})
+                    
+                    for col_num, value in enumerate(df_summary.columns.values):
+                        worksheet.write(0, col_num, value, header_fmt)
+                        worksheet.set_column(col_num, col_num, 18)
+                        
+                    for r_idx in range(len(df_summary)):
+                        for c_idx in range(len(df_summary.columns)):
+                            val = str(df_summary.iloc[r_idx, c_idx])
+                            if "Pass" in val or "Optimal" in val: worksheet.write(r_idx + 1, c_idx, val, pass_fmt)
+                            elif "Fail" in val or "Warning" in val: worksheet.write(r_idx + 1, c_idx, val, fail_fmt)
 
-            def hl_cl_row(s):
-                if "🌟 New Core Target" in str(s["Limit Type"]):
-                    return ["background-color: #e6f4ea"] * len(s)
-                return [""] * len(s)
+                st.download_button(
+                    label=f"📥 Download Excel Comparison: {mat_name}",
+                    data=indiv_buffer.getvalue(),
+                    file_name=f"Comparison_{mat_name}_vs_Target.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    key=f"dl_indiv_{i}_{uuid.uuid4().hex[:4]}" 
+                )
 
-            def hl_cl_val(val):
-                if isinstance(val, str):
-                    if "✅" in val: return "color: #155724; font-weight: bold"
-                    if "❌" in val: return "color: #721c24; font-weight: bold; background-color: #f8d7da"
-                    if "⚠️" in val: return "color: #856404; font-weight: bold"
-                return ""
+                # --- VISUALIZATION: 2 DISTRIBUTION CHARTS ---
+                st.markdown(f"### 📈 Distribution Analysis: {mat_name} {safe_gauge_name}")
+                tab_all, tab_m1m4 = st.tabs(["📊 All 4 Methods", "📊 M1 vs M4 Only"])
 
-            styled_cl = (
-                df_cl.style
-                .apply(hl_cl_row, axis=1)
-                .map(hl_cl_val, subset=eval_cols)
-                .set_properties(**{"background-color": "#f8f9fa"}, subset=["Actual TS", "Actual YS", "Actual EL (%)"])
-            )
-            st.dataframe(styled_cl, use_container_width=True, hide_index=True)
+                x_min_sync = mu - 5 * std_dev
+                x_max_sync = mu + 5 * std_dev
+                if spec_min > 0: x_min_sync = min(x_min_sync, spec_min - 2)
+                if display_max > 0: x_max_sync = max(x_max_sync, display_max + 2)
+                
+                x_axis = np.linspace(x_min_sync, x_max_sync, 500)
+                
+                shared_bins = np.linspace(x_min_sync, x_max_sync, 30)
+                bin_width = shared_bins[1] - shared_bins[0] 
 
-            if not has_model:
-                st.caption("⚠️ Not enough mech data (N<3) for AI estimation.")
-            else:
-                st.caption("(**) Theoretical = AI Linear Regression estimate. Actual = observed min/max of coils within that hardness range.")
+                with tab_all:
+                    st.markdown("**1. Distribution vs ALL 4 Control Methods & Old Target**")
+                    fig_all, ax_all = plt.subplots(figsize=(11, 5))
+                    fig_all.patch.set_facecolor('white')
+                    ax_all.set_facecolor('white')
 
-            # ── Excel export per group ────────────────────────────────────────
-            buf_cl = io.BytesIO()
-            with pd.ExcelWriter(buf_cl, engine="xlsxwriter") as writer:
-                df_cl.to_excel(writer, sheet_name="Control_Limits", index=False)
-                wb = writer.book; ws = writer.sheets["Control_Limits"]
-                hfmt = wb.add_format({"bold": True, "bg_color": "#CFE2F3", "border": 1, "align": "center"})
-                pfmt = wb.add_format({"font_color": "#155724", "bg_color": "#D4EDDA", "bold": True, "border": 1})
-                ffmt = wb.add_format({"font_color": "#721c24", "bg_color": "#F8D7DA", "bold": True, "border": 1})
-                for ci, cn in enumerate(df_cl.columns):
-                    ws.write(0, ci, cn, hfmt)
-                    ws.set_column(ci, ci, max(14, len(cn)))
-                for ri in range(len(df_cl)):
-                    for ci in range(len(df_cl.columns)):
-                        v = str(df_cl.iloc[ri, ci])
-                        fmt = pfmt if ("Pass" in v or "Optimal" in v) else (ffmt if ("Fail" in v or "Warning" in v) else None)
-                        if fmt: ws.write(ri + 1, ci, v, fmt)
+                    sns.histplot(data, stat='count', bins=shared_bins, color='#1f77b4', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_all)
+                    if not data_lab.empty:
+                        sns.histplot(data_lab, stat='count', bins=shared_bins, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax_all)
 
-            safe_grp = re.sub(r"[^a-zA-Z0-9_\-]", "_", group_title)
-            st.download_button(
-                label="📥 Download Control Limit Report (Excel)",
-                data=buf_cl.getvalue(),
-                file_name=f"ControlLimit_{safe_grp}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                key=f"dl_cl_{i}"
-            )
+                    ax_all.plot(x_axis, norm.pdf(x_axis, mu, std_dev) * len(data) * bin_width, color='#004085', lw=2.5, label='Normal Curve (LINE)')
+                    if not data_lab.empty and len(data_lab) > 1:
+                        mu_lab, std_lab = data_lab.mean(), data_lab.std()
+                        ax_all.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab) * len(data_lab) * bin_width, color='#b33c00', lw=2.5, linestyle='-.', label='Normal Curve (LAB)')
 
-            # ── Distribution charts ───────────────────────────────────────────
-            st.markdown(f"#### 📈 Distribution Analysis")
-            tab_all, tab_m1m4 = st.tabs(["📊 All 4 Methods", "📊 M1 vs M4"])
+                    if spec_min > 0:
+                        ax_all.axvline(spec_min, color='black', linestyle='-', linewidth=2.5, label=f'Old Target ({spec_min:.1f}~{display_max:.1f})')
+                        if display_max > 0: ax_all.axvline(display_max, color='black', linestyle='-', linewidth=2.5)
 
-            x_min_sync = mu - 5 * std_dev
-            x_max_sync = mu + 5 * std_dev
-            if spec_min > 0: x_min_sync = min(x_min_sync, spec_min - 2)
-            if display_max > 0: x_max_sync = max(x_max_sync, display_max + 2)
-            x_axis_cl = np.linspace(x_min_sync, x_max_sync, 500)
-            shared_bins = np.linspace(x_min_sync, x_max_sync, 30)
-            bin_w = shared_bins[1] - shared_bins[0]
+                    ax_all.axvline(m1_min, color='#d62728', linestyle='--', linewidth=2, label=f'M1: Std ({m1_min:.1f}~{m1_max:.1f})')
+                    ax_all.axvline(m1_max, color='#d62728', linestyle='--', linewidth=2)
+                    ax_all.axvline(m2_min, color='#007acc', linestyle='-.', linewidth=2, label=f'M2: IQR ({m2_min:.1f}~{m2_max:.1f})')
+                    ax_all.axvline(m2_max, color='#007acc', linestyle='-.', linewidth=2)
+                    ax_all.axvline(m3_min, color='#28a745', linestyle=':', linewidth=2.5, label=f'M3: Hybrid ({m3_min:.1f}~{m3_max:.1f})')
+                    ax_all.axvline(m3_max, color='#28a745', linestyle=':', linewidth=2.5)
+                    ax_all.axvline(m4_min, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4: I-MR ({m4_min:.1f}~{m4_max:.1f})')
+                    ax_all.axvline(m4_max, color='#9467bd', linestyle='-', linewidth=2.5)
+                    
+                    ax_all.set_xlim(x_min_sync, x_max_sync)
+                    ax_all.set_title(f"Limits Comparison: All 4 Methods - {mat_name} {safe_gauge_name}", fontsize=12, fontweight='bold', color='#333333')
+                    ax_all.set_xlabel("Hardness (HRB)", fontweight='bold')
+                    ax_all.set_ylabel("Number of Coils", fontweight='bold')
+                    ax_all.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=9)
+                    ax_all.grid(axis='y', linestyle=':', alpha=0.5)
 
-            def _draw_dist(ax_d, show_m2m3=True):
-                sns.histplot(data, stat="count", bins=shared_bins, color="#1f77b4", edgecolor="white", alpha=0.6, label="LINE (Production)", ax=ax_d)
-                if not data_lab.empty:
-                    sns.histplot(data_lab, stat="count", bins=shared_bins, color="#ff7f0e", edgecolor="white", alpha=0.4, label="LAB (QC)", ax=ax_d)
-                ax_d.plot(x_axis_cl, norm.pdf(x_axis_cl, mu, std_dev) * len(data) * bin_w, color="#004085", lw=2.5, label="Normal Curve (LINE)")
-                if not data_lab.empty and len(data_lab) > 1:
-                    mu_l, std_l = data_lab.mean(), data_lab.std()
-                    ax_d.plot(x_axis_cl, norm.pdf(x_axis_cl, mu_l, std_l) * len(data_lab) * bin_w, color="#b33c00", lw=2.5, ls="-.", label="Normal Curve (LAB)")
-                if spec_min > 0:
-                    ax_d.axvline(spec_min, color="black", lw=2.5, label=f"Old Spec ({spec_min:.1f}~{display_max:.1f})")
-                    if display_max > 0: ax_d.axvline(display_max, color="black", lw=2.5)
-                ax_d.axvline(m1_min, color="#d62728", ls="--", lw=2, label=f"M1 ({m1_min:.1f}~{m1_max:.1f})")
-                ax_d.axvline(m1_max, color="#d62728", ls="--", lw=2)
-                ax_d.axvline(m4_min, color="#9467bd", ls="-", lw=2.5, label=f"M4 ({m4_min:.1f}~{m4_max:.1f})")
-                ax_d.axvline(m4_max, color="#9467bd", ls="-", lw=2.5)
-                if show_m2m3:
-                    ax_d.axvline(m2_min, color="#007acc", ls="-.", lw=2, label=f"M2 ({m2_min:.1f}~{m2_max:.1f})")
-                    ax_d.axvline(m2_max, color="#007acc", ls="-.", lw=2)
-                    ax_d.axvline(m3_min, color="#28a745", ls=":", lw=2.5, label=f"M3 ({m3_min:.1f}~{m3_max:.1f})")
-                    ax_d.axvline(m3_max, color="#28a745", ls=":", lw=2.5)
-                ax_d.set_xlim(x_min_sync, x_max_sync)
-                ax_d.set_xlabel("Hardness (HRB)", fontweight="bold")
-                ax_d.set_ylabel("Number of Coils", fontweight="bold")
-                ax_d.grid(axis="y", ls=":", alpha=0.5)
-                ax_d.legend(loc="center left", bbox_to_anchor=(1, 0.5), fontsize=9)
+                    st.pyplot(fig_all)
+                    plt.close(fig_all)
 
-            with tab_all:
-                fig_all, ax_all = plt.subplots(figsize=(11, 5))
-                _draw_dist(ax_all, show_m2m3=True)
-                ax_all.set_title(f"All 4 Methods – {group_title}", fontsize=12, fontweight="bold")
-                plt.tight_layout(); st.pyplot(fig_all); plt.close(fig_all)
+                with tab_m1m4:
+                    st.markdown("**2. Distribution vs M1 (Standard) & M4 (I-MR)**")
+                    fig_m1m4, ax_m1m4 = plt.subplots(figsize=(11, 5))
+                    fig_m1m4.patch.set_facecolor('white')
+                    ax_m1m4.set_facecolor('white')
 
-            with tab_m1m4:
-                fig_m4, ax_m4 = plt.subplots(figsize=(11, 5))
-                _draw_dist(ax_m4, show_m2m3=False)
-                ax_m4.set_title(f"M1 vs M4 – {group_title}", fontsize=12, fontweight="bold")
-                plt.tight_layout(); st.pyplot(fig_m4); plt.close(fig_m4)
+                    sns.histplot(data, stat='count', bins=shared_bins, color='#1f77b4', edgecolor='white', alpha=0.6, label='LINE (Production)', ax=ax_m1m4)
+                    if not data_lab.empty:
+                        sns.histplot(data_lab, stat='count', bins=shared_bins, color='#ff7f0e', edgecolor='white', alpha=0.4, label='LAB (QC)', ax=ax_m1m4)
 
-            # ── Accumulate for end-of-loop summary ───────────────────────────
-            all_groups_summary.append({
-                "Group":                    group_title,
-                "N":                        len(data),
-                "Current Spec":             f"{spec_min:.0f}~{display_max:.0f}",
-                "M1: Standard":             f"{m1_min:.1f}~{m1_max:.1f}",
-                "M2: IQR (Robust)":         f"{m2_min:.1f}~{m2_max:.1f}",
-                "M3: Smart Hybrid":         f"{m3_min:.1f}~{m3_max:.1f}",
-                "M4: I-MR (Optimal)":       f"{m4_min:.1f}~{m4_max:.1f}",
-                "New Core Target (±1σ)":    f"{new_target_min:.1f}~{new_target_max:.1f}",
-                "Best Recommendation":      best_rec,
-                "Status":                   "✅ Stable" if (display_max > 0 and m4_max <= display_max) else "⚠️ Narrow Spec",
-            })
+                    ax_m1m4.plot(x_axis, norm.pdf(x_axis, mu, std_dev) * len(data) * bin_width, color='#004085', lw=2.5, label='Normal Curve (LINE)')
+                    if not data_lab.empty and len(data_lab) > 1:
+                        ax_m1m4.plot(x_axis, norm.pdf(x_axis, mu_lab, std_lab) * len(data_lab) * bin_width, color='#b33c00', lw=2.5, linestyle='-.', label='Normal Curve (LAB)')
 
-        # ── END-OF-LOOP: Grand Summary Table (all groups, no gauge split) ────
-        if i == len(valid) - 1 and "all_groups_summary" in locals() and len(all_groups_summary) > 0:
+                    if spec_min > 0:
+                        ax_m1m4.axvline(spec_min, color='black', linestyle='-', linewidth=2.5, label=f'Old Target ({spec_min:.1f}~{display_max:.1f})')
+                        if display_max > 0: ax_m1m4.axvline(display_max, color='black', linestyle='-', linewidth=2.5)
+
+                    ax_m1m4.axvline(m1_min, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Min ({m1_min:.1f})')
+                    ax_m1m4.axvline(m1_max, color='#d62728', linestyle='--', linewidth=2, label=f'M1 Max ({m1_max:.1f})')
+                    ax_m1m4.axvline(m4_min, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Min ({m4_min:.1f})')
+                    ax_m1m4.axvline(m4_max, color='#9467bd', linestyle='-', linewidth=2.5, label=f'M4 Max ({m4_max:.1f})')
+                    
+                    ax_m1m4.set_xlim(x_min_sync, x_max_sync)
+                    ax_m1m4.set_title(f"Limits Comparison: M1 vs M4 - {mat_name} {safe_gauge_name}", fontsize=12, fontweight='bold', color='#333333')
+                    ax_m1m4.set_xlabel("Hardness (HRB)", fontweight='bold')
+                    ax_m1m4.set_ylabel("Number of Coils", fontweight='bold')
+                    ax_m1m4.legend(loc='center left', bbox_to_anchor=(1, 0.5), fontsize=9)
+                    ax_m1m4.grid(axis='y', linestyle=':', alpha=0.5)
+
+                    st.pyplot(fig_m1m4)
+                    plt.close(fig_m1m4)
+
+                # ==========================================
+                # THU THẬP DỮ LIỆU ĐỂ LÀM BẢNG TỔNG HỢP (CUỐI VÒNG LẶP)
+                # ==========================================
+                quality_group = g.get('Quality Group', "CQ") if 'Quality Group' in g else "CQ"
+                metallic_type = g.get('Metallic Type', "GI / GM") if 'Metallic Type' in g else "GI / GM"
+
+                summary_row = {
+                    "Quality Group": quality_group,
+                    "Metallic Type": metallic_type,
+                    "Material": mat_name,
+                    "Current Mill Range": f"{spec_min:.0f}~{display_max:.0f}" if display_max > 0 else "-",
+                    "Current Release Range": f"{data.min():.0f}~{data.max():.0f}",
+                    "Proposed Release Range (2.0σ)": f"{new_target_min:.0f}~{new_target_max:.0f}",
+                    "Proposed Mill Range (1.0σ)": f"{mu - 1.0*sigma_imr:.0f}~{mu + 1.0*sigma_imr:.0f}", 
+                    "YS Spec": f"≤{s_ys_max}" if s_ys_max > 0 else f"≥{s_ys_min}",
+                    "YS Distribution Range": f"{sub_mech['YS'].min():.0f}~{sub_mech['YS'].max():.0f}" if not sub_mech.empty else "-",
+                    "TS Spec": f"{s_ts_min}~{s_ts_max}" if (0 < s_ts_max < 9000) else f"≥{s_ts_min}",
+                    "TS Distribution Range": f"{sub_mech['TS'].min():.0f}~{sub_mech['TS'].max():.0f}" if not sub_mech.empty else "-",
+                    "EL Spec": f"≥{s_el_min}",
+                    "EL Distribution Range": f"{sub_mech['EL'].min():.1f}~{sub_mech['EL'].max():.1f}" if not sub_mech.empty else "-"
+                }
+                all_groups_summary.append(summary_row)
+
+        # ==============================================================================
+        # HIỂN THỊ BẢNG TỔNG HỢP ĐÚNG YÊU CẦU SAU KHI KẾT THÚC VÒNG LẶP
+        # ==============================================================================
+        if i == len(valid) - 1 and 'all_groups_summary' in locals() and len(all_groups_summary) > 0:
             st.markdown("---")
-            st.markdown("## 📊 Overall Control Limit Summary (All Groups)")
-            df_total = pd.DataFrame(all_groups_summary)
-
-            def hl_total(s):
-                styles = [""] * len(s)
-                status_val = str(s.get("Status", ""))
-                if "Narrow" in status_val or "⚠️" in status_val:
-                    styles = ["background-color: #fff3cd"] * len(s)
-                return styles
-
-            def hl_total_val(val):
-                if isinstance(val, str):
-                    if "✅" in val: return "color: #155724; font-weight: bold"
-                    if "⚠️" in val or "❌" in val: return "color: #856404; font-weight: bold"
-                return ""
-
-            styled_total = (
-                df_total.style
-                .apply(hl_total, axis=1)
-                .map(hl_total_val, subset=["Best Recommendation", "Status"])
-                .set_properties(**{"background-color": "#e6f2ff", "color": "#004085", "font-weight": "bold"}, subset=["M4: I-MR (Optimal)"])
-                .set_properties(**{"background-color": "#e2efda", "color": "#155724", "font-weight": "bold"}, subset=["New Core Target (±1σ)"])
-            )
-            st.dataframe(styled_total, use_container_width=True, hide_index=True)
-
-            buf_total = io.BytesIO()
-            with pd.ExcelWriter(buf_total, engine="xlsxwriter") as writer:
-                df_total.to_excel(writer, sheet_name="SPC_Summary", index=False)
-                wb2 = writer.book; ws2 = writer.sheets["SPC_Summary"]
-                hfmt2 = wb2.add_format({"bold": True, "bg_color": "#CFE2F3", "border": 1, "align": "center", "text_wrap": True})
-                m4fmt = wb2.add_format({"bg_color": "#e6f2ff", "bold": True, "border": 1, "align": "center"})
-                tgfmt = wb2.add_format({"bg_color": "#e2efda", "bold": True, "border": 1, "align": "center"})
-                ws2.set_row(0, 30)
-                for ci, cn in enumerate(df_total.columns):
-                    fmt2 = m4fmt if "M4" in cn else (tgfmt if "Target" in cn else hfmt2)
-                    ws2.write(0, ci, cn, fmt2)
-                    ws2.set_column(ci, ci, max(14, len(cn) + 2))
-
+            st.markdown(f"### 📑 BẢNG TỔNG HỢP GIỚI HẠN KIỂM SOÁT (CONTROL LIMIT SUMMARY): {qgroup}")
+            
+            df_final = pd.DataFrame(all_groups_summary)
+            
+            # Sử dụng set_index để tạo cột phân cấp giống hệt hình ảnh
+            df_display = df_final.set_index(['Quality Group', 'Metallic Type', 'Material'])
+            
+            # Hiển thị bảng trực tiếp (không sử dụng style.map bị sai tên cột nữa)
+            st.dataframe(df_display, use_container_width=True)
+            
+            summary_buffer = io.BytesIO()
+            with pd.ExcelWriter(summary_buffer, engine='xlsxwriter') as writer:
+                df_display.to_excel(writer, sheet_name='Summary')
+            
             st.download_button(
-                label="📥 Export Complete SPC Summary (Excel)",
-                data=buf_total.getvalue(),
-                file_name=f"SPC_Summary_A118T_{datetime.now().strftime('%Y%m%d')}.xlsx",
-                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                label="📥 Download Full Summary Table (Excel)",
+                data=summary_buffer.getvalue(),
+                file_name=f"Control_Limit_Summary_All_{datetime.datetime.now().strftime('%H%M')}.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                key="dl_summary_all_final"
             )
         # ==============================================================================
         # DISPLAY FACTORY-WIDE SUMMARY (OUTSIDE INDIVIDUAL LOOP)
