@@ -486,11 +486,20 @@ if view_mode == "👑 Master Dictionary Export":
                     (group_ng['EL'] >= el_min_col)
                 ]
 
-                # 4. FIX QUAN TRỌNG (CAPPING LOGIC): Khóa dải hiển thị không cho vượt ngưỡng Max của Spec
+               # 4. FIX QUAN TRỌNG (CAPPING & OUTLIER LOGIC): Khóa dải hiển thị và Lọc nhiễu
                 def get_safe_mech_range(df, col, grp_df, spec_min_col, spec_max_col, is_el=False):
                     if df.empty or df[col].dropna().empty: return "-"
-                    val_min = df[col].min()
-                    val_max = df[col].max()
+                    
+                    # BỘ LỌC VẬT LÝ: Khử các dữ liệu rác/gõ nhầm (ví dụ YS = 3)
+                    if is_el:
+                        clean_series = df[df[col] > 0.5][col].dropna() # EL phải lớn hơn 0.5%
+                    else:
+                        clean_series = df[df[col] >= 100][col].dropna() # TS/YS thép không thể < 100 MPa
+                        
+                    if clean_series.empty: return "-"
+                    
+                    val_min = clean_series.min()
+                    val_max = clean_series.max()
                     
                     # Tìm giới hạn Absolute Min và Absolute Max của cột Spec đang hiển thị
                     valid_mins = pd.to_numeric(grp_df[spec_min_col], errors='coerce').replace(0, np.nan).dropna()
@@ -501,13 +510,13 @@ if view_mode == "👑 Master Dictionary Export":
                     
                     final_min, final_max = val_min, val_max
                     
-                    # Áp dụng chặn Min/Max
+                    # Áp dụng chặn Min/Max theo Spec
                     if pd.notna(abs_min_spec) and final_min < abs_min_spec:
                         final_min = abs_min_spec
                     if pd.notna(abs_max_spec) and final_max > abs_max_spec:
                         final_max = abs_max_spec
                         
-                    # Backup an toàn: Nếu chặn xong làm Min bị lớn hơn Max thì trả về gốc (bảo vệ data)
+                    # Backup an toàn
                     if final_min > final_max: 
                         final_min, final_max = val_min, val_max
                         
