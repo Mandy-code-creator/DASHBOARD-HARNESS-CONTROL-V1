@@ -256,7 +256,8 @@ valid = cnt[cnt["N_Coils"] >= 30]
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (ULTIMATE FIX - REMOVE GF + GI/GM MERGE + GL SEPARATE)
+# ==============================================================================
+# 9. MASTER DICTIONARY EXPORT (ULTIMATE FIX - THÊM BẢNG SUMMARY KHÔNG PHÂN ĐỘ DÀY)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
@@ -284,7 +285,6 @@ if view_mode == "👑 Master Dictionary Export":
         source_df = source_df[source_df['Metallic_Type'].astype(str).str.strip().str.upper() != 'GF']
         
         # --- 2. MERGE QUALITY GROUPS: GE00 & GE01 ---
-        # Chuyển GE01 thành GE00 / GE01 để chúng về cùng 1 nhóm khi groupby
         source_df['Quality_Group'] = source_df['Quality_Group'].astype(str).str.strip()
         source_df['Quality_Group'] = source_df['Quality_Group'].replace({
             'GE00': 'GE00 / GE01',
@@ -307,33 +307,27 @@ if view_mode == "👑 Master Dictionary Export":
 
         source_df['Metal_Category'] = source_df['Metallic_Type'].apply(map_metallic_group)
 
-        # --- 3. ULTIMATE FUNCTION 2.0: Range Display & Smart Prefix ---
+        # --- FUNCTION: Range Display & Smart Prefix ---
         def get_mapped_spec_range(group_df, min_col, max_col):
             temp_df = group_df[['Metallic_Type']].copy()
             
-            # Extract Min
             if min_col in group_df.columns:
                 temp_df['min_val'] = group_df[min_col].astype(str).str.extract(r'(\d+\.?\d*)')[0]
                 temp_df['min_val'] = pd.to_numeric(temp_df['min_val'], errors='coerce').fillna(0)
-            else:
-                temp_df['min_val'] = 0
+            else: temp_df['min_val'] = 0
                 
-            # Extract Max
             if max_col in group_df.columns:
                 temp_df['max_val'] = group_df[max_col].astype(str).str.extract(r'(\d+\.?\d*)')[0]
                 temp_df['max_val'] = pd.to_numeric(temp_df['max_val'], errors='coerce').fillna(0)
-            else:
-                temp_df['max_val'] = 0
+            else: temp_df['max_val'] = 0
 
             valid_df = temp_df[(temp_df['min_val'] > 0) | (temp_df['max_val'] > 0)]
-            if valid_df.empty:
-                return "-"
+            if valid_df.empty: return "-"
                 
             mapping = {}
             for _, row in valid_df.iterrows():
                 metal = str(row['Metallic_Type']).strip()
-                if metal not in mapping:
-                    mapping[metal] = {'mins': set(), 'maxs': set()}
+                if metal not in mapping: mapping[metal] = {'mins': set(), 'maxs': set()}
                 if row['min_val'] > 0: mapping[metal]['mins'].add(row['min_val'])
                 if row['max_val'] > 0: mapping[metal]['maxs'].add(row['max_val'])
 
@@ -342,35 +336,28 @@ if view_mode == "👑 Master Dictionary Export":
                 mins = sorted(list(vals['mins']))
                 maxs = sorted(list(vals['maxs']))
                 
-                # Format smartly
                 spec_str = ""
-                if mins and not maxs:
-                    spec_str = f"≥{mins[0]:.0f}" if len(mins) == 1 else f"≥{mins[0]:.0f}~{mins[-1]:.0f}"
-                elif maxs and not mins:
-                    spec_str = f"≤{maxs[0]:.0f}" if len(maxs) == 1 else f"≤{maxs[0]:.0f}~{maxs[-1]:.0f}"
+                if mins and not maxs: spec_str = f"≥{mins[0]:.0f}" if len(mins) == 1 else f"≥{mins[0]:.0f}~{mins[-1]:.0f}"
+                elif maxs and not mins: spec_str = f"≤{maxs[0]:.0f}" if len(maxs) == 1 else f"≤{maxs[0]:.0f}~{maxs[-1]:.0f}"
                 elif mins and maxs:
-                    if len(mins) == 1 and len(maxs) == 1:
-                        spec_str = f"{mins[0]:.0f}~{maxs[0]:.0f}"
+                    if len(mins) == 1 and len(maxs) == 1: spec_str = f"{mins[0]:.0f}~{maxs[0]:.0f}"
                     else:
                         min_disp = f"{mins[0]:.0f}" if len(mins)==1 else f"{mins[0]:.0f}~{mins[-1]:.0f}"
                         max_disp = f"{maxs[0]:.0f}" if len(maxs)==1 else f"{maxs[0]:.0f}~{maxs[-1]:.0f}"
                         spec_str = f"Min {min_disp} | Max {max_disp}"
                         
-                if spec_str not in spec_to_metals:
-                    spec_to_metals[spec_str] = []
+                if spec_str not in spec_to_metals: spec_to_metals[spec_str] = []
                 spec_to_metals[spec_str].append(metal)
                 
-            if len(spec_to_metals) == 1:
-                return list(spec_to_metals.keys())[0]
+            if len(spec_to_metals) == 1: return list(spec_to_metals.keys())[0]
                 
             parts = []
             for spec_val, metals in spec_to_metals.items():
                 metal_str = "/".join(sorted(metals))
                 parts.append(f"{metal_str}: {spec_val}")
-                
             return " | ".join(parts)
             
-        # --- 4. DATA PRE-PROCESSING ---
+        # --- DATA PRE-PROCESSING ---
         req_cols = ['Hardness_LINE', 'TS', 'YS', 'EL']
         for c in req_cols:
             source_df[c] = pd.to_numeric(source_df[c], errors='coerce')
@@ -387,26 +374,32 @@ if view_mode == "👑 Master Dictionary Export":
             'A108G': 'A108 / A108G'
         })
         
-        # --- 5. GROUPING LOGIC (Added Metal_Category) ---
-        master_group_cols = ['Quality_Group', 'Material', 'Gauge_Range', 'Metal_Category']
-        
-        master_data = []
-
         def format_hrb(val):
-            return str(int(float(val) + 0.5)) if pd.notna(val) and val > 0 else ""
+            return f"{val:.1f}" if pd.notna(val) and val > 0 else ""
 
         def get_safe_max(series):
             s = pd.to_numeric(series, errors='coerce').dropna()
             return s.max() if not s.empty else 0
 
+        # =========================================================
+        # BẢNG 1: NHÓM THEO ĐỘ DÀY (GAUGE)
+        # =========================================================
+        master_group_cols = ['Quality_Group', 'Material', 'Gauge_Range', 'Metal_Category']
+        master_data = []
+
+        # =========================================================
+        # BẢNG 2: TỔNG HỢP KHÔNG PHÂN ĐỘ DÀY (NO GAUGE)
+        # =========================================================
+        no_gauge_cols = ['Quality_Group', 'Metal_Category', 'Material']
+        summary_no_gauge_data = []
+
         with st.spinner("Grouping and calculating statistical limits..."):
+            
+            # --- TÍNH TOÁN BẢNG 1 (CÓ ĐỘ DÀY) ---
             for keys, group in clean_master_df.groupby(master_group_cols, observed=True):
                 if len(group) < min_coils_req: continue 
                 
-                # Display category (e.g., "GI / GM" or "GL")
                 metals_included = keys[3]
-                
-                # Calculate SPC
                 hrb = group["Hardness_LINE"]
                 mu = hrb.mean()
                 mrs = np.abs(np.diff(hrb.values))
@@ -415,21 +408,17 @@ if view_mode == "👑 Master Dictionary Export":
                 p_ctrl_min, p_ctrl_max = mu - control_k * sigma_imr, mu + control_k * sigma_imr
                 p_target_min, p_target_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
 
-                # Hardness Specs
                 cur_t_min = get_safe_max(group['Limit_Min'])
                 cur_t_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
                 cur_c_min = get_safe_max(group['Lab_Min'])
                 cur_c_max = group['Lab_Max'].min() if 'Lab_Max' in group.columns else 0
 
-                # Actual properties in target zone
                 actual_in = group[(group['Hardness_LINE'] >= p_target_min) & (group['Hardness_LINE'] <= p_target_max)]
                 
-                # Mapped Specs
                 s_ys_spec = get_mapped_spec_range(group, "Standard YS min", "Standard YS max")
                 s_ts_spec = get_mapped_spec_range(group, "Standard TS min", "Standard TS max")
                 s_el_spec = get_mapped_spec_range(group, "Standard EL min", "Standard EL max")
 
-                # Assemble row
                 master_data.append({
                     "Quality Group": keys[0],
                     "Metallic Type": metals_included, 
@@ -447,33 +436,92 @@ if view_mode == "👑 Master Dictionary Export":
                     "Actual EL": f"{actual_in['EL'].min():.1f}~{actual_in['EL'].max():.1f}" if not actual_in.empty else "N/A"
                 })
 
+            # --- TÍNH TOÁN BẢNG 2 (KHÔNG ĐỘ DÀY) ---
+            for keys_ng, group_ng in clean_master_df.groupby(no_gauge_cols, observed=True):
+                if len(group_ng) < min_coils_req: continue
+                
+                q_grp, metal_cat, mat = keys_ng
+                
+                hrb_ng = group_ng["Hardness_LINE"]
+                mu_ng = hrb_ng.mean()
+                mrs_ng = np.abs(np.diff(hrb_ng.values))
+                sigma_imr_ng = np.mean(mrs_ng) / 1.128 if len(mrs_ng) > 0 else hrb_ng.std()
+
+                p_rel_min, p_rel_max = mu_ng - 2.0 * sigma_imr_ng, mu_ng + 2.0 * sigma_imr_ng
+                p_mill_min, p_mill_max = mu_ng - 1.0 * sigma_imr_ng, mu_ng + 1.0 * sigma_imr_ng
+
+                cur_t_min_ng = get_safe_max(group_ng['Limit_Min'])
+                cur_t_max_ng = group_ng['Limit_Max'].min() if 'Limit_Max' in group_ng.columns else 0
+
+                s_ys_spec_ng = get_mapped_spec_range(group_ng, "Standard YS min", "Standard YS max")
+                s_ts_spec_ng = get_mapped_spec_range(group_ng, "Standard TS min", "Standard TS max")
+                s_el_spec_ng = get_mapped_spec_range(group_ng, "Standard EL min", "Standard EL max")
+
+                summary_no_gauge_data.append({
+                    "Quality Group": q_grp,
+                    "Metallic Type": metal_cat,
+                    "Material": mat,
+                    "Current Mill Range": f"{format_hrb(cur_t_min_ng)}~{format_hrb(cur_t_max_ng)}" if cur_t_max_ng > 0 else "-",
+                    "Current Release Range": f"{format_hrb(hrb_ng.min())}~{format_hrb(hrb_ng.max())}",
+                    "Proposed Release Range (2.0σ)": f"{format_hrb(p_rel_min)}~{format_hrb(p_rel_max)}",
+                    "Proposed Mill Range (1.0σ)": f"{format_hrb(p_mill_min)}~{format_hrb(p_mill_max)}",
+                    "YS Spec": s_ys_spec_ng,
+                    "YS Distribution": f"{group_ng['YS'].min():.0f}~{group_ng['YS'].max():.0f}" if not group_ng['YS'].dropna().empty else "-",
+                    "TS Spec": s_ts_spec_ng,
+                    "TS Distribution": f"{group_ng['TS'].min():.0f}~{group_ng['TS'].max():.0f}" if not group_ng['TS'].dropna().empty else "-",
+                    "EL Spec": s_el_spec_ng,
+                    "EL Distribution": f"{group_ng['EL'].min():.1f}~{group_ng['EL'].max():.1f}" if not group_ng['EL'].dropna().empty else "-"
+                })
+
+
         if master_data:
             df_out = pd.DataFrame(master_data)
             df_out = df_out.sort_values(by=["Quality Group", "Metallic Type", "Material", "Gauge Range"]).reset_index(drop=True)
             df_out.insert(0, "No.", range(1, len(df_out) + 1))
             
-            # --- DISPLAY TABLE ---
-            styled_df = df_out.style \
-                .set_properties(**{'background-color': '#f8f9fa', 'color': '#333', 'border': '1px solid #ddd', 'text-align': 'center'}) \
-                .set_properties(**{'background-color': '#FFF2CC', 'font-weight': 'bold'}, subset=["Current Target Spec", "Current Control Spec"]) \
-                .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724'}, subset=[f"Target ({target_k}σ)"]) \
-                .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[f"Proposed Control Limit ({control_k}σ)"])
+            df_no_gauge = pd.DataFrame(summary_no_gauge_data)
+            if not df_no_gauge.empty:
+                df_no_gauge = df_no_gauge.sort_values(by=["Quality Group", "Metallic Type", "Material"]).reset_index(drop=True)
 
-            st.dataframe(styled_df, use_container_width=True, hide_index=True)
+            # --- DISPLAY TABS ---
+            tab_gauge, tab_nogauge = st.tabs(["🗂️ Master Dictionary (By Gauge)", "📑 Control Limit Summary (Overall)"])
             
+            with tab_gauge:
+                styled_df = df_out.style \
+                    .set_properties(**{'background-color': '#f8f9fa', 'color': '#333', 'border': '1px solid #ddd', 'text-align': 'center'}) \
+                    .set_properties(**{'background-color': '#FFF2CC', 'font-weight': 'bold'}, subset=["Current Target Spec", "Current Control Spec"]) \
+                    .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724'}, subset=[f"Target ({target_k}σ)"]) \
+                    .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[f"Proposed Control Limit ({control_k}σ)"])
+                st.dataframe(styled_df, use_container_width=True, hide_index=True)
+
+            with tab_nogauge:
+                if not df_no_gauge.empty:
+                    df_display_ng = df_no_gauge.set_index(['Quality Group', 'Metallic Type', 'Material'])
+                    st.dataframe(df_display_ng, use_container_width=True)
+
             # --- EXPORT EXCEL ---
             output = BytesIO()
             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                # Sheet 1: Master Dictionary
                 df_out.to_excel(writer, index=False, sheet_name='Master_Dictionary')
                 workbook = writer.book
-                worksheet = writer.sheets['Master_Dictionary']
+                worksheet1 = writer.sheets['Master_Dictionary']
                 
                 header_fmt = workbook.add_format({'bold': True, 'bg_color': '#EFEFEF', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
                 for col_num, value in enumerate(df_out.columns.values):
-                    worksheet.write(0, col_num, value, header_fmt)
-                worksheet.set_column('A:A', 5)
-                worksheet.set_column('B:O', 22) 
+                    worksheet1.write(0, col_num, value, header_fmt)
+                worksheet1.set_column('A:A', 5)
+                worksheet1.set_column('B:O', 22) 
+                
+                # Sheet 2: Control Limit Summary (No Gauge)
+                if not df_no_gauge.empty:
+                    df_no_gauge.to_excel(writer, index=False, sheet_name='Control_Limit_Summary')
+                    worksheet2 = writer.sheets['Control_Limit_Summary']
+                    for col_num, value in enumerate(df_no_gauge.columns.values):
+                        worksheet2.write(0, col_num, value, header_fmt)
+                    worksheet2.set_column('A:M', 20)
 
+            st.markdown("<br>", unsafe_allow_html=True)
             st.download_button("📥 Download Master Dictionary (Excel)", output.getvalue(), "Master_Dictionary_SPC_Grouped.xlsx")
         else:
             st.warning("⚠️ No data found. Please reduce the 'Min Coils Required' value.")
