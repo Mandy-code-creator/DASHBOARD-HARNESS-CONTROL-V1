@@ -1948,7 +1948,7 @@ for i, (_, g) in enumerate(valid.iterrows()):
             st.download_button(
                 label="📥 Download Full Summary Table (Excel)",
                 data=summary_buffer.getvalue(),
-                file_name=f"Control_Limit_Summary_All_{datetime.now().strftime('%H%M')}.xlsx",
+                file_name=f"Control_Limit_Summary_All_{datetime.datetime.now().strftime('%H%M')}.xlsx",
                 mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                 key="dl_summary_all_final"
             )
