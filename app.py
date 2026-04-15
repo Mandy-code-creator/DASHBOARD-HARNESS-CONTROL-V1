@@ -257,8 +257,7 @@ valid = cnt[cnt["N_Coils"] >= 30]
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-# ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (PHIÊN BẢN HOÀN CHỈNH - DUAL DISTRIBUTION & SPC)
+# 9. MASTER DICTIONARY EXPORT (NO SELECTBOX - SHOW ALL CHARTS)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
@@ -271,31 +270,25 @@ if view_mode == "👑 Master Dictionary Export":
 
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary")
-    st.caption("Bản tổng hợp giới hạn kiểm soát: Gộp nhóm thông minh theo Quality, Material và Metal Category (GI/GM gộp chung, GL tách riêng).")
+    st.caption("Control limits summary: Smart grouping by Quality, Material, and Metallic Category. GF is excluded from production data.")
     
-    # --- PHẦN INPUT THAM SỐ ---
+    # --- INPUT PARAMETERS ---
     col_sig1, col_sig2, col_sig3 = st.columns(3)
     with col_sig1:
-        target_k = st.number_input("🎯 Vùng Target (σ)", value=1.0, step=0.1, key="k_target", help="Dải màu xanh trên biểu đồ")
+        target_k = st.number_input("🎯 Target Zone (σ)", value=1.0, step=0.1, key="k_target")
     with col_sig2:
-        control_k = st.number_input("🚧 Giới hạn đề xuất (σ)", value=2.0, step=0.5, key="k_control", help="Đường gạch đứt màu đỏ")
+        control_k = st.number_input("🚧 Proposed Control Limit (σ)", value=2.0, step=0.5, key="k_control")
     with col_sig3:
-        min_coils_req = st.number_input("📦 Số cuộn tối thiểu/nhóm", value=30, step=1, key="min_coils")
+        min_coils_req = st.number_input("📦 Min Coils Required", value=30, step=1, key="min_coils")
 
-    if st.button("🚀 Chạy phân tích & Tạo từ điển", type="primary"):
+    if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
         source_df = df_master_full.copy()
         
-        # --- 1. TIỀN XỬ LÝ DỮ LIỆU ---
-        # Loại bỏ hàng GF (không còn sản xuất)
+        # --- 1. DATA PRE-PROCESSING ---
         source_df = source_df[source_df['Metallic_Type'].astype(str).str.strip().str.upper() != 'GF']
-        
-        # Gộp nhóm Quality GE00 & GE01
         source_df['Quality_Group'] = source_df['Quality_Group'].astype(str).str.strip().replace({'GE00': 'GE00 / GE01', 'GE01': 'GE00 / GE01'})
-
-        # Gộp nhóm Material A108 & A108G
         source_df['Material'] = source_df['Material'].astype(str).str.strip().replace({'A108': 'A108 / A108G', 'A108G': 'A108 / A108G'})
         
-        # Phân loại mạ (Metal Category)
         def map_metallic_group(m):
             m_str = str(m).strip().upper()
             if 'GL' in m_str: return 'GL'
@@ -303,7 +296,6 @@ if view_mode == "👑 Master Dictionary Export":
             return m_str
         source_df['Metal_Category'] = source_df['Metallic_Type'].apply(map_metallic_group)
 
-        # Chuyển đổi dữ liệu số cho Hardness, TS, YS, EL
         req_cols = ['Hardness_LINE', 'Hardness_LAB', 'TS', 'YS', 'EL']
         for c in req_cols:
             if c in source_df.columns:
@@ -312,9 +304,8 @@ if view_mode == "👑 Master Dictionary Export":
         clean_master_df = source_df.dropna(subset=['Hardness_LINE']).copy()
         clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
 
-        # --- CÁC HÀM HỖ TRỢ (UTILITIES) ---
+        # --- UTILITY FUNCTIONS ---
         def get_mapped_spec_range(group_df, min_col, max_col):
-            """Hàm trích xuất dải Spec từ dữ liệu gốc"""
             temp_df = group_df[['Metallic_Type']].copy()
             for col, key in [(min_col, 'min_val'), (max_col, 'max_val')]:
                 if col in group_df.columns:
@@ -322,73 +313,78 @@ if view_mode == "👑 Master Dictionary Export":
                 else: temp_df[key] = 0
             valid_df = temp_df[(temp_df['min_val'] > 0) | (temp_df['max_val'] > 0)]
             if valid_df.empty: return "-"
-            # Logic gộp text spec (giản lược)
+            
             m_min, m_max = valid_df['min_val'].min(), valid_df['max_val'].max()
             if m_min > 0 and m_max > 0: return f"{m_min:.0f}~{m_max:.0f}"
             return f"≥{m_min:.0f}" if m_min > 0 else f"≤{m_max:.0f}"
 
         def get_safe_mech_range(df, col, grp_df, spec_min_col, spec_max_col, is_el=False):
-            """Hàm lấy dải phân phối thực tế của TS/YS/EL đã lọc nhiễu"""
             if df.empty: return "-"
             clean_s = df[df[col] > (0.5 if is_el else 100)][col].dropna()
             if clean_s.empty: return "-"
+            
             val_min, val_max = clean_s.min(), clean_s.max()
-            # Chặn theo Spec tuyệt đối để báo cáo đẹp hơn
             s_min = pd.to_numeric(grp_df[spec_min_col], errors='coerce').replace(0, np.nan).min()
             s_max = pd.to_numeric(grp_df[spec_max_col], errors='coerce').replace(0, np.nan).max()
+            
             f_min = max(val_min, s_min) if pd.notna(s_min) else val_min
             f_max = min(val_max, s_max) if pd.notna(s_max) else val_max
             return f"{f_min:.1f}~{f_max:.1f}" if is_el else f"{f_min:.0f}~{f_max:.0f}"
 
         def plot_distribution_dual(group_data, title, mu, sigma, k_ctrl, k_tgt):
-            """Hàm vẽ biểu đồ phân phối kép Line vs Lab"""
-            line_vals = group_data["Hardness_LINE"].dropna().values
-            lab_vals = group_data["Hardness_LAB"].dropna().values if "Hardness_LAB" in group_data.columns else np.array([])
+            line_s = pd.to_numeric(group_data["Hardness_LINE"], errors='coerce')
+            line_vals = line_s[(line_s.notna()) & (line_s > 0)].values
+            
+            if "Hardness_LAB" in group_data.columns:
+                lab_s = pd.to_numeric(group_data["Hardness_LAB"], errors='coerce')
+                lab_vals = lab_s[(lab_s.notna()) & (lab_s > 0)].values
+            else:
+                lab_vals = np.array([])
             
             hist_data, labels, colors = [], [], []
             if len(line_vals) > 5:
-                hist_data.append(line_vals); labels.append('Line Data (Thực tế)'); colors.append('#3498db')
+                hist_data.append(line_vals); labels.append('Line Data'); colors.append('#3498db')
             if len(lab_vals) > 5:
-                hist_data.append(lab_vals); labels.append('Lab Data (Đối chứng)'); colors.append('#e67e22')
+                hist_data.append(lab_vals); labels.append('Lab Data'); colors.append('#e67e22')
             
             if not hist_data: return None
             
             fig = ff.create_distplot(hist_data, labels, bin_size=0.5, show_rug=False, colors=colors)
             
-            # Kẻ các đường giới hạn đề xuất (Dựa trên Line)
             p_ctrl_min, p_ctrl_max = mu - k_ctrl * sigma, mu + k_ctrl * sigma
             p_tgt_min, p_tgt_max = mu - k_tgt * sigma, mu + k_tgt * sigma
             
-            fig.add_vline(x=p_ctrl_min, line_dash="dash", line_color="#c0392b", annotation_text="LCL (New)")
-            fig.add_vline(x=p_ctrl_max, line_dash="dash", line_color="#c0392b", annotation_text="UCL (New)")
+            fig.add_vline(x=p_ctrl_min, line_dash="dash", line_color="#c0392b", annotation_text="Lower Control")
+            fig.add_vline(x=p_ctrl_max, line_dash="dash", line_color="#c0392b", annotation_text="Upper Control")
             fig.add_vrect(x0=p_tgt_min, x1=p_tgt_max, fillcolor="green", opacity=0.1, line_width=0, annotation_text="Target Zone")
             
-            fig.update_layout(title=f"Phân tích phân phối: {title}", xaxis_title="Hardness (HRB)", height=450, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            fig.update_layout(title=f"Distribution Analysis: {title}", xaxis_title="Hardness (HRB)", height=450, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
             return fig
 
-        # --- 2. TÍNH TOÁN DỮ LIỆU ---
+        # --- 2. CALCULATIONS ---
         master_data, summary_no_gauge = [], []
         
-        # Nhóm theo Độ dày (Bảng chi tiết)
         for keys, group in clean_master_df.groupby(['Quality_Group', 'Material', 'Gauge_Range', 'Metal_Category'], observed=True):
             if len(group) < min_coils_req: continue
-            hrb = group["Hardness_LINE"]
+            hrb = group[group["Hardness_LINE"] > 0]["Hardness_LINE"].dropna()
+            if hrb.empty: continue
+            
             mu = hrb.mean()
-            # Tính Sigma bằng Moving Range (SPC chuẩn)
             sigma_imr = np.mean(np.abs(np.diff(hrb.values))) / 1.128 if len(hrb) > 1 else hrb.std()
             
             master_data.append({
                 "Quality Group": keys[0], "Metallic Type": keys[3], "Material": keys[1], "Gauge Range": keys[2],
-                f"Proposed Limit ({control_k}σ)": f"{mu - control_k*sigma_imr:.1f}~{mu + control_k*sigma_imr:.1f}",
+                f"Proposed Control Limit ({control_k}σ)": f"{mu - control_k*sigma_imr:.1f}~{mu + control_k*sigma_imr:.1f}",
                 f"Target ({target_k}σ)": f"{mu - target_k*sigma_imr:.1f}~{mu + target_k*sigma_imr:.1f}",
-                "Actual YS": f"{group['YS'].min():.0f}~{group['YS'].max():.0f}",
-                "Actual TS": f"{group['TS'].min():.0f}~{group['TS'].max():.0f}"
+                "Actual YS": f"{group['YS'].min():.0f}~{group['YS'].max():.0f}" if not group['YS'].dropna().empty else "N/A",
+                "Actual TS": f"{group['TS'].min():.0f}~{group['TS'].max():.0f}" if not group['TS'].dropna().empty else "N/A"
             })
 
-        # Nhóm Tổng hợp (Bảng cho Sếp)
         for keys_ng, group_ng in clean_master_df.groupby(['Quality_Group', 'Metal_Category', 'Material'], observed=True):
             if len(group_ng) < min_coils_req: continue
-            hrb_ng = group_ng["Hardness_LINE"]
+            hrb_ng = group_ng[group_ng["Hardness_LINE"] > 0]["Hardness_LINE"].dropna()
+            if hrb_ng.empty: continue
+            
             mu_ng = hrb_ng.mean()
             sig_ng = np.mean(np.abs(np.diff(hrb_ng.values))) / 1.128 if len(hrb_ng) > 1 else hrb_ng.std()
             
@@ -401,13 +397,13 @@ if view_mode == "👑 Master Dictionary Export":
                 "EL Distribution": get_safe_mech_range(group_ng, 'EL', group_ng, 'Standard EL min', 'Standard EL max', is_el=True)
             })
 
-        # --- 3. HIỂN THỊ UI ---
-        tab1, tab2 = st.tabs(["🗂️ Từ điển chi tiết (By Gauge)", "📑 Bảng tổng hợp (Summary for Management)"])
+        # --- 3. UI RENDERING ---
+        tab1, tab2 = st.tabs(["🗂️ Master Dictionary (By Gauge)", "📑 Control Limit Summary (Overall)"])
         
         with tab1:
             if master_data:
                 df_m = pd.DataFrame(master_data)
-                st.dataframe(df_m.style.set_properties(**{'background-color': '#CFE2F3'}, subset=[f"Proposed Limit ({control_k}σ)"]), use_container_width=True)
+                st.dataframe(df_m.style.set_properties(**{'background-color': '#CFE2F3'}, subset=[f"Proposed Control Limit ({control_k}σ)"]), use_container_width=True, hide_index=True)
         
         with tab2:
             if summary_no_gauge:
@@ -415,28 +411,28 @@ if view_mode == "👑 Master Dictionary Export":
                 st.dataframe(df_s, use_container_width=True)
                 
                 st.markdown("---")
-                st.subheader("📊 Phân tích trực quan: Line vs Lab Comparison")
-                st.info("Biểu đồ dưới đây so sánh dữ liệu thực tế (Line) và dữ liệu Lab để chứng minh dải giới hạn mới là an toàn.")
+                st.subheader("📊 Visual Distribution Analysis")
+                st.info("Click on any group below to expand and view its distribution chart.")
                 
-                group_list = df_s.apply(lambda x: f"{x['Quality Group']} | {x['Metallic Type']} | {x['Material']}", axis=1).tolist()
-                sel_grp = st.selectbox("🔍 Chọn nhóm thép để xem biểu đồ:", group_list)
-                
-                if sel_grp:
-                    q_s, m_s, mat_s = sel_grp.split(" | ")
-                    plot_df = clean_master_df[(clean_master_df['Quality_Group'] == q_s) & (clean_master_df['Metal_Category'] == m_s) & (clean_master_df['Material'] == mat_s)]
+                # Vòng lặp vẽ TOÀN BỘ biểu đồ, bọc trong expander để chống lag
+                for _, row in df_s.iterrows():
+                    q_s, m_s, mat_s = row['Quality Group'], row['Metallic Type'], row['Material']
+                    sel_grp = f"{q_s} | {m_s} | {mat_s}"
                     
-                    # Tính toán stats nhanh cho biểu đồ
-                    h_vals = plot_df["Hardness_LINE"]
-                    fig = plot_distribution_dual(plot_df, sel_grp, h_vals.mean(), np.mean(np.abs(np.diff(h_vals.values)))/1.128, control_k, target_k)
-                    if fig: st.plotly_chart(fig, use_container_width=True)
-                    else: st.warning("Không đủ dữ liệu để vẽ biểu đồ cho nhóm này.")
+                    plot_df = clean_master_df[(clean_master_df['Quality_Group'] == q_s) & (clean_master_df['Metal_Category'] == m_s) & (clean_master_df['Material'] == mat_s)]
+                    h_vals = plot_df[plot_df["Hardness_LINE"] > 0]["Hardness_LINE"].dropna()
+                    
+                    if not h_vals.empty:
+                        with st.expander(f"📈 Chart: {sel_grp}", expanded=False):
+                            fig = plot_distribution_dual(plot_df, sel_grp, h_vals.mean(), np.mean(np.abs(np.diff(h_vals.values)))/1.128, control_k, target_k)
+                            if fig: st.plotly_chart(fig, use_container_width=True)
 
-        # --- 4. XUẤT EXCEL ---
+        # --- 4. EXPORT ---
         output = BytesIO()
         with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            pd.DataFrame(master_data).to_excel(writer, index=False, sheet_name='Chi_tiet_Gauge')
-            pd.DataFrame(summary_no_gauge).to_excel(writer, index=False, sheet_name='Tong_hop_Management')
-        st.download_button("📥 Tải xuống Master Dictionary (Excel)", output.getvalue(), "Master_Dictionary_SPC.xlsx")
+            pd.DataFrame(master_data).to_excel(writer, index=False, sheet_name='By_Gauge_Dictionary')
+            pd.DataFrame(summary_no_gauge).to_excel(writer, index=False, sheet_name='Summary_Overall')
+        st.download_button("📥 Download Master Dictionary (Excel)", output.getvalue(), "Master_Dictionary_SPC.xlsx")
 
     st.stop()
 # ==============================================================================
