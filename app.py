@@ -257,7 +257,7 @@ valid = cnt[cnt["N_Coils"] >= 30]
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (NO SELECTBOX - SHOW ALL CHARTS)
+# 9. MASTER DICTIONARY EXPORT (ULTIMATE - NORMAL CURVE + OUTLIER REMOVAL)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
@@ -270,7 +270,7 @@ if view_mode == "👑 Master Dictionary Export":
 
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary")
-    st.caption("Control limits summary: Smart grouping by Quality, Material, and Metallic Category. GF is excluded from production data.")
+    st.caption("Control limits summary: Smart grouping. Auto IQR Outlier Removal applied for accurate SPC Normal Distribution curves.")
     
     # --- INPUT PARAMETERS ---
     col_sig1, col_sig2, col_sig3 = st.columns(3)
@@ -302,9 +302,25 @@ if view_mode == "👑 Master Dictionary Export":
                 source_df[c] = pd.to_numeric(source_df[c], errors='coerce')
         
         clean_master_df = source_df.dropna(subset=['Hardness_LINE']).copy()
-        clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
 
         # --- UTILITY FUNCTIONS ---
+        def remove_outliers_iqr(series):
+            """Thuật toán loại bỏ nhiễu/ngoại lai (Outliers) dựa trên IQR để đường phân phối chuẩn xác"""
+            s = pd.to_numeric(series, errors='coerce').dropna()
+            s = s[s > 0]
+            
+            if len(s) < 10: 
+                return s
+                
+            Q1 = s.quantile(0.25)
+            Q3 = s.quantile(0.75)
+            IQR = Q3 - Q1
+            
+            lower_bound = Q1 - 1.5 * IQR
+            upper_bound = Q3 + 1.5 * IQR
+            
+            return s[(s >= lower_bound) & (s <= upper_bound)]
+
         def get_mapped_spec_range(group_df, min_col, max_col):
             temp_df = group_df[['Metallic_Type']].copy()
             for col, key in [(min_col, 'min_val'), (max_col, 'max_val')]:
@@ -320,7 +336,7 @@ if view_mode == "👑 Master Dictionary Export":
 
         def get_safe_mech_range(df, col, grp_df, spec_min_col, spec_max_col, is_el=False):
             if df.empty: return "-"
-            clean_s = df[df[col] > (0.5 if is_el else 100)][col].dropna()
+            clean_s = remove_outliers_iqr(df[col]) if not is_el else df[df[col] > 0.5][col].dropna()
             if clean_s.empty: return "-"
             
             val_min, val_max = clean_s.min(), clean_s.max()
@@ -332,12 +348,11 @@ if view_mode == "👑 Master Dictionary Export":
             return f"{f_min:.1f}~{f_max:.1f}" if is_el else f"{f_min:.0f}~{f_max:.0f}"
 
         def plot_distribution_dual(group_data, title, mu, sigma, k_ctrl, k_tgt):
-            line_s = pd.to_numeric(group_data["Hardness_LINE"], errors='coerce')
-            line_vals = line_s[(line_s.notna()) & (line_s > 0)].values
+            # Lấy dữ liệu ĐÃ LỌC NHIỄU
+            line_vals = remove_outliers_iqr(group_data["Hardness_LINE"]).values
             
             if "Hardness_LAB" in group_data.columns:
-                lab_s = pd.to_numeric(group_data["Hardness_LAB"], errors='coerce')
-                lab_vals = lab_s[(lab_s.notna()) & (lab_s > 0)].values
+                lab_vals = remove_outliers_iqr(group_data["Hardness_LAB"]).values
             else:
                 lab_vals = np.array([])
             
@@ -349,7 +364,8 @@ if view_mode == "👑 Master Dictionary Export":
             
             if not hist_data: return None
             
-            fig = ff.create_distplot(hist_data, labels, bin_size=0.5, show_rug=False, colors=colors)
+            # curve_type='normal' ÉP VẼ ĐƯỜNG CONG CHUÔNG CHUẨN (THAY VÌ KDE)
+            fig = ff.create_distplot(hist_data, labels, bin_size=0.5, show_rug=False, colors=colors, curve_type='normal')
             
             p_ctrl_min, p_ctrl_max = mu - k_ctrl * sigma, mu + k_ctrl * sigma
             p_tgt_min, p_tgt_max = mu - k_tgt * sigma, mu + k_tgt * sigma
@@ -358,7 +374,7 @@ if view_mode == "👑 Master Dictionary Export":
             fig.add_vline(x=p_ctrl_max, line_dash="dash", line_color="#c0392b", annotation_text="Upper Control")
             fig.add_vrect(x0=p_tgt_min, x1=p_tgt_max, fillcolor="green", opacity=0.1, line_width=0, annotation_text="Target Zone")
             
-            fig.update_layout(title=f"Distribution Analysis: {title}", xaxis_title="Hardness (HRB)", height=450, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
+            fig.update_layout(title=f"Normal Distribution Analysis: {title}", xaxis_title="Hardness (HRB)", height=450, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
             return fig
 
         # --- 2. CALCULATIONS ---
@@ -366,27 +382,32 @@ if view_mode == "👑 Master Dictionary Export":
         
         for keys, group in clean_master_df.groupby(['Quality_Group', 'Material', 'Gauge_Range', 'Metal_Category'], observed=True):
             if len(group) < min_coils_req: continue
-            hrb = group[group["Hardness_LINE"] > 0]["Hardness_LINE"].dropna()
-            if hrb.empty: continue
             
-            mu = hrb.mean()
-            sigma_imr = np.mean(np.abs(np.diff(hrb.values))) / 1.128 if len(hrb) > 1 else hrb.std()
+            hrb_clean = remove_outliers_iqr(group["Hardness_LINE"])
+            if hrb_clean.empty: continue
+            
+            mu = hrb_clean.mean()
+            sigma_imr = np.mean(np.abs(np.diff(hrb_clean.values))) / 1.128 if len(hrb_clean) > 1 else hrb_clean.std()
+            
+            ys_clean = remove_outliers_iqr(group["YS"])
+            ts_clean = remove_outliers_iqr(group["TS"])
             
             master_data.append({
                 "Quality Group": keys[0], "Metallic Type": keys[3], "Material": keys[1], "Gauge Range": keys[2],
                 f"Proposed Control Limit ({control_k}σ)": f"{mu - control_k*sigma_imr:.1f}~{mu + control_k*sigma_imr:.1f}",
                 f"Target ({target_k}σ)": f"{mu - target_k*sigma_imr:.1f}~{mu + target_k*sigma_imr:.1f}",
-                "Actual YS": f"{group['YS'].min():.0f}~{group['YS'].max():.0f}" if not group['YS'].dropna().empty else "N/A",
-                "Actual TS": f"{group['TS'].min():.0f}~{group['TS'].max():.0f}" if not group['TS'].dropna().empty else "N/A"
+                "Actual YS": f"{ys_clean.min():.0f}~{ys_clean.max():.0f}" if not ys_clean.empty else "N/A",
+                "Actual TS": f"{ts_clean.min():.0f}~{ts_clean.max():.0f}" if not ts_clean.empty else "N/A"
             })
 
         for keys_ng, group_ng in clean_master_df.groupby(['Quality_Group', 'Metal_Category', 'Material'], observed=True):
             if len(group_ng) < min_coils_req: continue
-            hrb_ng = group_ng[group_ng["Hardness_LINE"] > 0]["Hardness_LINE"].dropna()
-            if hrb_ng.empty: continue
             
-            mu_ng = hrb_ng.mean()
-            sig_ng = np.mean(np.abs(np.diff(hrb_ng.values))) / 1.128 if len(hrb_ng) > 1 else hrb_ng.std()
+            hrb_clean_ng = remove_outliers_iqr(group_ng["Hardness_LINE"])
+            if hrb_clean_ng.empty: continue
+            
+            mu_ng = hrb_clean_ng.mean()
+            sig_ng = np.mean(np.abs(np.diff(hrb_clean_ng.values))) / 1.128 if len(hrb_clean_ng) > 1 else hrb_clean_ng.std()
             
             summary_no_gauge.append({
                 "Quality Group": keys_ng[0], "Metallic Type": keys_ng[1], "Material": keys_ng[2],
@@ -411,16 +432,16 @@ if view_mode == "👑 Master Dictionary Export":
                 st.dataframe(df_s, use_container_width=True)
                 
                 st.markdown("---")
-                st.subheader("📊 Visual Distribution Analysis")
-                st.info("Click on any group below to expand and view its distribution chart.")
+                st.subheader("📊 Visual Normal Distribution Analysis")
+                st.info("Click on any group below to expand and view its clean distribution chart (Outliers removed, Normal Curve applied).")
                 
-                # Vòng lặp vẽ TOÀN BỘ biểu đồ, bọc trong expander để chống lag
+                # HIỂN THỊ TẤT CẢ BIỂU ĐỒ TRONG EXPANDER (KHÔNG DÙNG SELECTBOX)
                 for _, row in df_s.iterrows():
                     q_s, m_s, mat_s = row['Quality Group'], row['Metallic Type'], row['Material']
                     sel_grp = f"{q_s} | {m_s} | {mat_s}"
                     
                     plot_df = clean_master_df[(clean_master_df['Quality_Group'] == q_s) & (clean_master_df['Metal_Category'] == m_s) & (clean_master_df['Material'] == mat_s)]
-                    h_vals = plot_df[plot_df["Hardness_LINE"] > 0]["Hardness_LINE"].dropna()
+                    h_vals = remove_outliers_iqr(plot_df["Hardness_LINE"])
                     
                     if not h_vals.empty:
                         with st.expander(f"📈 Chart: {sel_grp}", expanded=False):
