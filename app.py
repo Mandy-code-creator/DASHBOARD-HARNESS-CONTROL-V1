@@ -257,6 +257,7 @@ valid = cnt[cnt["N_Coils"] >= 30]
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
+# ==============================================================================
 # 9. MASTER DICTIONARY EXPORT (ULTIMATE - NORMAL CURVE + OUTLIER REMOVAL)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
@@ -305,7 +306,7 @@ if view_mode == "👑 Master Dictionary Export":
 
         # --- UTILITY FUNCTIONS ---
         def remove_outliers_iqr(series):
-            """Thuật toán loại bỏ nhiễu/ngoại lai (Outliers) dựa trên IQR để đường phân phối chuẩn xác"""
+            """Thuật toán IQR: Loại bỏ nhiễu/ngoại lai để vẽ đường phân phối chuẩn xác"""
             s = pd.to_numeric(series, errors='coerce').dropna()
             s = s[s > 0]
             
@@ -348,7 +349,7 @@ if view_mode == "👑 Master Dictionary Export":
             return f"{f_min:.1f}~{f_max:.1f}" if is_el else f"{f_min:.0f}~{f_max:.0f}"
 
         def plot_distribution_dual(group_data, title, mu, sigma, k_ctrl, k_tgt):
-            # Lấy dữ liệu ĐÃ LỌC NHIỄU
+            # Lấy dữ liệu ĐÃ LỌC NHIỄU bằng IQR
             line_vals = remove_outliers_iqr(group_data["Hardness_LINE"]).values
             
             if "Hardness_LAB" in group_data.columns:
@@ -364,7 +365,7 @@ if view_mode == "👑 Master Dictionary Export":
             
             if not hist_data: return None
             
-            # curve_type='normal' ÉP VẼ ĐƯỜNG CONG CHUÔNG CHUẨN (THAY VÌ KDE)
+            # curve_type='normal' Ép vẽ đường cong hình chuông
             fig = ff.create_distplot(hist_data, labels, bin_size=0.5, show_rug=False, colors=colors, curve_type='normal')
             
             p_ctrl_min, p_ctrl_max = mu - k_ctrl * sigma, mu + k_ctrl * sigma
@@ -435,7 +436,7 @@ if view_mode == "👑 Master Dictionary Export":
                 st.subheader("📊 Visual Normal Distribution Analysis")
                 st.info("Click on any group below to expand and view its clean distribution chart (Outliers removed, Normal Curve applied).")
                 
-                # HIỂN THỊ TẤT CẢ BIỂU ĐỒ TRONG EXPANDER (KHÔNG DÙNG SELECTBOX)
+                # HIỂN THỊ TẤT CẢ BIỂU ĐỒ TRONG EXPANDER
                 for _, row in df_s.iterrows():
                     q_s, m_s, mat_s = row['Quality Group'], row['Metallic Type'], row['Material']
                     sel_grp = f"{q_s} | {m_s} | {mat_s}"
