@@ -257,7 +257,7 @@ valid = cnt[cnt["N_Coils"] >= 30]
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (ULTIMATE FIX - THÊM BẢNG SUMMARY KHÔNG PHÂN ĐỘ DÀY)
+# 9. MASTER DICTIONARY EXPORT (ULTIMATE FIX - THÊM BẢNG SUMMARY & CHART)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
@@ -265,6 +265,8 @@ if view_mode == "👑 Master Dictionary Export":
     import pandas as pd
     import numpy as np
     import streamlit as st
+    import plotly.figure_factory as ff
+    import plotly.graph_objects as go
 
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary")
@@ -357,6 +359,29 @@ if view_mode == "👑 Master Dictionary Export":
                 parts.append(f"{metal_str}: {spec_val}")
             return " | ".join(parts)
             
+        # --- FUNCTION: Draw Distribution with Limits ---
+        def plot_distribution_with_limits(group_data, title, mu, sigma, k_ctrl, k_tgt):
+            hrb_values = group_data["Hardness_LINE"].dropna().values
+            
+            p_ctrl_min, p_ctrl_max = mu - k_ctrl * sigma, mu + k_ctrl * sigma
+            p_tgt_min, p_tgt_max = mu - k_tgt * sigma, mu + k_tgt * sigma
+            
+            fig = ff.create_distplot([hrb_values], [title], bin_size=0.5, show_rug=False)
+            
+            fig.add_vline(x=p_ctrl_min, line_dash="dash", line_color="red", annotation_text="Lower Control")
+            fig.add_vline(x=p_ctrl_max, line_dash="dash", line_color="red", annotation_text="Upper Control")
+            
+            fig.add_vrect(x0=p_tgt_min, x1=p_tgt_max, fillcolor="green", opacity=0.1, line_width=0, annotation_text="Target Zone")
+            
+            fig.update_layout(
+                title=f"Distribution for {title}",
+                xaxis_title="Hardness (HRB)",
+                yaxis_title="Density",
+                showlegend=False,
+                height=450
+            )
+            return fig
+
         # --- DATA PRE-PROCESSING ---
         req_cols = ['Hardness_LINE', 'TS', 'YS', 'EL']
         for c in req_cols:
@@ -486,22 +511,20 @@ if view_mode == "👑 Master Dictionary Export":
                     (group_ng['EL'] >= el_min_col)
                 ]
 
-               # 4. FIX QUAN TRỌNG (CAPPING & OUTLIER LOGIC): Khóa dải hiển thị và Lọc nhiễu
+                # 4. FIX QUAN TRỌNG (CAPPING & OUTLIER LOGIC): Khóa dải hiển thị và Lọc nhiễu
                 def get_safe_mech_range(df, col, grp_df, spec_min_col, spec_max_col, is_el=False):
                     if df.empty or df[col].dropna().empty: return "-"
                     
-                    # BỘ LỌC VẬT LÝ: Khử các dữ liệu rác/gõ nhầm (ví dụ YS = 3)
                     if is_el:
-                        clean_series = df[df[col] > 0.5][col].dropna() # EL phải lớn hơn 0.5%
+                        clean_series = df[df[col] > 0.5][col].dropna()
                     else:
-                        clean_series = df[df[col] >= 100][col].dropna() # TS/YS thép không thể < 100 MPa
+                        clean_series = df[df[col] >= 100][col].dropna()
                         
                     if clean_series.empty: return "-"
                     
                     val_min = clean_series.min()
                     val_max = clean_series.max()
                     
-                    # Tìm giới hạn Absolute Min và Absolute Max của cột Spec đang hiển thị
                     valid_mins = pd.to_numeric(grp_df[spec_min_col], errors='coerce').replace(0, np.nan).dropna()
                     valid_maxs = pd.to_numeric(grp_df[spec_max_col], errors='coerce').replace(0, np.nan).dropna()
                     
@@ -510,20 +533,17 @@ if view_mode == "👑 Master Dictionary Export":
                     
                     final_min, final_max = val_min, val_max
                     
-                    # Áp dụng chặn Min/Max theo Spec
                     if pd.notna(abs_min_spec) and final_min < abs_min_spec:
                         final_min = abs_min_spec
                     if pd.notna(abs_max_spec) and final_max > abs_max_spec:
                         final_max = abs_max_spec
                         
-                    # Backup an toàn
                     if final_min > final_max: 
                         final_min, final_max = val_min, val_max
                         
                     if is_el: return f"{final_min:.1f}~{final_max:.1f}"
                     return f"{final_min:.0f}~{final_max:.0f}"
 
-                # Lấy text hiển thị Spec
                 s_ys_spec_txt = get_mapped_spec_range(group_ng, "Standard YS min", "Standard YS max")
                 s_ts_spec_txt = get_mapped_spec_range(group_ng, "Standard TS min", "Standard TS max")
                 s_el_spec_txt = get_mapped_spec_range(group_ng, "Standard EL min", "Standard EL max")
@@ -543,6 +563,7 @@ if view_mode == "👑 Master Dictionary Export":
                     "EL Spec": s_el_spec_txt,
                     "EL Distribution": get_safe_mech_range(actual_safe_coils, 'EL', group_ng, 'Standard EL min', 'Standard EL max', is_el=True)
                 })
+
         if master_data:
             df_out = pd.DataFrame(master_data)
             df_out = df_out.sort_values(by=["Quality Group", "Metallic Type", "Material", "Gauge Range"]).reset_index(drop=True)
@@ -567,6 +588,33 @@ if view_mode == "👑 Master Dictionary Export":
                 if not df_no_gauge.empty:
                     df_display_ng = df_no_gauge.set_index(['Quality Group', 'Metallic Type', 'Material'])
                     st.dataframe(df_display_ng, use_container_width=True)
+                    
+                    # --- PHẦN VẼ BIỂU ĐỒ BỔ SUNG ---
+                    st.markdown("---")
+                    st.subheader("📊 Visual Distribution Analysis")
+                    st.info("Select a group below to visualize how the new Control Limits fit the actual data.")
+                    
+                    group_list = df_no_gauge.apply(lambda x: f"{x['Quality Group']} | {x['Metallic Type']} | {x['Material']}", axis=1).tolist()
+                    selected_group_str = st.selectbox("🔍 Pick a Group to Visualize:", group_list)
+                    
+                    if selected_group_str:
+                        q_sel, m_sel, mat_sel = selected_group_str.split(" | ")
+                        plot_df = clean_master_df[
+                            (clean_master_df['Quality_Group'] == q_sel) & 
+                            (clean_master_df['Metal_Category'] == m_sel) & 
+                            (clean_master_df['Material'] == mat_sel)
+                        ]
+                        
+                        if not plot_df.empty:
+                            hrb_vals = plot_df["Hardness_LINE"]
+                            mu_p = hrb_vals.mean()
+                            mrs_p = np.abs(np.diff(hrb_vals.values))
+                            sig_p = np.mean(mrs_p) / 1.128 if len(mrs_p) > 0 else hrb_vals.std()
+                            
+                            fig = plot_distribution_with_limits(
+                                plot_df, selected_group_str, mu_p, sig_p, control_k, target_k
+                            )
+                            st.plotly_chart(fig, use_container_width=True)
 
             # --- EXPORT EXCEL ---
             output = BytesIO()
