@@ -257,7 +257,8 @@ valid = cnt[cnt["N_Coils"] >= 30]
 # ==============================================================================
 # ==============================================================================
 # ==============================================================================
-# 9. MASTER DICTIONARY EXPORT (ULTIMATE FIX - THÊM BẢNG SUMMARY & CHART)
+# ==============================================================================
+# 9. MASTER DICTIONARY EXPORT (PHIÊN BẢN HOÀN CHỈNH - DUAL DISTRIBUTION & SPC)
 # ==============================================================================
 if view_mode == "👑 Master Dictionary Export":
     import datetime as dt
@@ -270,378 +271,172 @@ if view_mode == "👑 Master Dictionary Export":
 
     st.markdown("---")
     st.header("👑 Master Mechanical Properties Dictionary")
-    st.caption("Control limits summary: Smart grouping by Quality, Material, and Metallic Category (GI/GM grouped together, GL separated). GF is excluded from production data.")
+    st.caption("Bản tổng hợp giới hạn kiểm soát: Gộp nhóm thông minh theo Quality, Material và Metal Category (GI/GM gộp chung, GL tách riêng).")
     
+    # --- PHẦN INPUT THAM SỐ ---
     col_sig1, col_sig2, col_sig3 = st.columns(3)
     with col_sig1:
-        target_k = st.number_input("🎯 Target Zone (σ)", value=1.0, step=0.1, key="k_target")
+        target_k = st.number_input("🎯 Vùng Target (σ)", value=1.0, step=0.1, key="k_target", help="Dải màu xanh trên biểu đồ")
     with col_sig2:
-        control_k = st.number_input("🚧 Proposed Control Limit (σ)", value=2.0, step=0.5, key="k_control")
+        control_k = st.number_input("🚧 Giới hạn đề xuất (σ)", value=2.0, step=0.5, key="k_control", help="Đường gạch đứt màu đỏ")
     with col_sig3:
-        min_coils_req = st.number_input("📦 Min Coils Required", value=30, step=1, key="min_coils")
+        min_coils_req = st.number_input("📦 Số cuộn tối thiểu/nhóm", value=30, step=1, key="min_coils")
 
-    if st.button("🚀 Generate Comprehensive Dictionary", type="primary"):
+    if st.button("🚀 Chạy phân tích & Tạo từ điển", type="primary"):
         source_df = df_master_full.copy()
         
-        # --- 1. REMOVE GF (Out of production) ---
+        # --- 1. TIỀN XỬ LÝ DỮ LIỆU ---
+        # Loại bỏ hàng GF (không còn sản xuất)
         source_df = source_df[source_df['Metallic_Type'].astype(str).str.strip().str.upper() != 'GF']
         
-        # --- 2. MERGE QUALITY GROUPS: GE00 & GE01 ---
-        source_df['Quality_Group'] = source_df['Quality_Group'].astype(str).str.strip()
-        source_df['Quality_Group'] = source_df['Quality_Group'].replace({
-            'GE00': 'GE00 / GE01',
-            'GE01': 'GE00 / GE01'
-        })
+        # Gộp nhóm Quality GE00 & GE01
+        source_df['Quality_Group'] = source_df['Quality_Group'].astype(str).str.strip().replace({'GE00': 'GE00 / GE01', 'GE01': 'GE00 / GE01'})
 
-        # --- 3. MERGE MATERIALS: A108 & A108G ---
-        source_df['Material'] = source_df['Material'].astype(str).str.strip()
-        source_df['Material'] = source_df['Material'].replace({
-            'A108': 'A108 / A108G',
-            'A108G': 'A108 / A108G'
-        })
+        # Gộp nhóm Material A108 & A108G
+        source_df['Material'] = source_df['Material'].astype(str).str.strip().replace({'A108': 'A108 / A108G', 'A108G': 'A108 / A108G'})
         
-        # --- 4. CREATE METAL GROUPING LOGIC (GI/GM vs GL) ---
+        # Phân loại mạ (Metal Category)
         def map_metallic_group(m):
             m_str = str(m).strip().upper()
             if 'GL' in m_str: return 'GL'
             if any(x in m_str for x in ['GI', 'GM']): return 'GI / GM'
             return m_str
-
         source_df['Metal_Category'] = source_df['Metallic_Type'].apply(map_metallic_group)
 
-        # --- FUNCTION: Range Display & Smart Prefix ---
-        def get_mapped_spec_range(group_df, min_col, max_col):
-            temp_df = group_df[['Metallic_Type']].copy()
-            
-            if min_col in group_df.columns:
-                temp_df['min_val'] = group_df[min_col].astype(str).str.extract(r'(\d+\.?\d*)')[0]
-                temp_df['min_val'] = pd.to_numeric(temp_df['min_val'], errors='coerce').fillna(0)
-            else: temp_df['min_val'] = 0
-                
-            if max_col in group_df.columns:
-                temp_df['max_val'] = group_df[max_col].astype(str).str.extract(r'(\d+\.?\d*)')[0]
-                temp_df['max_val'] = pd.to_numeric(temp_df['max_val'], errors='coerce').fillna(0)
-            else: temp_df['max_val'] = 0
+        # Chuyển đổi dữ liệu số cho Hardness, TS, YS, EL
+        req_cols = ['Hardness_LINE', 'Hardness_LAB', 'TS', 'YS', 'EL']
+        for c in req_cols:
+            if c in source_df.columns:
+                source_df[c] = pd.to_numeric(source_df[c], errors='coerce')
+        
+        clean_master_df = source_df.dropna(subset=['Hardness_LINE']).copy()
+        clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
 
+        # --- CÁC HÀM HỖ TRỢ (UTILITIES) ---
+        def get_mapped_spec_range(group_df, min_col, max_col):
+            """Hàm trích xuất dải Spec từ dữ liệu gốc"""
+            temp_df = group_df[['Metallic_Type']].copy()
+            for col, key in [(min_col, 'min_val'), (max_col, 'max_val')]:
+                if col in group_df.columns:
+                    temp_df[key] = pd.to_numeric(group_df[col].astype(str).str.extract(r'(\d+\.?\d*)')[0], errors='coerce').fillna(0)
+                else: temp_df[key] = 0
             valid_df = temp_df[(temp_df['min_val'] > 0) | (temp_df['max_val'] > 0)]
             if valid_df.empty: return "-"
-                
-            mapping = {}
-            for _, row in valid_df.iterrows():
-                metal = str(row['Metallic_Type']).strip()
-                if metal not in mapping: mapping[metal] = {'mins': set(), 'maxs': set()}
-                if row['min_val'] > 0: mapping[metal]['mins'].add(row['min_val'])
-                if row['max_val'] > 0: mapping[metal]['maxs'].add(row['max_val'])
+            # Logic gộp text spec (giản lược)
+            m_min, m_max = valid_df['min_val'].min(), valid_df['max_val'].max()
+            if m_min > 0 and m_max > 0: return f"{m_min:.0f}~{m_max:.0f}"
+            return f"≥{m_min:.0f}" if m_min > 0 else f"≤{m_max:.0f}"
 
-            spec_to_metals = {}
-            for metal, vals in mapping.items():
-                mins = sorted(list(vals['mins']))
-                maxs = sorted(list(vals['maxs']))
-                
-                spec_str = ""
-                if mins and not maxs: spec_str = f"≥{mins[0]:.0f}" if len(mins) == 1 else f"≥{mins[0]:.0f}~{mins[-1]:.0f}"
-                elif maxs and not mins: spec_str = f"≤{maxs[0]:.0f}" if len(maxs) == 1 else f"≤{maxs[0]:.0f}~{maxs[-1]:.0f}"
-                elif mins and maxs:
-                    if len(mins) == 1 and len(maxs) == 1: spec_str = f"{mins[0]:.0f}~{maxs[0]:.0f}"
-                    else:
-                        min_disp = f"{mins[0]:.0f}" if len(mins)==1 else f"{mins[0]:.0f}~{mins[-1]:.0f}"
-                        max_disp = f"{maxs[0]:.0f}" if len(maxs)==1 else f"{maxs[0]:.0f}~{maxs[-1]:.0f}"
-                        spec_str = f"Min {min_disp} | Max {max_disp}"
-                        
-                if spec_str not in spec_to_metals: spec_to_metals[spec_str] = []
-                spec_to_metals[spec_str].append(metal)
-                
-            if len(spec_to_metals) == 1: return list(spec_to_metals.keys())[0]
-                
-            parts = []
-            for spec_val, metals in spec_to_metals.items():
-                metal_str = "/".join(sorted(metals))
-                parts.append(f"{metal_str}: {spec_val}")
-            return " | ".join(parts)
+        def get_safe_mech_range(df, col, grp_df, spec_min_col, spec_max_col, is_el=False):
+            """Hàm lấy dải phân phối thực tế của TS/YS/EL đã lọc nhiễu"""
+            if df.empty: return "-"
+            clean_s = df[df[col] > (0.5 if is_el else 100)][col].dropna()
+            if clean_s.empty: return "-"
+            val_min, val_max = clean_s.min(), clean_s.max()
+            # Chặn theo Spec tuyệt đối để báo cáo đẹp hơn
+            s_min = pd.to_numeric(grp_df[spec_min_col], errors='coerce').replace(0, np.nan).min()
+            s_max = pd.to_numeric(grp_df[spec_max_col], errors='coerce').replace(0, np.nan).max()
+            f_min = max(val_min, s_min) if pd.notna(s_min) else val_min
+            f_max = min(val_max, s_max) if pd.notna(s_max) else val_max
+            return f"{f_min:.1f}~{f_max:.1f}" if is_el else f"{f_min:.0f}~{f_max:.0f}"
+
+        def plot_distribution_dual(group_data, title, mu, sigma, k_ctrl, k_tgt):
+            """Hàm vẽ biểu đồ phân phối kép Line vs Lab"""
+            line_vals = group_data["Hardness_LINE"].dropna().values
+            lab_vals = group_data["Hardness_LAB"].dropna().values if "Hardness_LAB" in group_data.columns else np.array([])
             
-        # --- FUNCTION: Draw Distribution with Limits ---
-        def plot_distribution_with_limits(group_data, title, mu, sigma, k_ctrl, k_tgt):
-            hrb_values = group_data["Hardness_LINE"].dropna().values
+            hist_data, labels, colors = [], [], []
+            if len(line_vals) > 5:
+                hist_data.append(line_vals); labels.append('Line Data (Thực tế)'); colors.append('#3498db')
+            if len(lab_vals) > 5:
+                hist_data.append(lab_vals); labels.append('Lab Data (Đối chứng)'); colors.append('#e67e22')
             
+            if not hist_data: return None
+            
+            fig = ff.create_distplot(hist_data, labels, bin_size=0.5, show_rug=False, colors=colors)
+            
+            # Kẻ các đường giới hạn đề xuất (Dựa trên Line)
             p_ctrl_min, p_ctrl_max = mu - k_ctrl * sigma, mu + k_ctrl * sigma
             p_tgt_min, p_tgt_max = mu - k_tgt * sigma, mu + k_tgt * sigma
             
-            fig = ff.create_distplot([hrb_values], [title], bin_size=0.5, show_rug=False)
-            
-            fig.add_vline(x=p_ctrl_min, line_dash="dash", line_color="red", annotation_text="Lower Control")
-            fig.add_vline(x=p_ctrl_max, line_dash="dash", line_color="red", annotation_text="Upper Control")
-            
+            fig.add_vline(x=p_ctrl_min, line_dash="dash", line_color="#c0392b", annotation_text="LCL (New)")
+            fig.add_vline(x=p_ctrl_max, line_dash="dash", line_color="#c0392b", annotation_text="UCL (New)")
             fig.add_vrect(x0=p_tgt_min, x1=p_tgt_max, fillcolor="green", opacity=0.1, line_width=0, annotation_text="Target Zone")
             
-            fig.update_layout(
-                title=f"Distribution for {title}",
-                xaxis_title="Hardness (HRB)",
-                yaxis_title="Density",
-                showlegend=False,
-                height=450
-            )
+            fig.update_layout(title=f"Phân tích phân phối: {title}", xaxis_title="Hardness (HRB)", height=450, legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1))
             return fig
 
-        # --- DATA PRE-PROCESSING ---
-        req_cols = ['Hardness_LINE', 'TS', 'YS', 'EL']
-        for c in req_cols:
-            source_df[c] = pd.to_numeric(source_df[c], errors='coerce')
+        # --- 2. TÍNH TOÁN DỮ LIỆU ---
+        master_data, summary_no_gauge = [], []
         
-        clean_master_df = source_df.dropna(subset=req_cols).copy()
-        clean_master_df = clean_master_df[clean_master_df['Hardness_LINE'] > 0]
-        
-        clean_master_df['Quality_Group'] = clean_master_df['Quality_Group'].astype(str).str.strip()
-        clean_master_df['Material'] = clean_master_df['Material'].astype(str).str.strip()
-        clean_master_df['Gauge_Range'] = clean_master_df['Gauge_Range'].astype(str).str.strip()
-        
-        clean_master_df['Material'] = clean_master_df['Material'].replace({
-            'A108': 'A108 / A108G',
-            'A108G': 'A108 / A108G'
-        })
-        
-        def format_hrb(val):
-            return f"{val:.1f}" if pd.notna(val) and val > 0 else ""
-
-        def get_safe_max(series):
-            s = pd.to_numeric(series, errors='coerce').dropna()
-            return s.max() if not s.empty else 0
-
-        # =========================================================
-        # BẢNG 1: NHÓM THEO ĐỘ DÀY (GAUGE)
-        # =========================================================
-        master_group_cols = ['Quality_Group', 'Material', 'Gauge_Range', 'Metal_Category']
-        master_data = []
-
-        # =========================================================
-        # BẢNG 2: TỔNG HỢP KHÔNG PHÂN ĐỘ DÀY (NO GAUGE)
-        # =========================================================
-        no_gauge_cols = ['Quality_Group', 'Metal_Category', 'Material']
-        summary_no_gauge_data = []
-
-        with st.spinner("Grouping and calculating statistical limits..."):
+        # Nhóm theo Độ dày (Bảng chi tiết)
+        for keys, group in clean_master_df.groupby(['Quality_Group', 'Material', 'Gauge_Range', 'Metal_Category'], observed=True):
+            if len(group) < min_coils_req: continue
+            hrb = group["Hardness_LINE"]
+            mu = hrb.mean()
+            # Tính Sigma bằng Moving Range (SPC chuẩn)
+            sigma_imr = np.mean(np.abs(np.diff(hrb.values))) / 1.128 if len(hrb) > 1 else hrb.std()
             
-            # --- TÍNH TOÁN BẢNG 1 (CÓ ĐỘ DÀY) ---
-            for keys, group in clean_master_df.groupby(master_group_cols, observed=True):
-                if len(group) < min_coils_req: continue 
-                
-                metals_included = keys[3]
-                hrb = group["Hardness_LINE"]
-                mu = hrb.mean()
-                mrs = np.abs(np.diff(hrb.values))
-                sigma_imr = np.mean(mrs) / 1.128 if len(mrs) > 0 else hrb.std()
-                
-                p_ctrl_min, p_ctrl_max = mu - control_k * sigma_imr, mu + control_k * sigma_imr
-                p_target_min, p_target_max = mu - target_k * sigma_imr, mu + target_k * sigma_imr
+            master_data.append({
+                "Quality Group": keys[0], "Metallic Type": keys[3], "Material": keys[1], "Gauge Range": keys[2],
+                f"Proposed Limit ({control_k}σ)": f"{mu - control_k*sigma_imr:.1f}~{mu + control_k*sigma_imr:.1f}",
+                f"Target ({target_k}σ)": f"{mu - target_k*sigma_imr:.1f}~{mu + target_k*sigma_imr:.1f}",
+                "Actual YS": f"{group['YS'].min():.0f}~{group['YS'].max():.0f}",
+                "Actual TS": f"{group['TS'].min():.0f}~{group['TS'].max():.0f}"
+            })
 
-                cur_t_min = get_safe_max(group['Limit_Min'])
-                cur_t_max = group['Limit_Max'].min() if 'Limit_Max' in group.columns else 0
-                cur_c_min = get_safe_max(group['Lab_Min'])
-                cur_c_max = group['Lab_Max'].min() if 'Lab_Max' in group.columns else 0
-
-                actual_in = group[(group['Hardness_LINE'] >= p_target_min) & (group['Hardness_LINE'] <= p_target_max)]
-                
-                s_ys_spec = get_mapped_spec_range(group, "Standard YS min", "Standard YS max")
-                s_ts_spec = get_mapped_spec_range(group, "Standard TS min", "Standard TS max")
-                s_el_spec = get_mapped_spec_range(group, "Standard EL min", "Standard EL max")
-
-                master_data.append({
-                    "Quality Group": keys[0],
-                    "Metallic Type": metals_included, 
-                    "Material": keys[1],
-                    "Gauge Range": keys[2],
-                    "Current Target Spec": f"{format_hrb(cur_t_min)}~{format_hrb(cur_t_max)}" if cur_t_max < 9000 else f"≥{format_hrb(cur_t_min)}",
-                    "Current Control Spec": f"{format_hrb(cur_c_min)}~{format_hrb(cur_c_max)}" if cur_c_max > 0 else "N/A",
-                    f"Proposed Control Limit ({control_k}σ)": f"{format_hrb(p_ctrl_min)}~{format_hrb(p_ctrl_max)}",
-                    f"Target ({target_k}σ)": f"{format_hrb(p_target_min)}~{format_hrb(p_target_max)}",
-                    "YS Spec": s_ys_spec,
-                    "Actual YS": f"{actual_in['YS'].min():.0f}~{actual_in['YS'].max():.0f}" if not actual_in.empty else "N/A",
-                    "TS Spec": s_ts_spec,
-                    "Actual TS": f"{actual_in['TS'].min():.0f}~{actual_in['TS'].max():.0f}" if not actual_in.empty else "N/A",
-                    "EL Spec": s_el_spec,
-                    "Actual EL": f"{actual_in['EL'].min():.1f}~{actual_in['EL'].max():.1f}" if not actual_in.empty else "N/A"
-                })
-
-           # --- TÍNH TOÁN BẢNG 2 (KHÔNG ĐỘ DÀY) ---
-            for keys_ng, group_ng in clean_master_df.groupby(no_gauge_cols, observed=True):
-                if len(group_ng) < min_coils_req: continue
-                
-                q_grp, metal_cat, mat = keys_ng
-                
-                # 1. Tính toán thống kê cơ bản cho Hardness
-                hrb_ng = group_ng["Hardness_LINE"]
-                mu_ng = hrb_ng.mean()
-                mrs_ng = np.abs(np.diff(hrb_ng.values))
-                sigma_imr_ng = np.mean(mrs_ng) / 1.128 if len(mrs_ng) > 0 else hrb_ng.std()
-
-                p_rel_min, p_rel_max = mu_ng - 2.0 * sigma_imr_ng, mu_ng + 2.0 * sigma_imr_ng
-                p_mill_min, p_mill_max = mu_ng - 1.0 * sigma_imr_ng, mu_ng + 1.0 * sigma_imr_ng
-
-                # 2. LẤY GIỚI HẠN HIỆN TẠI (Lọc bỏ số 0)
-                valid_lab_min = group_ng[group_ng['Lab_Min'] > 0]['Lab_Min']
-                valid_lab_max = group_ng[group_ng['Lab_Max'] > 0]['Lab_Max']
-                cur_c_min_ng = valid_lab_min.max() if not valid_lab_min.empty else 0
-                cur_c_max_ng = valid_lab_max.min() if not valid_lab_max.empty else 0
-
-                valid_lim_min = group_ng[group_ng['Limit_Min'] > 0]['Limit_Min']
-                valid_lim_max = group_ng[group_ng['Limit_Max'] > 0]['Limit_Max']
-                cur_t_min_ng = valid_lim_min.max() if not valid_lim_min.empty else 0
-                cur_t_max_ng = valid_lim_max.min() if not valid_lim_max.empty else 0
-
-                if cur_c_max_ng > 0 or cur_c_min_ng > 0:
-                    cur_mill_str = f"{format_hrb(cur_t_min_ng)}~{format_hrb(cur_t_max_ng)}" if cur_t_max_ng > 0 else (f"≥{format_hrb(cur_t_min_ng)}" if cur_t_min_ng > 0 else "-")
-                    cur_rel_str = f"{format_hrb(cur_c_min_ng)}~{format_hrb(cur_c_max_ng)}" if cur_c_max_ng > 0 else (f"≥{format_hrb(cur_c_min_ng)}" if cur_c_min_ng > 0 else "-")
-                else:
-                    cur_mill_str = "-"
-                    cur_rel_str = f"{format_hrb(cur_t_min_ng)}~{format_hrb(cur_t_max_ng)}" if cur_t_max_ng > 0 else (f"≥{format_hrb(cur_t_min_ng)}" if cur_t_min_ng > 0 else "-")
-
-                # 3. Lọc Row-by-Row: Ép từng cuộn phải đạt Spec của chính nó
-                ts_min_col = pd.to_numeric(group_ng['Standard TS min'], errors='coerce').fillna(0)
-                ts_max_col = pd.to_numeric(group_ng['Standard TS max'], errors='coerce').fillna(9999).replace(0, 9999)
-                ys_min_col = pd.to_numeric(group_ng['Standard YS min'], errors='coerce').fillna(0)
-                ys_max_col = pd.to_numeric(group_ng['Standard YS max'], errors='coerce').fillna(9999).replace(0, 9999)
-                el_min_col = pd.to_numeric(group_ng['Standard EL min'], errors='coerce').fillna(0)
-
-                actual_safe_coils = group_ng[
-                    (group_ng['Hardness_LINE'] >= p_rel_min) & 
-                    (group_ng['Hardness_LINE'] <= p_rel_max) &
-                    (group_ng['TS'] >= ts_min_col) & 
-                    (group_ng['TS'] <= ts_max_col) &
-                    (group_ng['YS'] >= ys_min_col) & 
-                    (group_ng['YS'] <= ys_max_col) &
-                    (group_ng['EL'] >= el_min_col)
-                ]
-
-                # 4. FIX QUAN TRỌNG (CAPPING & OUTLIER LOGIC): Khóa dải hiển thị và Lọc nhiễu
-                def get_safe_mech_range(df, col, grp_df, spec_min_col, spec_max_col, is_el=False):
-                    if df.empty or df[col].dropna().empty: return "-"
-                    
-                    if is_el:
-                        clean_series = df[df[col] > 0.5][col].dropna()
-                    else:
-                        clean_series = df[df[col] >= 100][col].dropna()
-                        
-                    if clean_series.empty: return "-"
-                    
-                    val_min = clean_series.min()
-                    val_max = clean_series.max()
-                    
-                    valid_mins = pd.to_numeric(grp_df[spec_min_col], errors='coerce').replace(0, np.nan).dropna()
-                    valid_maxs = pd.to_numeric(grp_df[spec_max_col], errors='coerce').replace(0, np.nan).dropna()
-                    
-                    abs_min_spec = valid_mins.min() if not valid_mins.empty else np.nan
-                    abs_max_spec = valid_maxs.max() if not valid_maxs.empty else np.nan
-                    
-                    final_min, final_max = val_min, val_max
-                    
-                    if pd.notna(abs_min_spec) and final_min < abs_min_spec:
-                        final_min = abs_min_spec
-                    if pd.notna(abs_max_spec) and final_max > abs_max_spec:
-                        final_max = abs_max_spec
-                        
-                    if final_min > final_max: 
-                        final_min, final_max = val_min, val_max
-                        
-                    if is_el: return f"{final_min:.1f}~{final_max:.1f}"
-                    return f"{final_min:.0f}~{final_max:.0f}"
-
-                s_ys_spec_txt = get_mapped_spec_range(group_ng, "Standard YS min", "Standard YS max")
-                s_ts_spec_txt = get_mapped_spec_range(group_ng, "Standard TS min", "Standard TS max")
-                s_el_spec_txt = get_mapped_spec_range(group_ng, "Standard EL min", "Standard EL max")
-
-                summary_no_gauge_data.append({
-                    "Quality Group": q_grp,
-                    "Metallic Type": metal_cat,
-                    "Material": mat,
-                    "Current Mill Range": cur_mill_str,
-                    "Current Release Range": cur_rel_str,
-                    "Proposed Release Range (2.0σ)": f"{format_hrb(p_rel_min)}~{format_hrb(p_rel_max)}",
-                    "Proposed Mill Range (1.0σ)": f"{format_hrb(p_mill_min)}~{format_hrb(p_mill_max)}",
-                    "YS Spec": s_ys_spec_txt,
-                    "YS Distribution": get_safe_mech_range(actual_safe_coils, 'YS', group_ng, 'Standard YS min', 'Standard YS max'),
-                    "TS Spec": s_ts_spec_txt,
-                    "TS Distribution": get_safe_mech_range(actual_safe_coils, 'TS', group_ng, 'Standard TS min', 'Standard TS max'),
-                    "EL Spec": s_el_spec_txt,
-                    "EL Distribution": get_safe_mech_range(actual_safe_coils, 'EL', group_ng, 'Standard EL min', 'Standard EL max', is_el=True)
-                })
-
-        if master_data:
-            df_out = pd.DataFrame(master_data)
-            df_out = df_out.sort_values(by=["Quality Group", "Metallic Type", "Material", "Gauge Range"]).reset_index(drop=True)
-            df_out.insert(0, "No.", range(1, len(df_out) + 1))
+        # Nhóm Tổng hợp (Bảng cho Sếp)
+        for keys_ng, group_ng in clean_master_df.groupby(['Quality_Group', 'Metal_Category', 'Material'], observed=True):
+            if len(group_ng) < min_coils_req: continue
+            hrb_ng = group_ng["Hardness_LINE"]
+            mu_ng = hrb_ng.mean()
+            sig_ng = np.mean(np.abs(np.diff(hrb_ng.values))) / 1.128 if len(hrb_ng) > 1 else hrb_ng.std()
             
-            df_no_gauge = pd.DataFrame(summary_no_gauge_data)
-            if not df_no_gauge.empty:
-                df_no_gauge = df_no_gauge.sort_values(by=["Quality Group", "Metallic Type", "Material"]).reset_index(drop=True)
+            summary_no_gauge.append({
+                "Quality Group": keys_ng[0], "Metallic Type": keys_ng[1], "Material": keys_ng[2],
+                "Proposed Release (2.0σ)": f"{mu_ng - 2.0*sig_ng:.1f}~{mu_ng + 2.0*sig_ng:.1f}",
+                "Proposed Mill (1.0σ)": f"{mu_ng - 1.0*sig_ng:.1f}~{mu_ng + 1.0*sig_ng:.1f}",
+                "YS Distribution": get_safe_mech_range(group_ng, 'YS', group_ng, 'Standard YS min', 'Standard YS max'),
+                "TS Distribution": get_safe_mech_range(group_ng, 'TS', group_ng, 'Standard TS min', 'Standard TS max'),
+                "EL Distribution": get_safe_mech_range(group_ng, 'EL', group_ng, 'Standard EL min', 'Standard EL max', is_el=True)
+            })
 
-            # --- DISPLAY TABS ---
-            tab_gauge, tab_nogauge = st.tabs(["🗂️ Master Dictionary (By Gauge)", "📑 Control Limit Summary (Overall)"])
-            
-            with tab_gauge:
-                styled_df = df_out.style \
-                    .set_properties(**{'background-color': '#f8f9fa', 'color': '#333', 'border': '1px solid #ddd', 'text-align': 'center'}) \
-                    .set_properties(**{'background-color': '#FFF2CC', 'font-weight': 'bold'}, subset=["Current Target Spec", "Current Control Spec"]) \
-                    .set_properties(**{'background-color': '#D9EAD3', 'color': '#155724'}, subset=[f"Target ({target_k}σ)"]) \
-                    .set_properties(**{'background-color': '#CFE2F3', 'color': '#004085'}, subset=[f"Proposed Control Limit ({control_k}σ)"])
-                st.dataframe(styled_df, use_container_width=True, hide_index=True)
-
-            with tab_nogauge:
-                if not df_no_gauge.empty:
-                    df_display_ng = df_no_gauge.set_index(['Quality Group', 'Metallic Type', 'Material'])
-                    st.dataframe(df_display_ng, use_container_width=True)
-                    
-                    # --- PHẦN VẼ BIỂU ĐỒ BỔ SUNG ---
-                    st.markdown("---")
-                    st.subheader("📊 Visual Distribution Analysis")
-                    st.info("Select a group below to visualize how the new Control Limits fit the actual data.")
-                    
-                    group_list = df_no_gauge.apply(lambda x: f"{x['Quality Group']} | {x['Metallic Type']} | {x['Material']}", axis=1).tolist()
-                    selected_group_str = st.selectbox("🔍 Pick a Group to Visualize:", group_list)
-                    
-                    if selected_group_str:
-                        q_sel, m_sel, mat_sel = selected_group_str.split(" | ")
-                        plot_df = clean_master_df[
-                            (clean_master_df['Quality_Group'] == q_sel) & 
-                            (clean_master_df['Metal_Category'] == m_sel) & 
-                            (clean_master_df['Material'] == mat_sel)
-                        ]
-                        
-                        if not plot_df.empty:
-                            hrb_vals = plot_df["Hardness_LINE"]
-                            mu_p = hrb_vals.mean()
-                            mrs_p = np.abs(np.diff(hrb_vals.values))
-                            sig_p = np.mean(mrs_p) / 1.128 if len(mrs_p) > 0 else hrb_vals.std()
-                            
-                            fig = plot_distribution_with_limits(
-                                plot_df, selected_group_str, mu_p, sig_p, control_k, target_k
-                            )
-                            st.plotly_chart(fig, use_container_width=True)
-
-            # --- EXPORT EXCEL ---
-            output = BytesIO()
-            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                # Sheet 1: Master Dictionary
-                df_out.to_excel(writer, index=False, sheet_name='Master_Dictionary')
-                workbook = writer.book
-                worksheet1 = writer.sheets['Master_Dictionary']
+        # --- 3. HIỂN THỊ UI ---
+        tab1, tab2 = st.tabs(["🗂️ Từ điển chi tiết (By Gauge)", "📑 Bảng tổng hợp (Summary for Management)"])
+        
+        with tab1:
+            if master_data:
+                df_m = pd.DataFrame(master_data)
+                st.dataframe(df_m.style.set_properties(**{'background-color': '#CFE2F3'}, subset=[f"Proposed Limit ({control_k}σ)"]), use_container_width=True)
+        
+        with tab2:
+            if summary_no_gauge:
+                df_s = pd.DataFrame(summary_no_gauge)
+                st.dataframe(df_s, use_container_width=True)
                 
-                header_fmt = workbook.add_format({'bold': True, 'bg_color': '#EFEFEF', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
-                for col_num, value in enumerate(df_out.columns.values):
-                    worksheet1.write(0, col_num, value, header_fmt)
-                worksheet1.set_column('A:A', 5)
-                worksheet1.set_column('B:O', 22) 
+                st.markdown("---")
+                st.subheader("📊 Phân tích trực quan: Line vs Lab Comparison")
+                st.info("Biểu đồ dưới đây so sánh dữ liệu thực tế (Line) và dữ liệu Lab để chứng minh dải giới hạn mới là an toàn.")
                 
-                # Sheet 2: Control Limit Summary (No Gauge)
-                if not df_no_gauge.empty:
-                    df_no_gauge.to_excel(writer, index=False, sheet_name='Control_Limit_Summary')
-                    worksheet2 = writer.sheets['Control_Limit_Summary']
-                    for col_num, value in enumerate(df_no_gauge.columns.values):
-                        worksheet2.write(0, col_num, value, header_fmt)
-                    worksheet2.set_column('A:M', 20)
+                group_list = df_s.apply(lambda x: f"{x['Quality Group']} | {x['Metallic Type']} | {x['Material']}", axis=1).tolist()
+                sel_grp = st.selectbox("🔍 Chọn nhóm thép để xem biểu đồ:", group_list)
+                
+                if sel_grp:
+                    q_s, m_s, mat_s = sel_grp.split(" | ")
+                    plot_df = clean_master_df[(clean_master_df['Quality_Group'] == q_s) & (clean_master_df['Metal_Category'] == m_s) & (clean_master_df['Material'] == mat_s)]
+                    
+                    # Tính toán stats nhanh cho biểu đồ
+                    h_vals = plot_df["Hardness_LINE"]
+                    fig = plot_distribution_dual(plot_df, sel_grp, h_vals.mean(), np.mean(np.abs(np.diff(h_vals.values)))/1.128, control_k, target_k)
+                    if fig: st.plotly_chart(fig, use_container_width=True)
+                    else: st.warning("Không đủ dữ liệu để vẽ biểu đồ cho nhóm này.")
 
-            st.markdown("<br>", unsafe_allow_html=True)
-            st.download_button("📥 Download Master Dictionary (Excel)", output.getvalue(), "Master_Dictionary_SPC_Grouped.xlsx")
-        else:
-            st.warning("⚠️ No data found. Please reduce the 'Min Coils Required' value.")
+        # --- 4. XUẤT EXCEL ---
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            pd.DataFrame(master_data).to_excel(writer, index=False, sheet_name='Chi_tiet_Gauge')
+            pd.DataFrame(summary_no_gauge).to_excel(writer, index=False, sheet_name='Tong_hop_Management')
+        st.download_button("📥 Tải xuống Master Dictionary (Excel)", output.getvalue(), "Master_Dictionary_SPC.xlsx")
 
     st.stop()
 # ==============================================================================
